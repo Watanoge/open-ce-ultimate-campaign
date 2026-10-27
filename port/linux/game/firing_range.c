@@ -16,37 +16,71 @@ directional light, and objects are lit by the bsp's default lighting
 its scenario and its players start at the middle (put back as its tags go,
 for the next level of the map).
 
-Its sides are the range's parts, each to come: north the AI's range, east
-their animations, west the weapons and south the player's own animations
-(a copy that mirrors the player's moves). Today it is the plane alone.
+Its sides are the range's parts: west the profile's weapons, laid on benches
+(the bsp's own, as many as they need), each put back a moment after it is
+taken; south a mirror, a frame on the floor (drawn alone: no collision) with a
+pane of the teleporters' shield in it, behind which a copy of the player
+(its biped, holding its weapons) waits, and moves as the player does,
+reflected, while the player stands before it: its controls are the
+player's each tick (firing_range_player_control), turned about the pane, so
+that it plays every animation the player does, seen from the front; its
+shots and grenades hurt no one and nothing hurts it. It is made as the
+player steps up, and let go as the player steps back; its weapons are the
+player's slot for slot (units.c's unit_network_* helpers, as a network
+client's are: unit_delete_all_weapons keeps the one in hand, which left the
+copy holding the weapon it had). North the AI and east their animations are to
+come.
 
 The bsp, as the engine reads one:
 
 - its collision bsp: the floor, the four walls and a ceiling, each a
-  surface of its own plane facing in, a bsp3d whose every node's back is
-  solid and whose last front is its one leaf, which names the six surfaces
-  (each its plane's bsp2d, the surface itself); the surfaces' edge rings run
-  counter-clockwise about their planes' normals, as the stock maps' do;
-- its render surfaces: the floor in tiles and the walls in panels, two
-  triangles each, clockwise seen from the front (the stock maps' are), in
-  two materials of one lightmap without a bitmap;
+  surface of its own plane facing in, and each bench's top and sides, each
+  of its own plane facing out. Its bsp3d is a tree (collision_bsp.c walks no
+  node twice in a test): the room's nodes a chain, each with solid behind it
+  and the next in front, the last's front the benches', split in halves by
+  planes between them (planes of no surface) until each bench has its own
+  part, whose nodes have the one leaf in front and behind the bench's next
+  node, its last's solid (a point is in the bench when it is behind all of
+  its planes). The one leaf names every surface (each its plane's bsp2d:
+  the surface itself). The
+  surfaces' edge rings run counter-clockwise about their planes' normals,
+  as the stock maps' do; a bench's bottom edges have one surface;
+- its render surfaces: the floor in tiles, the walls in panels, the benches'
+  faces, the mirror's line and frame, and its pane, two triangles each,
+  clockwise seen from the front (the stock maps' are), in four materials
+  (three when the map has not got the pane's shader) of one lightmap without
+  a bitmap;
 - one cluster, which sees itself, whose subclusters (the floor's blocks of
-  tiles, each wall's quarters) list the surfaces the renderer culls by
-  their bounds; one structure leaf of that cluster naming every surface,
-  and one structure node of whole bounds for each bsp3d node.
+  tiles, each wall's quarters, the benches and the line) list the surfaces
+  the renderer culls by their bounds; one structure leaf of that cluster
+  naming every surface, and one structure node of whole bounds for each
+  bsp3d node.
 */
 
 /* ---------- headers */
 
 #include "cseries.h"
 #include "errors.h"
+#include "cache/cache_files.h"
+#include "game/game.h"
+#include "game/players.h"
+#include "interface/hud_messaging.h"
+#include "items/weapons.h"
 #include "math/integer_math.h"
+#include "objects/objects.h"
 #include "physics/collision_bsp_definitions.h"
 #include "scenario/scenario_definitions.h"
 #include "shaders/shader_definitions.h"
 #include "structures/structure_bsp_definitions.h"
 #include "tag_files/tag_groups.h"
+#include "units/unit_control_data.h"
+#include "units/units.h"
 #include "firing_range.h"
+
+/* units.c's: a weapon put in a unit's slot, and a slot emptied (its weapon
+about to be deleted), as a network client's units are given the host's */
+void unit_network_add_weapon(long unit_index, long weapon_index, short slot);
+void unit_network_forget_weapon(long unit_index, short slot);
 
 #include <math.h>
 #include <stdio.h>
@@ -59,7 +93,9 @@ enum
 {
 	SCENARIO_GROUP_TAG = 'scnr',
 	SHADER_ENVIRONMENT_GROUP_TAG = 'senv',
+	SHADER_TRANSPARENT_GROUP_TAG = 'sotr',
 	BITMAP_GROUP_TAG = 'bitm',
+	WEAPON_GROUP_TAG = 'weap',
 	STRUCTURE_BSP_HEADER_SIGNATURE = 'sbsp',
 
 	/* the floor's tiles a side, the walls' panels a side, and the
@@ -67,33 +103,62 @@ enum
 	RANGE_TILES = 16,
 	RANGE_SUBCLUSTERS = 4,
 
-	/* the collision bsp: the floor, the walls (east, west, north, south)
-	and the ceiling */
+	/* the room's faces (the floor, the walls east, west, north and south,
+	and the ceiling), and a bench's (its top and its sides) */
 	_range_face_floor = 0,
 	_range_face_east,
 	_range_face_west,
 	_range_face_north,
 	_range_face_south,
 	_range_face_ceiling,
-	NUMBER_OF_RANGE_FACES,
+	NUMBER_OF_ROOM_FACES,
 	NUMBER_OF_RANGE_WALLS = 4,
-	RANGE_BOX_VERTICES = 8,
-	RANGE_BOX_EDGES = 12,
+	NUMBER_OF_BENCH_FACES = 5,
+	BOX_CORNERS = 8,
 
-	/* the render surfaces: the floor's, then the walls' */
+	/* the weapons laid out (the profile's, each once), on how many
+	benches at most, and how many a bench */
+	MAXIMUM_RANGE_WEAPONS = 96,
+	RANGE_WEAPONS_PER_BENCH = 12,
+	MAXIMUM_RANGE_BENCHES = MAXIMUM_RANGE_WEAPONS / RANGE_WEAPONS_PER_BENCH,
+
+	MAXIMUM_RANGE_FACES = NUMBER_OF_ROOM_FACES + MAXIMUM_RANGE_BENCHES * NUMBER_OF_BENCH_FACES,
+	/* the bsp3d's planes and nodes: the faces', and those between the
+	benches */
+	MAXIMUM_RANGE_PLANES = MAXIMUM_RANGE_FACES + MAXIMUM_RANGE_BENCHES,
+	MAXIMUM_RANGE_NODES = MAXIMUM_RANGE_PLANES,
+	MAXIMUM_RANGE_COLLISION_VERTICES = BOX_CORNERS * (1 + MAXIMUM_RANGE_BENCHES),
+	MAXIMUM_RANGE_EDGES = 12 * (1 + MAXIMUM_RANGE_BENCHES),
+
+	/* the render surfaces: the floor's, the walls', and the details' (each
+	bench's faces, and the mirror's line) */
 	RANGE_FLOOR_SURFACES = RANGE_TILES * RANGE_TILES * 2,
 	RANGE_WALL_SURFACES = RANGE_TILES * 2,
-	RANGE_SURFACES = RANGE_FLOOR_SURFACES + NUMBER_OF_RANGE_WALLS * RANGE_WALL_SURFACES,
 	RANGE_FLOOR_VERTICES = (RANGE_TILES + 1) * (RANGE_TILES + 1),
 	RANGE_WALL_VERTICES = (RANGE_TILES + 1) * 2,
-	RANGE_SUBCLUSTER_COUNT = RANGE_SUBCLUSTERS * RANGE_SUBCLUSTERS + NUMBER_OF_RANGE_WALLS * RANGE_SUBCLUSTERS,
+	/* the details: each bench's faces, the mirror's line, and its frame (two
+	posts of five faces, a bar of six) */
+	RANGE_MIRROR_FRAME_QUADS = 2 * 5 + 6,
+	MAXIMUM_RANGE_DETAIL_QUADS = MAXIMUM_RANGE_BENCHES * NUMBER_OF_BENCH_FACES + 1 + RANGE_MIRROR_FRAME_QUADS,
+	/* the materials: the floor's, the walls', the details' (the
+	collision's three) and the mirror's pane */
+	NUMBER_OF_RANGE_COLLISION_MATERIALS = 3,
+	NUMBER_OF_RANGE_MATERIALS = 4,
+	_range_material_pane = 3,
+	RANGE_ROOM_SUBCLUSTERS = RANGE_SUBCLUSTERS * RANGE_SUBCLUSTERS + NUMBER_OF_RANGE_WALLS * RANGE_SUBCLUSTERS,
 
 	/* the map's players' starting locations kept to put back */
 	MAXIMUM_RANGE_STARTING_LOCATIONS = 64,
+
+	/* a weapon taken is put back this long after its bench is empty, and
+	the benches are looked at this often */
+	RANGE_REFILL_TICKS = 3 * 30,
+	RANGE_CHECK_TICKS = 15,
 };
 
 /* the plane's half width, the walls' height drawn and the ceiling's (its
-collision's top, and the bsp's bounds'), in world units */
+collision's top, and the bsp's bounds'), in world units (one is ten feet:
+the player stands 0.7 tall) */
 #define RANGE_HALF_WIDTH 80.0f
 #define RANGE_WALL_HEIGHT 8.0f
 #define RANGE_CEILING 100.0f
@@ -104,11 +169,46 @@ north (+y) */
 #define RANGE_START_HEIGHT 0.25f
 #define RANGE_START_SPACING 1.5f
 #define RANGE_START_FACING 1.5707963f
+/* the benches: the first's middle west of the start, the next further
+west each; their width, height and length (north to south), the room a
+weapon has on one, how high above it one is laid and how near its place
+one must lie to be there */
+#define RANGE_BENCH_FIRST_X -6.0f
+#define RANGE_BENCH_SPACING 3.0f
+#define RANGE_BENCH_WIDTH 0.6f
+#define RANGE_BENCH_HEIGHT 0.3f
+#define RANGE_WEAPON_SPACING 0.9f
+#define RANGE_BENCH_LENGTH (RANGE_WEAPONS_PER_BENCH * RANGE_WEAPON_SPACING)
+#define RANGE_WEAPON_DROP 0.08f
+#define RANGE_WEAPON_NEAR 0.6f
+/* the mirror: its line (y) south of the start, how far across it reaches
+each way and how far before it the player is mirrored; the line's width,
+and how far off the copy may be before it is put where it should be */
+#define RANGE_MIRROR_Y -8.0f
+#define RANGE_MIRROR_HALF_WIDTH 6.0f
+#define RANGE_MIRROR_DEPTH 6.0f
+#define RANGE_MIRROR_LINE_WIDTH 0.1f
+#define RANGE_MIRROR_LINE_HEIGHT 0.01f
+#define RANGE_MIRROR_DRIFT 0.25f
+/* the frame: its posts' width and height, and its bar's height */
+#define RANGE_MIRROR_POST_WIDTH 0.15f
+#define RANGE_MIRROR_FRAME_HEIGHT 1.4f
+#define RANGE_MIRROR_BAR_HEIGHT 0.12f
 
-/* the map the range is played on, and its shaders (Blood Gulch's own) */
+/* the map the range is played on, and its materials' shaders (Blood
+Gulch's own): their groups and paths */
 static char const range_map_name[] = "levels\\test\\bloodgulch\\bloodgulch";
-static char const range_floor_shader[] = "levels\\b30\\shaders\\metal flat generic";
-static char const range_wall_shader[] = "levels\\b30\\shaders\\metal panels generic ext";
+static struct
+{
+	unsigned long group_tag;
+	char const *path;
+} const range_shaders[NUMBER_OF_RANGE_MATERIALS] =
+{
+	{ SHADER_ENVIRONMENT_GROUP_TAG, "levels\\b30\\shaders\\metal flat generic" },
+	{ SHADER_ENVIRONMENT_GROUP_TAG, "levels\\b30\\shaders\\metal panels generic ext" },
+	{ SHADER_ENVIRONMENT_GROUP_TAG, "levels\\test\\bloodgulch\\shaders\\cap_metal" },
+	{ SHADER_TRANSPARENT_GROUP_TAG, "scenery\\teleporter_shield\\shaders\\teleporter_shield" },
+};
 
 /* ---------- structures */
 
@@ -205,6 +305,33 @@ struct range_writer
 	boolean full;
 };
 
+/* a collision face: its normal (towards the room's empty space), its
+corners (the collision bsp's vertices), its material and flags */
+struct range_face
+{
+	real_vector3d normal;
+	long corners[4];
+	short material;
+	byte flags;
+};
+
+/* the collision bsp's faces and vertices, as they are laid out, and its
+bsp3d's planes (the faces', then those between the benches) and nodes, and
+each face's node */
+struct range_layout
+{
+	struct range_face faces[MAXIMUM_RANGE_FACES];
+	short face_count;
+	real_point3d vertices[MAXIMUM_RANGE_COLLISION_VERTICES];
+	short vertex_count;
+	short bench_count;
+	real_plane3d planes[MAXIMUM_RANGE_PLANES];
+	short plane_count;
+	struct bsp3d_node nodes[MAXIMUM_RANGE_NODES];
+	short node_count;
+	short face_nodes[MAXIMUM_RANGE_FACES];
+};
+
 /* a material's vertices as they are made, and its surfaces' */
 struct range_material_build
 {
@@ -235,6 +362,22 @@ static struct
 	struct player_starting_location starting_locations[MAXIMUM_RANGE_STARTING_LOCATIONS];
 	short starting_location_count;
 	long players_count;
+
+	/* the profile's weapons the level added, each laid on a bench: the
+	weapon lying there, and when its place was last seen empty (NONE: not
+	empty) */
+	long weapons[MAXIMUM_RANGE_WEAPONS];
+	short weapon_count;
+	long weapon_objects[MAXIMUM_RANGE_WEAPONS];
+	long weapon_empty_since[MAXIMUM_RANGE_WEAPONS];
+	long next_check_time;
+
+	/* the mirror's copy of the player (NONE: none), the player's unit it
+	copies, and whether the player stood before the mirror (the HUD says
+	what it is as the player steps up) */
+	long mirror_unit;
+	long mirrored_unit;
+	boolean before_mirror;
 } firing_range;
 
 /* ---------- private code: the bsp's room */
@@ -310,6 +453,14 @@ static void range_vector(
 	vector->k = k;
 }
 
+static void range_cross(
+	real_vector3d const *a,
+	real_vector3d const *b,
+	real_vector3d *result)
+{
+	range_vector(result, a->j * b->k - a->k * b->j, a->k * b->i - a->i * b->k, a->i * b->j - a->j * b->i);
+}
+
 /* `count` points' order counter-clockwise about `normal`, seen from its
 front (each's angle about their middle) */
 static void range_ring_order(
@@ -337,8 +488,7 @@ static void range_ring_order(
 		u.j /= length;
 		u.k /= length;
 	}
-	range_vector(&v, normal->j * u.k - normal->k * u.j, normal->k * u.i - normal->i * u.k,
-		normal->i * u.j - normal->j * u.i);
+	range_cross(normal, &u, &v);
 	for (index = 0; index < count; index++)
 	{
 		middle.x += points[index].x / count;
@@ -369,111 +519,251 @@ static void range_ring_order(
 	}
 }
 
-/* each face's inward normal (its plane's: n.p = d), and the box's corner
-(bit 0: east, 1: north, 2: the ceiling's) a face's corners are */
-static void range_face_normal(
-	short face,
-	real_vector3d *normal)
+/* ---------- private code: the layout */
+
+static void range_tree_make(
+	struct range_layout *layout);
+
+/* a box's face on an axis (0: x, 1: y, 2: z) at its low or high side: its
+outward normal, and its corners (a box's corner: bit 0 its high x, bit 1
+its high y, bit 2 its high z) */
+static void range_box_face(
+	struct range_layout *layout,
+	long first_corner,
+	short axis,
+	boolean high,
+	boolean inward,
+	short material,
+	byte flags)
 {
-	switch (face)
+	struct range_face *face = &layout->faces[layout->face_count++];
+	real sign = (high ? 1.0f : -1.0f) * (inward ? -1.0f : 1.0f);
+	short corner;
+	short count = 0;
+
+	range_vector(&face->normal, axis == 0 ? sign : 0.0f, axis == 1 ? sign : 0.0f, axis == 2 ? sign : 0.0f);
+	for (corner = 0; corner < BOX_CORNERS; corner++)
 	{
-	case _range_face_floor: range_vector(normal, 0.0f, 0.0f, 1.0f); break;
-	case _range_face_east: range_vector(normal, -1.0f, 0.0f, 0.0f); break;
-	case _range_face_west: range_vector(normal, 1.0f, 0.0f, 0.0f); break;
-	case _range_face_north: range_vector(normal, 0.0f, -1.0f, 0.0f); break;
-	case _range_face_south: range_vector(normal, 0.0f, 1.0f, 0.0f); break;
-	default: range_vector(normal, 0.0f, 0.0f, -1.0f); break;
+		if (((corner >> axis) & 1) == (high ? 1 : 0))
+			face->corners[count++] = first_corner + corner;
 	}
+	face->material = material;
+	face->flags = flags;
 }
 
-static boolean range_face_has_corner(
-	short face,
-	short corner)
+static long range_box_corners(
+	struct range_layout *layout,
+	real x0,
+	real x1,
+	real y0,
+	real y1,
+	real z0,
+	real z1)
 {
-	switch (face)
-	{
-	case _range_face_floor: return !(corner & 4);
-	case _range_face_east: return (corner & 1) != 0;
-	case _range_face_west: return !(corner & 1);
-	case _range_face_north: return (corner & 2) != 0;
-	case _range_face_south: return !(corner & 2);
-	default: return (corner & 4) != 0;
-	}
+	long first = layout->vertex_count;
+	short corner;
+
+	for (corner = 0; corner < BOX_CORNERS; corner++)
+		range_point(&layout->vertices[layout->vertex_count++], corner & 1 ? x1 : x0, corner & 2 ? y1 : y0,
+			corner & 4 ? z1 : z0);
+	return first;
 }
 
-static void range_corner(
-	short corner,
-	real_point3d *point)
+/* a bench's bounds (its index of the benches) */
+static void range_bench_bounds(
+	short bench,
+	real_rectangle3d *bounds)
 {
-	range_point(point, corner & 1 ? RANGE_HALF_WIDTH : -RANGE_HALF_WIDTH,
-		corner & 2 ? RANGE_HALF_WIDTH : -RANGE_HALF_WIDTH, corner & 4 ? RANGE_CEILING : 0.0f);
+	real x = RANGE_BENCH_FIRST_X - bench * RANGE_BENCH_SPACING;
+
+	bounds->x0 = x - RANGE_BENCH_WIDTH * 0.5f;
+	bounds->x1 = x + RANGE_BENCH_WIDTH * 0.5f;
+	bounds->y0 = -RANGE_BENCH_LENGTH * 0.5f;
+	bounds->y1 = RANGE_BENCH_LENGTH * 0.5f;
+	bounds->z0 = 0.0f;
+	bounds->z1 = RANGE_BENCH_HEIGHT;
+}
+
+/* where a weapon of the profile's is laid (its index of the weapons) */
+static void range_weapon_place(
+	short weapon,
+	real_point3d *place)
+{
+	real_rectangle3d bounds;
+
+	range_bench_bounds((short)(weapon / RANGE_WEAPONS_PER_BENCH), &bounds);
+	range_point(place, (bounds.x0 + bounds.x1) * 0.5f,
+		bounds.y1 - RANGE_WEAPON_SPACING * ((weapon % RANGE_WEAPONS_PER_BENCH) + 0.5f),
+		bounds.z1 + RANGE_WEAPON_DROP);
+}
+
+static void range_layout_make(
+	struct range_layout *layout,
+	short weapon_count)
+{
+	long first;
+	short bench;
+
+	csmemset(layout, 0, sizeof(*layout));
+	/* (the room: in this order, its faces' nodes the first) */
+	first = range_box_corners(layout, -RANGE_HALF_WIDTH, RANGE_HALF_WIDTH, -RANGE_HALF_WIDTH, RANGE_HALF_WIDTH,
+		0.0f, RANGE_CEILING);
+	range_box_face(layout, first, 2, FALSE, TRUE, 0, 0);
+	range_box_face(layout, first, 0, TRUE, TRUE, 1, 0);
+	range_box_face(layout, first, 0, FALSE, TRUE, 1, 0);
+	range_box_face(layout, first, 1, TRUE, TRUE, 1, 0);
+	range_box_face(layout, first, 1, FALSE, TRUE, 1, 0);
+	/* (the ceiling unseen: the collision's alone) */
+	range_box_face(layout, first, 2, TRUE, TRUE, 1, FLAG(1));
+	layout->bench_count = (short)((weapon_count + RANGE_WEAPONS_PER_BENCH - 1) / RANGE_WEAPONS_PER_BENCH);
+	for (bench = 0; bench < layout->bench_count; bench++)
+	{
+		real_rectangle3d bounds;
+
+		range_bench_bounds(bench, &bounds);
+		first = range_box_corners(layout, bounds.x0, bounds.x1, bounds.y0, bounds.y1, bounds.z0, bounds.z1);
+		range_box_face(layout, first, 2, TRUE, FALSE, 2, 0);
+		range_box_face(layout, first, 0, TRUE, FALSE, 2, 0);
+		range_box_face(layout, first, 0, FALSE, FALSE, 2, 0);
+		range_box_face(layout, first, 1, TRUE, FALSE, 2, 0);
+		range_box_face(layout, first, 1, FALSE, FALSE, 2, 0);
+	}
+	range_tree_make(layout);
 }
 
 /* ---------- private code: the collision bsp */
 
+/* a node of a plane, and its children */
+static short range_node_add(
+	struct range_layout *layout,
+	short plane,
+	long back,
+	long front)
+{
+	short node = layout->node_count++;
+
+	layout->nodes[node].plane_designator = plane;
+	layout->nodes[node].children[0] = back;
+	layout->nodes[node].children[1] = front;
+	return node;
+}
+
+/* the benches from `first` to `last`: one's nodes (the leaf in front of
+each, the next behind, solid behind the last), else a plane between the
+halves (the eastern in front) */
+static long range_benches_tree(
+	struct range_layout *layout,
+	short first,
+	short last)
+{
+	long leaf = (long)(0 | LONG_MIN);
+
+	if (first == last)
+	{
+		short face = (short)(NUMBER_OF_ROOM_FACES + first * NUMBER_OF_BENCH_FACES);
+		short node = layout->node_count;
+		short index;
+
+		for (index = 0; index < NUMBER_OF_BENCH_FACES; index++)
+		{
+			layout->face_nodes[face + index] = range_node_add(layout, (short)(face + index),
+				index + 1 < NUMBER_OF_BENCH_FACES ? node + index + 1 : NONE, leaf);
+		}
+		return node;
+	}
+	{
+		short middle = (short)((first + last) / 2);
+		real_rectangle3d east;
+		real_rectangle3d west;
+		short plane = layout->plane_count++;
+		short node;
+
+		range_bench_bounds(middle, &east);
+		range_bench_bounds((short)(middle + 1), &west);
+		range_vector(&layout->planes[plane].n, 1.0f, 0.0f, 0.0f);
+		layout->planes[plane].d = (east.x0 + west.x1) * 0.5f;
+		node = range_node_add(layout, plane, NONE, NONE);
+		layout->nodes[node].children[1] = range_benches_tree(layout, first, middle);
+		layout->nodes[node].children[0] = range_benches_tree(layout, (short)(middle + 1), last);
+		return node;
+	}
+}
+
+/* the bsp3d: the faces' planes, the room's chain, then the benches' tree */
+static void range_tree_make(
+	struct range_layout *layout)
+{
+	short face;
+
+	layout->plane_count = layout->face_count;
+	layout->node_count = 0;
+	for (face = 0; face < layout->face_count; face++)
+	{
+		struct range_face const *source = &layout->faces[face];
+		real_point3d const *point = &layout->vertices[source->corners[0]];
+
+		layout->planes[face].n = source->normal;
+		layout->planes[face].d = source->normal.i * point->x + source->normal.j * point->y +
+			source->normal.k * point->z;
+	}
+	for (face = 0; face < NUMBER_OF_ROOM_FACES; face++)
+		layout->face_nodes[face] = range_node_add(layout, face, NONE, face + 1);
+	layout->nodes[NUMBER_OF_ROOM_FACES - 1].children[1] = layout->bench_count ?
+		range_benches_tree(layout, 0, (short)(layout->bench_count - 1)) : (long)(0 | LONG_MIN);
+}
+
 static boolean range_collision_bsp_write(
 	struct range_writer *writer,
+	struct range_layout const *layout,
 	struct collision_bsp *bsp)
 {
-	struct bsp3d_node *nodes = range_block(writer, &bsp->bsp3d.nodes, NUMBER_OF_RANGE_FACES, sizeof(*nodes));
-	real_plane3d *planes = range_block(writer, &bsp->bsp3d.planes, NUMBER_OF_RANGE_FACES, sizeof(*planes));
+	short face_count = layout->face_count;
+	struct bsp3d_node *nodes = range_block(writer, &bsp->bsp3d.nodes, layout->node_count, sizeof(*nodes));
+	real_plane3d *planes = range_block(writer, &bsp->bsp3d.planes, layout->plane_count, sizeof(*planes));
 	struct range_collision_leaf *leaf = range_block(writer, &bsp->leaves, 1, sizeof(*leaf));
-	struct range_bsp2d_reference *references = range_block(writer, &bsp->bsp2d_references, NUMBER_OF_RANGE_FACES,
+	struct range_bsp2d_reference *references = range_block(writer, &bsp->bsp2d_references, face_count,
 		sizeof(*references));
-	struct collision_surface *surfaces = range_block(writer, &bsp->surfaces, NUMBER_OF_RANGE_FACES,
-		sizeof(*surfaces));
-	struct collision_edge *edges = range_block(writer, &bsp->edges, RANGE_BOX_EDGES, sizeof(*edges));
-	struct collision_vertex *vertices = range_block(writer, &bsp->vertices, RANGE_BOX_VERTICES, sizeof(*vertices));
-	long face_edges[NUMBER_OF_RANGE_FACES][4];
+	struct collision_surface *surfaces = range_block(writer, &bsp->surfaces, face_count, sizeof(*surfaces));
+	struct collision_edge *edges = range_allocate(writer, MAXIMUM_RANGE_EDGES * sizeof(*edges));
+	struct collision_vertex *vertices = range_block(writer, &bsp->vertices, layout->vertex_count, sizeof(*vertices));
+	long face_edges[MAXIMUM_RANGE_FACES][4];
 	long edge_count = 0;
 	short face;
-	short corner;
+	short vertex;
 
 	if (writer->full)
 		return FALSE;
+	csmemcpy(nodes, layout->nodes, layout->node_count * sizeof(*nodes));
+	csmemcpy(planes, layout->planes, layout->plane_count * sizeof(*planes));
 	bsp->bsp2d.nodes.count = 0;
-	for (corner = 0; corner < RANGE_BOX_VERTICES; corner++)
+	for (vertex = 0; vertex < layout->vertex_count; vertex++)
 	{
-		range_corner(corner, &vertices[corner].point);
-		vertices[corner].first_edge_index = NONE;
+		vertices[vertex].point = layout->vertices[vertex];
+		vertices[vertex].first_edge_index = NONE;
 	}
-	for (face = 0; face < NUMBER_OF_RANGE_FACES; face++)
+	for (face = 0; face < face_count; face++)
 	{
+		struct range_face const *source = &layout->faces[face];
 		real_point3d points[4];
-		short corners[4];
 		short order[4];
-		short count = 0;
 		short index;
 
-		range_face_normal(face, &planes[face].n);
-		for (corner = 0; corner < RANGE_BOX_VERTICES; corner++)
-		{
-			if (range_face_has_corner(face, corner))
-			{
-				corners[count] = corner;
-				range_corner(corner, &points[count++]);
-			}
-		}
-		planes[face].d = planes[face].n.i * points[0].x + planes[face].n.j * points[0].y +
-			planes[face].n.k * points[0].z;
-		/* (its back solid, its front the next plane's, the last's the leaf) */
-		nodes[face].plane_designator = face;
-		nodes[face].children[0] = NONE;
-		nodes[face].children[1] = face + 1 < NUMBER_OF_RANGE_FACES ? face + 1 : (long)(0 | LONG_MIN);
+		for (index = 0; index < 4; index++)
+			points[index] = layout->vertices[source->corners[index]];
 		references[face].plane_designator = face;
 		references[face].root_index = (long)((unsigned long)face | (unsigned long)LONG_MIN);
 		surfaces[face].plane_designator = face;
-		surfaces[face].flags = face == _range_face_ceiling ? FLAG(1) : 0;
+		surfaces[face].flags = source->flags;
 		surfaces[face].breakable_surface_index = (byte)NONE;
-		surfaces[face].material_index = face == _range_face_floor ? 0 : 1;
+		surfaces[face].material_index = source->material;
 
 		/* (its edges, each shared with the face across it, which walks it
-		the other way) */
-		range_ring_order(points, 4, &planes[face].n, order);
+		the other way: a bench's bottom edges have none) */
+		range_ring_order(points, 4, &source->normal, order);
 		for (index = 0; index < 4; index++)
 		{
-			long from = corners[order[index]];
-			long to = corners[order[(index + 1) % 4]];
+			long from = source->corners[order[index]];
+			long to = source->corners[order[(index + 1) % 4]];
 			long edge;
 
 			for (edge = 0; edge < edge_count; edge++)
@@ -483,7 +773,7 @@ static boolean range_collision_bsp_write(
 			}
 			if (edge == edge_count)
 			{
-				if (edge_count == RANGE_BOX_EDGES)
+				if (edge_count == MAXIMUM_RANGE_EDGES)
 					return FALSE;
 				edges[edge].vertex_indices[0] = from;
 				edges[edge].vertex_indices[1] = to;
@@ -503,9 +793,7 @@ static boolean range_collision_bsp_write(
 		}
 		surfaces[face].first_edge_index = face_edges[face][0];
 	}
-	if (edge_count != RANGE_BOX_EDGES)
-		return FALSE;
-	for (face = 0; face < NUMBER_OF_RANGE_FACES; face++)
+	for (face = 0; face < face_count; face++)
 	{
 		short index;
 
@@ -516,8 +804,11 @@ static boolean range_collision_bsp_write(
 			edge->edge_indices[edge->surface_indices[0] == face ? 0 : 1] = face_edges[face][(index + 1) % 4];
 		}
 	}
+	bsp->edges.count = edge_count;
+	bsp->edges.address = edges;
+	bsp->edges.definition = NULL;
 	leaf->flags = 0;
-	leaf->bsp2d_reference_count = NUMBER_OF_RANGE_FACES;
+	leaf->bsp2d_reference_count = face_count;
 	leaf->first_bsp2d_reference_index = 0;
 
 	return TRUE;
@@ -540,8 +831,7 @@ static long range_vertex_add(
 	vertex->normal = *normal;
 	vertex->tangent = *tangent;
 	/* (binormal = normal x tangent) */
-	range_vector(&vertex->binormal, normal->j * tangent->k - normal->k * tangent->j,
-		normal->k * tangent->i - normal->i * tangent->k, normal->i * tangent->j - normal->j * tangent->i);
+	range_cross(normal, tangent, &vertex->binormal);
 	vertex->texcoord.x = u;
 	vertex->texcoord.y = v;
 	lightmap_vertex->incident_radiosity = *normal;
@@ -577,6 +867,33 @@ static void range_quad_add(
 	surfaces[*surface_index].vertex_indices[1] = (word)ring[3];
 	surfaces[*surface_index].vertex_indices[2] = (word)ring[2];
 	(*surface_index)++;
+}
+
+/* a quad of four corners of its own, textured by the two axes across its
+normal */
+static void range_flat_quad_add(
+	struct range_material_build *build,
+	struct structure_surface *surfaces,
+	long *surface_index,
+	real_point3d const *points,
+	real_vector3d const *normal)
+{
+	real_vector3d tangent;
+	long corners[4];
+	short index;
+
+	if (fabsf(normal->k) > 0.5f)
+		range_vector(&tangent, 1.0f, 0.0f, 0.0f);
+	else
+		range_vector(&tangent, -normal->j, normal->i, 0.0f);
+	for (index = 0; index < 4; index++)
+	{
+		real u = (points[index].x * tangent.i + points[index].y * tangent.j) * RANGE_TEXTURE_SCALE * 4.0f;
+		real v = (fabsf(normal->k) > 0.5f ? points[index].y : points[index].z) * RANGE_TEXTURE_SCALE * 4.0f;
+
+		corners[index] = range_vertex_add(build, &points[index], normal, &tangent, u, v);
+	}
+	range_quad_add(surfaces, surface_index, build, corners, normal);
 }
 
 /* the floor's tiles (surfaces from 0, a row of tiles at a time) */
@@ -624,6 +941,7 @@ static void range_floor_build(
 /* the walls' panels (each wall's surfaces in turn, east, west, north and
 south, along it) */
 static void range_walls_build(
+	struct range_layout const *layout,
 	struct range_material_build *build,
 	struct structure_surface *surfaces,
 	long *surface_index)
@@ -634,13 +952,11 @@ static void range_walls_build(
 	build->first_surface_index = *surface_index;
 	for (wall = 0; wall < NUMBER_OF_RANGE_WALLS; wall++)
 	{
-		short face = (short)(_range_face_east + wall);
-		real_vector3d normal;
+		real_vector3d normal = layout->faces[_range_face_east + wall].normal;
 		real_vector3d tangent;
 		long first_vertex = build->vertex_count;
 		short step;
 
-		range_face_normal(face, &normal);
 		/* (along the wall: the normal turned a quarter about up) */
 		range_vector(&tangent, -normal.j, normal.i, 0.0f);
 		for (step = 0; step <= RANGE_TILES; step++)
@@ -672,6 +988,110 @@ static void range_walls_build(
 	build->surface_count = *surface_index - build->first_surface_index;
 }
 
+/* a box of the mirror's frame (from x0 to x1 across, its depth the posts'
+width about the pane): a post's top and sides up to `height`, or (bar) the
+bar's six faces below it */
+static void range_box_quads_add(
+	struct range_material_build *build,
+	struct structure_surface *surfaces,
+	long *surface_index,
+	real x0,
+	real x1,
+	real height,
+	boolean bar)
+{
+	real y0 = RANGE_MIRROR_Y - RANGE_MIRROR_POST_WIDTH * 0.5f;
+	real y1 = RANGE_MIRROR_Y + RANGE_MIRROR_POST_WIDTH * 0.5f;
+	real z0 = bar ? height - RANGE_MIRROR_BAR_HEIGHT : 0.0f;
+	real z1 = height;
+	short face;
+
+	for (face = 0; face < 6; face++)
+	{
+		short axis = (short)(face / 2);
+		boolean high = (face & 1) != 0;
+		real_point3d corners[8];
+		real_point3d points[4];
+		real_vector3d normal;
+		short corner;
+		short count = 0;
+
+		/* (a post's bottom is on the floor: not drawn) */
+		if (!bar && axis == 2 && !high)
+			continue;
+		range_vector(&normal, axis == 0 ? (high ? 1.0f : -1.0f) : 0.0f, axis == 1 ? (high ? 1.0f : -1.0f) : 0.0f,
+			axis == 2 ? (high ? 1.0f : -1.0f) : 0.0f);
+		for (corner = 0; corner < BOX_CORNERS; corner++)
+		{
+			range_point(&corners[corner], corner & 1 ? x1 : x0, corner & 2 ? y1 : y0, corner & 4 ? z1 : z0);
+			if (((corner >> axis) & 1) == (high ? 1 : 0))
+				points[count++] = corners[corner];
+		}
+		range_flat_quad_add(build, surfaces, surface_index, points, &normal);
+	}
+}
+
+/* the details: each bench's faces (the collision's, drawn), then the
+mirror's line, a little above the floor */
+static void range_details_build(
+	struct range_layout const *layout,
+	struct range_material_build *build,
+	struct structure_surface *surfaces,
+	long *surface_index)
+{
+	real_point3d points[4];
+	real_vector3d up;
+	short face;
+
+	build->first_surface_index = *surface_index;
+	for (face = NUMBER_OF_ROOM_FACES; face < layout->face_count; face++)
+	{
+		short index;
+
+		for (index = 0; index < 4; index++)
+			points[index] = layout->vertices[layout->faces[face].corners[index]];
+		range_flat_quad_add(build, surfaces, surface_index, points, &layout->faces[face].normal);
+	}
+	range_vector(&up, 0.0f, 0.0f, 1.0f);
+	range_point(&points[0], -RANGE_MIRROR_HALF_WIDTH, RANGE_MIRROR_Y - RANGE_MIRROR_LINE_WIDTH * 0.5f,
+		RANGE_MIRROR_LINE_HEIGHT);
+	range_point(&points[1], RANGE_MIRROR_HALF_WIDTH, RANGE_MIRROR_Y - RANGE_MIRROR_LINE_WIDTH * 0.5f,
+		RANGE_MIRROR_LINE_HEIGHT);
+	range_point(&points[2], RANGE_MIRROR_HALF_WIDTH, RANGE_MIRROR_Y + RANGE_MIRROR_LINE_WIDTH * 0.5f,
+		RANGE_MIRROR_LINE_HEIGHT);
+	range_point(&points[3], -RANGE_MIRROR_HALF_WIDTH, RANGE_MIRROR_Y + RANGE_MIRROR_LINE_WIDTH * 0.5f,
+		RANGE_MIRROR_LINE_HEIGHT);
+	range_flat_quad_add(build, surfaces, surface_index, points, &up);
+	/* (the frame: a post each side, and the bar between their tops) */
+	range_box_quads_add(build, surfaces, surface_index, -RANGE_MIRROR_HALF_WIDTH - RANGE_MIRROR_POST_WIDTH,
+		-RANGE_MIRROR_HALF_WIDTH, RANGE_MIRROR_FRAME_HEIGHT, FALSE);
+	range_box_quads_add(build, surfaces, surface_index, RANGE_MIRROR_HALF_WIDTH,
+		RANGE_MIRROR_HALF_WIDTH + RANGE_MIRROR_POST_WIDTH, RANGE_MIRROR_FRAME_HEIGHT, FALSE);
+	range_box_quads_add(build, surfaces, surface_index, -RANGE_MIRROR_HALF_WIDTH, RANGE_MIRROR_HALF_WIDTH,
+		RANGE_MIRROR_FRAME_HEIGHT, TRUE);
+	build->surface_count = *surface_index - build->first_surface_index;
+}
+
+/* the mirror's pane, facing the player's side (north) */
+static void range_pane_build(
+	struct range_material_build *build,
+	struct structure_surface *surfaces,
+	long *surface_index)
+{
+	real_point3d points[4];
+	real_vector3d north;
+	real top = RANGE_MIRROR_FRAME_HEIGHT - RANGE_MIRROR_BAR_HEIGHT;
+
+	build->first_surface_index = *surface_index;
+	range_vector(&north, 0.0f, 1.0f, 0.0f);
+	range_point(&points[0], -RANGE_MIRROR_HALF_WIDTH, RANGE_MIRROR_Y, 0.0f);
+	range_point(&points[1], RANGE_MIRROR_HALF_WIDTH, RANGE_MIRROR_Y, 0.0f);
+	range_point(&points[2], RANGE_MIRROR_HALF_WIDTH, RANGE_MIRROR_Y, top);
+	range_point(&points[3], -RANGE_MIRROR_HALF_WIDTH, RANGE_MIRROR_Y, top);
+	range_flat_quad_add(build, surfaces, surface_index, points, &north);
+	build->surface_count = *surface_index - build->first_surface_index;
+}
+
 static void range_bounds_add(
 	real_rectangle3d *bounds,
 	real_point3d const *point,
@@ -692,7 +1112,7 @@ static void range_bounds_add(
 	bounds->z1 = MAX(bounds->z1, point->z);
 }
 
-/* a subcluster of `count` surfaces from `first` (of a material's) */
+/* a subcluster of the surfaces listed (of a material's) */
 static boolean range_subcluster_write(
 	struct range_writer *writer,
 	struct range_subcluster *subcluster,
@@ -724,12 +1144,15 @@ static boolean range_subcluster_write(
 /* ---------- private code: the bsp */
 
 static long range_shader(
-	char const *name)
+	short material)
 {
-	long shader = tag_loaded(SHADER_ENVIRONMENT_GROUP_TAG, name);
+	long shader = tag_loaded(range_shaders[material].group_tag, range_shaders[material].path);
 
+	/* (the details' is the walls' when the map has not got its own) */
+	if (shader == NONE && material == 2)
+		shader = tag_loaded(range_shaders[1].group_tag, range_shaders[1].path);
 	if (shader == NONE)
-		error(_error_silent, "firing range: the map has no shader %s", name);
+		error(_error_silent, "firing range: the map has no shader %s", range_shaders[material].path);
 	return shader;
 }
 
@@ -741,59 +1164,103 @@ static short range_shader_material_type(
 	return definition ? definition->base.physics.material_type : 0;
 }
 
+static void range_default_lighting(
+	struct render_lighting *lighting)
+{
+	lighting->ambient_color.red = 0.35f;
+	lighting->ambient_color.green = 0.35f;
+	lighting->ambient_color.blue = 0.38f;
+	lighting->distant_light_count = 2;
+	lighting->distant_lights[0].color.red = 0.9f;
+	lighting->distant_lights[0].color.green = 0.88f;
+	lighting->distant_lights[0].color.blue = 0.8f;
+	range_vector(&lighting->distant_lights[0].direction, 0.38f, 0.3f, -0.87f);
+	lighting->distant_lights[1].color.red = 0.25f;
+	lighting->distant_lights[1].color.green = 0.27f;
+	lighting->distant_lights[1].color.blue = 0.32f;
+	range_vector(&lighting->distant_lights[1].direction, -0.38f, -0.3f, -0.87f);
+	lighting->reflection_tint_color.alpha = 1.0f;
+	lighting->reflection_tint_color.red = 0.5f;
+	lighting->reflection_tint_color.green = 0.5f;
+	lighting->reflection_tint_color.blue = 0.5f;
+	range_vector(&lighting->shadow_vector, 0.38f, 0.3f, -0.87f);
+	lighting->shadow_color.red = 0.4f;
+	lighting->shadow_color.green = 0.4f;
+	lighting->shadow_color.blue = 0.45f;
+}
+
+/* how many vertices and surfaces a material has */
+static void range_material_counts(
+	struct range_layout const *layout,
+	short material,
+	long *vertices,
+	long *surfaces)
+{
+	long quads = (layout->face_count - NUMBER_OF_ROOM_FACES) + 1;
+
+	switch (material)
+	{
+	case 0:
+		*vertices = RANGE_FLOOR_VERTICES;
+		*surfaces = RANGE_FLOOR_SURFACES;
+		break;
+	case 1:
+		*vertices = NUMBER_OF_RANGE_WALLS * RANGE_WALL_VERTICES;
+		*surfaces = NUMBER_OF_RANGE_WALLS * RANGE_WALL_SURFACES;
+		break;
+	case 2:
+		*vertices = (quads + RANGE_MIRROR_FRAME_QUADS) * 4;
+		*surfaces = (quads + RANGE_MIRROR_FRAME_QUADS) * 2;
+		break;
+	default:
+		*vertices = 4;
+		*surfaces = 2;
+		break;
+	}
+}
+
 static boolean range_structure_bsp_build(
 	struct range_writer *writer,
+	struct range_layout const *layout,
 	struct structure_bsp **result)
 {
 	struct structure_bsp *bsp = range_allocate(writer, sizeof(*bsp));
 	struct collision_bsp *collision = bsp ? range_block(writer, &bsp->collision_bsp, 1, sizeof(*collision)) : NULL;
-	long shaders[2];
+	long shaders[NUMBER_OF_RANGE_MATERIALS];
 	struct structure_collision_material *collision_materials;
 	struct structure_surface *surfaces;
 	struct structure_lightmap *lightmap;
 	struct structure_material *materials;
-	struct range_material_build builds[2];
+	struct range_material_build builds[NUMBER_OF_RANGE_MATERIALS];
 	struct range_cluster *cluster;
 	struct range_subcluster *subclusters;
 	struct structure_leaf *leaf;
 	struct range_surface_reference *references;
 	byte_rectangle3d *nodes;
 	unsigned long *visibility;
+	long surface_count = 0;
 	long surface_index = 0;
+	short material_count = NUMBER_OF_RANGE_MATERIALS;
 	short material_index;
-	short index;
+	long index;
 
 	*result = bsp;
-	if (!collision || !range_collision_bsp_write(writer, collision))
+	if (!collision || !range_collision_bsp_write(writer, layout, collision))
 		return FALSE;
-	shaders[0] = range_shader(range_floor_shader);
-	shaders[1] = range_shader(range_wall_shader);
-	if (shaders[0] == NONE || shaders[1] == NONE)
-		return FALSE;
+	for (material_index = 0; material_index < NUMBER_OF_RANGE_MATERIALS; material_index++)
+	{
+		if ((shaders[material_index] = range_shader(material_index)) != NONE)
+			continue;
+		/* (no pane without its shader: the frame alone) */
+		if (material_index != _range_material_pane)
+			return FALSE;
+		material_count = _range_material_pane;
+	}
 
 	/* (no lightmap: drawn by the renderer's own light, objects lit by the
 	default lighting) */
 	range_reference(&bsp->lightmap_group, BITMAP_GROUP_TAG, NONE);
-	bsp->default_lighting.ambient_color.red = 0.35f;
-	bsp->default_lighting.ambient_color.green = 0.35f;
-	bsp->default_lighting.ambient_color.blue = 0.38f;
-	bsp->default_lighting.distant_light_count = 2;
-	bsp->default_lighting.distant_lights[0].color.red = 0.9f;
-	bsp->default_lighting.distant_lights[0].color.green = 0.88f;
-	bsp->default_lighting.distant_lights[0].color.blue = 0.8f;
-	range_vector(&bsp->default_lighting.distant_lights[0].direction, 0.38f, 0.3f, -0.87f);
-	bsp->default_lighting.distant_lights[1].color.red = 0.25f;
-	bsp->default_lighting.distant_lights[1].color.green = 0.27f;
-	bsp->default_lighting.distant_lights[1].color.blue = 0.32f;
-	range_vector(&bsp->default_lighting.distant_lights[1].direction, -0.38f, -0.3f, -0.87f);
-	bsp->default_lighting.reflection_tint_color.alpha = 1.0f;
-	bsp->default_lighting.reflection_tint_color.red = 0.5f;
-	bsp->default_lighting.reflection_tint_color.green = 0.5f;
-	bsp->default_lighting.reflection_tint_color.blue = 0.5f;
-	range_vector(&bsp->default_lighting.shadow_vector, 0.38f, 0.3f, -0.87f);
-	bsp->default_lighting.shadow_color.red = 0.4f;
-	bsp->default_lighting.shadow_color.green = 0.4f;
-	bsp->default_lighting.shadow_color.blue = 0.45f;
+	range_default_lighting(&bsp->default_lighting);
 	bsp->world_bounds.x0 = -RANGE_HALF_WIDTH;
 	bsp->world_bounds.x1 = RANGE_HALF_WIDTH;
 	bsp->world_bounds.y0 = -RANGE_HALF_WIDTH;
@@ -801,25 +1268,40 @@ static boolean range_structure_bsp_build(
 	bsp->world_bounds.z0 = 0.0f;
 	bsp->world_bounds.z1 = RANGE_CEILING;
 
-	collision_materials = range_block(writer, &bsp->collision_materials, 2, sizeof(*collision_materials));
-	surfaces = range_block(writer, &bsp->surfaces, RANGE_SURFACES, sizeof(*surfaces));
+	for (material_index = 0; material_index < material_count; material_index++)
+	{
+		long vertex_count;
+		long material_surfaces;
+
+		range_material_counts(layout, material_index, &vertex_count, &material_surfaces);
+		surface_count += material_surfaces;
+	}
+	collision_materials = range_block(writer, &bsp->collision_materials, NUMBER_OF_RANGE_COLLISION_MATERIALS,
+		sizeof(*collision_materials));
+	surfaces = range_block(writer, &bsp->surfaces, surface_count, sizeof(*surfaces));
 	lightmap = range_block(writer, &bsp->lightmaps, 1, sizeof(*lightmap));
-	materials = lightmap ? range_block(writer, &lightmap->materials, 2, sizeof(*materials)) : NULL;
+	materials = lightmap ? range_block(writer, &lightmap->materials, material_count, sizeof(*materials)) : NULL;
 	if (!collision_materials || !surfaces || !materials)
 		return FALSE;
-	for (material_index = 0; material_index < 2; material_index++)
+	for (material_index = 0; material_index < material_count; material_index++)
 	{
-		long vertex_count = material_index ? NUMBER_OF_RANGE_WALLS * RANGE_WALL_VERTICES : RANGE_FLOOR_VERTICES;
-		unsigned long vertex_bytes = (unsigned long)vertex_count *
-			(sizeof(struct range_vertex) + sizeof(struct range_lightmap_vertex));
-		byte *vertex_data = range_allocate(writer, vertex_bytes);
+		long vertex_count;
+		long material_surfaces;
+		unsigned long vertex_bytes;
+		byte *vertex_data;
 
-		if (!vertex_data)
+		range_material_counts(layout, material_index, &vertex_count, &material_surfaces);
+		vertex_bytes = (unsigned long)vertex_count *
+			(sizeof(struct range_vertex) + sizeof(struct range_lightmap_vertex));
+		if (!(vertex_data = range_allocate(writer, vertex_bytes)))
 			return FALSE;
-		range_reference(&collision_materials[material_index].shader, SHADER_ENVIRONMENT_GROUP_TAG,
-			shaders[material_index]);
-		collision_materials[material_index].runtime_physics_material_type =
-			range_shader_material_type(shaders[material_index]);
+		if (material_index < NUMBER_OF_RANGE_COLLISION_MATERIALS)
+		{
+			range_reference(&collision_materials[material_index].shader, SHADER_ENVIRONMENT_GROUP_TAG,
+				shaders[material_index]);
+			collision_materials[material_index].runtime_physics_material_type =
+				range_shader_material_type(shaders[material_index]);
+		}
 		/* (the lightmap vertices follow the vertices, as
 		custom_edition_geometry.c reads them) */
 		builds[material_index].vertices = (struct range_vertex *)vertex_data;
@@ -830,13 +1312,18 @@ static boolean range_structure_bsp_build(
 		materials[material_index].uncompressed_vertex_data.address = vertex_data;
 	}
 	range_floor_build(&builds[0], surfaces, &surface_index);
-	range_walls_build(&builds[1], surfaces, &surface_index);
+	range_walls_build(layout, &builds[1], surfaces, &surface_index);
+	range_details_build(layout, &builds[2], surfaces, &surface_index);
+	if (material_count > _range_material_pane)
+		range_pane_build(&builds[_range_material_pane], surfaces, &surface_index);
+	if (surface_index != surface_count)
+		return FALSE;
 	lightmap->bitmap_index = NONE;
-	for (material_index = 0; material_index < 2; material_index++)
+	for (material_index = 0; material_index < material_count; material_index++)
 	{
 		struct structure_material *material = &materials[material_index];
 
-		range_reference(&material->shader, SHADER_ENVIRONMENT_GROUP_TAG, shaders[material_index]);
+		range_reference(&material->shader, range_shaders[material_index].group_tag, shaders[material_index]);
 		material->first_surface_index = builds[material_index].first_surface_index;
 		material->surface_count = builds[material_index].surface_count;
 		material->breakable_surface_index = NONE;
@@ -844,15 +1331,17 @@ static boolean range_structure_bsp_build(
 		material->vertices.count = builds[material_index].vertex_count;
 		material->lightmap_vertices.type = _rasterizer_vertex_type_environment_lightmap_uncompressed;
 		material->lightmap_vertices.count = builds[material_index].vertex_count;
-		range_point(&material->centroid, 0.0f, 0.0f, material_index ? RANGE_WALL_HEIGHT * 0.5f : 0.0f);
+		range_point(&material->centroid, 0.0f, material_index == _range_material_pane ? RANGE_MIRROR_Y : 0.0f,
+			material_index == 1 ? RANGE_WALL_HEIGHT * 0.5f : material_index == _range_material_pane ?
+			RANGE_MIRROR_FRAME_HEIGHT * 0.5f : 0.0f);
 		material->lighting = bsp->default_lighting;
 	}
 
 	/* (one cluster, which sees itself, its subclusters the floor's blocks
-	of tiles and each wall's quarters) */
+	of tiles, each wall's quarters and the details) */
 	cluster = range_block(writer, &bsp->clusters, 1, sizeof(*cluster));
-	subclusters = cluster ? range_block(writer, &cluster->subclusters, RANGE_SUBCLUSTER_COUNT,
-		sizeof(*subclusters)) : NULL;
+	subclusters = cluster ? range_block(writer, &cluster->subclusters, RANGE_ROOM_SUBCLUSTERS + 1 +
+		(material_count > _range_material_pane), sizeof(*subclusters)) : NULL;
 	visibility = range_allocate(writer, sizeof(unsigned long));
 	if (!subclusters || !visibility)
 		return FALSE;
@@ -897,32 +1386,56 @@ static boolean range_structure_bsp_build(
 
 		for (count = 0; count < RANGE_WALL_SURFACES / RANGE_SUBCLUSTERS; count++)
 			list[count] = first + count;
-		/* (a wall's vertices are its material's, as its surfaces name them:
-		the walls' build) */
 		if (!range_subcluster_write(writer, &subclusters[RANGE_SUBCLUSTERS * RANGE_SUBCLUSTERS + index], surfaces,
 			&builds[1], list, count))
 			return FALSE;
 	}
+	{
+		long list[MAXIMUM_RANGE_DETAIL_QUADS * 2];
+		long count;
+
+		for (count = 0; count < builds[2].surface_count; count++)
+			list[count] = builds[2].first_surface_index + count;
+		if (!range_subcluster_write(writer, &subclusters[RANGE_ROOM_SUBCLUSTERS], surfaces, &builds[2], list, count))
+			return FALSE;
+		/* (the pane its own) */
+		for (count = 0; material_count > _range_material_pane && count < builds[_range_material_pane].surface_count;
+			count++)
+			list[count] = builds[_range_material_pane].first_surface_index + count;
+		if (material_count > _range_material_pane && !range_subcluster_write(writer,
+			&subclusters[RANGE_ROOM_SUBCLUSTERS + 1], surfaces, &builds[_range_material_pane], list, count))
+			return FALSE;
+	}
 
 	/* (one leaf, the collision bsp's, of the cluster, naming every surface
-	by its plane's node; one node of whole bounds for each bsp3d node) */
+	by its face's node, the line by the floor's; one node of whole bounds
+	for each bsp3d node) */
 	leaf = range_block(writer, &bsp->leaves, 1, sizeof(*leaf));
-	references = range_block(writer, &bsp->surface_references, RANGE_SURFACES, sizeof(*references));
-	nodes = range_block(writer, &bsp->nodes, NUMBER_OF_RANGE_FACES, sizeof(*nodes));
+	references = range_block(writer, &bsp->surface_references, surface_count, sizeof(*references));
+	nodes = range_block(writer, &bsp->nodes, layout->node_count, sizeof(*nodes));
 	if (!leaf || !references || !nodes)
 		return FALSE;
 	leaf->bounds.x0 = leaf->bounds.y0 = leaf->bounds.z0 = 0;
 	leaf->bounds.x1 = leaf->bounds.y1 = leaf->bounds.z1 = 0xFF;
 	leaf->cluster_index = 0;
-	leaf->surface_reference_count = RANGE_SURFACES;
+	leaf->surface_reference_count = (short)surface_count;
 	leaf->first_surface_reference_index = 0;
-	for (index = 0; index < RANGE_SURFACES; index++)
+	for (index = 0; index < surface_count; index++)
 	{
+		long detail = index - builds[2].first_surface_index;
+
 		references[index].surface_index = index;
-		references[index].bsp3d_node_index = index < RANGE_FLOOR_SURFACES ? _range_face_floor :
-			_range_face_east + (index - RANGE_FLOOR_SURFACES) / RANGE_WALL_SURFACES;
+		if (index < RANGE_FLOOR_SURFACES)
+			references[index].bsp3d_node_index = layout->face_nodes[_range_face_floor];
+		else if (detail < 0)
+			references[index].bsp3d_node_index = layout->face_nodes[_range_face_east +
+				(index - RANGE_FLOOR_SURFACES) / RANGE_WALL_SURFACES];
+		else if (detail < (layout->face_count - NUMBER_OF_ROOM_FACES) * 2)
+			references[index].bsp3d_node_index = layout->face_nodes[NUMBER_OF_ROOM_FACES + detail / 2];
+		else
+			references[index].bsp3d_node_index = layout->face_nodes[_range_face_floor];
 	}
-	for (index = 0; index < NUMBER_OF_RANGE_FACES; index++)
+	for (index = 0; index < layout->node_count; index++)
 	{
 		nodes[index].x0 = nodes[index].y0 = nodes[index].z0 = 0;
 		nodes[index].x1 = nodes[index].y1 = nodes[index].z1 = 0xFF;
@@ -988,7 +1501,8 @@ static void range_scenario_patch(
 		location->structure_bsp_reference_index = 0;
 	}
 	error(_error_silent, "firing range: %s plays the range (%d of its blocks of objects taken out, %d starting "
-		"locations moved)", range_map_name, firing_range.emptied_count, firing_range.starting_location_count);
+		"locations moved, %d weapons laid out)", range_map_name, firing_range.emptied_count,
+		firing_range.starting_location_count, firing_range.weapon_count);
 }
 
 static void range_scenario_restore(
@@ -1021,6 +1535,232 @@ static boolean range_map_is(
 	return leaf && !strcasecmp(leaf, range_leaf);
 }
 
+/* ---------- private code: the weapons */
+
+/* whether a weapon of a definition lies (on the map, held by no one) near
+a place */
+static long range_weapon_lying(
+	long definition_index,
+	real_point3d const *place)
+{
+	struct object_iterator iterator;
+
+	object_iterator_new(&iterator, _object_mask_weapon, 0);
+	while (object_iterator_next(&iterator))
+	{
+		struct weapon_datum *weapon = weapon_get(iterator.index);
+		real dx = weapon->object.position.x - place->x;
+		real dy = weapon->object.position.y - place->y;
+		real dz = weapon->object.position.z - place->z;
+
+		if (weapon->definition_index == definition_index && weapon->object.parent_object_index == NONE &&
+			TEST_FLAG(weapon->object.flags, _object_connected_to_map_bit) &&
+			dx * dx + dy * dy + dz * dz < RANGE_WEAPON_NEAR * RANGE_WEAPON_NEAR)
+		{
+			return iterator.index;
+		}
+	}
+	return NONE;
+}
+
+/* a weapon laid in its place, its barrel to the east (towards the start) */
+static long range_weapon_lay(
+	short weapon)
+{
+	struct object_placement_data placement;
+	real_point3d place;
+
+	range_weapon_place(weapon, &place);
+	object_placement_data_new(&placement, firing_range.weapons[weapon], NONE);
+	placement.position = place;
+	range_vector(&placement.forward, 1.0f, 0.0f, 0.0f);
+	range_vector(&placement.up, 0.0f, 0.0f, 1.0f);
+	return object_new(&placement);
+}
+
+/* each weapon's place looked at: one empty a moment has its weapon laid
+there again */
+static void range_weapons_update(
+	long now)
+{
+	short weapon;
+
+	for (weapon = 0; weapon < firing_range.weapon_count; weapon++)
+	{
+		real_point3d place;
+
+		range_weapon_place(weapon, &place);
+		firing_range.weapon_objects[weapon] = range_weapon_lying(firing_range.weapons[weapon], &place);
+		if (firing_range.weapon_objects[weapon] != NONE)
+		{
+			firing_range.weapon_empty_since[weapon] = NONE;
+			continue;
+		}
+		/* (laid at once the first time, else a moment after it was taken) */
+		if (firing_range.weapon_empty_since[weapon] == NONE)
+			firing_range.weapon_empty_since[weapon] = now - (firing_range.next_check_time ? 0 : RANGE_REFILL_TICKS);
+		if (now - firing_range.weapon_empty_since[weapon] >= RANGE_REFILL_TICKS)
+		{
+			firing_range.weapon_objects[weapon] = range_weapon_lay(weapon);
+			firing_range.weapon_empty_since[weapon] = NONE;
+		}
+	}
+}
+
+/* ---------- private code: the mirror */
+
+/* a point, and a vector, turned about the mirror's line */
+static void range_mirror_point(
+	real_point3d const *point,
+	real_point3d *result)
+{
+	range_point(result, point->x, 2.0f * RANGE_MIRROR_Y - point->y, point->z);
+}
+
+static void range_mirror_vector(
+	real_vector3d const *vector,
+	real_vector3d *result)
+{
+	range_vector(result, vector->i, -vector->j, vector->k);
+}
+
+/* whether the player's unit stands before the mirror */
+static boolean range_before_mirror(
+	struct unit_datum const *unit)
+{
+	real_point3d const *position = &unit->object.position;
+
+	return position->y > RANGE_MIRROR_Y && position->y < RANGE_MIRROR_Y + RANGE_MIRROR_DEPTH &&
+		fabsf(position->x) < RANGE_MIRROR_HALF_WIDTH;
+}
+
+static void range_mirror_delete(
+	void)
+{
+	if (firing_range.mirror_unit != NONE &&
+		object_try_and_get_and_verify_type(firing_range.mirror_unit, _object_mask_unit))
+	{
+		unit_delete_all_weapons(firing_range.mirror_unit);
+		object_delete(firing_range.mirror_unit);
+	}
+	firing_range.mirror_unit = NONE;
+	firing_range.mirrored_unit = NONE;
+}
+
+static void range_mirror_create(
+	long unit_index)
+{
+	struct unit_datum *unit = unit_get(unit_index);
+	struct object_placement_data placement;
+	long mirror;
+
+	object_placement_data_new(&placement, unit->definition_index, NONE);
+	range_mirror_point(&unit->object.position, &placement.position);
+	range_mirror_vector(&unit->object.forward, &placement.forward);
+	range_vector(&placement.up, 0.0f, 0.0f, 1.0f);
+	mirror = object_new(&placement);
+	if (mirror == NONE || !object_try_and_get_and_verify_type(mirror, _object_mask_unit))
+	{
+		error(_error_silent, "firing range: the mirror's copy of %s could not be made",
+			tag_get_name(unit->definition_index));
+		if (mirror != NONE)
+			object_delete(mirror);
+		return;
+	}
+	unit_set_actively_controlled(mirror, TRUE);
+	firing_range.mirror_unit = mirror;
+	firing_range.mirrored_unit = unit_index;
+}
+
+/* the copy's weapons the player's, slot for slot (a slot of another kind
+of weapon emptied and given a new one of the player's kind), the one in
+hand the player's, their rounds, and its grenades */
+static void range_mirror_equip(
+	long unit_index)
+{
+	struct unit_datum *unit = unit_get(unit_index);
+	struct unit_datum *mirror = unit_get(firing_range.mirror_unit);
+	short slot;
+
+	for (slot = 0; slot < MAXIMUM_WEAPONS_PER_UNIT; slot++)
+	{
+		long held = unit->unit.weapon_object_indices[slot];
+		long copied = mirror->unit.weapon_object_indices[slot];
+		long wanted = held == NONE ? NONE : weapon_get(held)->definition_index;
+		struct object_placement_data placement;
+		long copy;
+
+		if (wanted == (copied == NONE ? NONE : weapon_get(copied)->definition_index))
+			continue;
+		if (copied != NONE)
+		{
+			unit_network_forget_weapon(firing_range.mirror_unit, slot);
+			object_delete(copied);
+		}
+		if (wanted == NONE)
+			continue;
+		object_placement_data_new(&placement, wanted, NONE);
+		placement.position = mirror->object.position;
+		copy = object_new(&placement);
+		if (copy != NONE)
+			unit_network_add_weapon(firing_range.mirror_unit, copy, slot);
+	}
+	/* (the one in hand gone: the player's readied, as the copy readies any) */
+	if (unit->unit.current_weapon_index >= 0 && unit->unit.current_weapon_index < MAXIMUM_WEAPONS_PER_UNIT &&
+		(mirror->unit.current_weapon_index == NONE ||
+		mirror->unit.weapon_object_indices[mirror->unit.current_weapon_index] == NONE))
+	{
+		mirror->unit.desired_weapon_index = unit->unit.current_weapon_index;
+	}
+	for (slot = 0; slot < MAXIMUM_WEAPONS_PER_UNIT; slot++)
+	{
+		long held = unit->unit.weapon_object_indices[slot];
+		long copied = mirror->unit.weapon_object_indices[slot];
+
+		if (held != NONE && copied != NONE)
+		{
+			struct weapon_datum *from = weapon_get(held);
+			struct weapon_datum *to = weapon_get(copied);
+
+			csmemcpy(to->weapon.magazines, from->weapon.magazines, sizeof(to->weapon.magazines));
+			to->weapon.heat = from->weapon.heat;
+		}
+	}
+	csmemcpy(mirror->unit.grenade_counts, unit->unit.grenade_counts, sizeof(mirror->unit.grenade_counts));
+}
+
+static void range_mirror_update(
+	void)
+{
+	long player_index = local_player_get_player_index(0);
+	long unit_index = player_index == NONE ? NONE : player_get(player_index)->unit_index;
+	struct unit_datum *unit = unit_index == NONE ? NULL :
+		(struct unit_datum *)object_try_and_get_and_verify_type(unit_index, _object_mask_unit);
+	boolean before = unit && unit->object.parent_object_index == NONE && range_before_mirror(unit);
+
+	if (firing_range.mirror_unit != NONE &&
+		(!object_try_and_get_and_verify_type(firing_range.mirror_unit, _object_mask_unit) ||
+		firing_range.mirrored_unit != unit_index))
+	{
+		range_mirror_delete();
+	}
+	/* (before the mirror, on foot, the copy, and the HUD saying what it is
+	as the player steps up; else none) */
+	if (!before)
+	{
+		range_mirror_delete();
+		firing_range.before_mirror = FALSE;
+		return;
+	}
+	if (!firing_range.before_mirror)
+		hud_print_message(0, L"MIRROR: your copy moves as you do. Step back to leave it.");
+	firing_range.before_mirror = TRUE;
+	if (firing_range.mirror_unit == NONE)
+		range_mirror_create(unit_index);
+	if (firing_range.mirror_unit != NONE)
+		range_mirror_equip(unit_index);
+}
+
 /* ---------- public code */
 
 char const *firing_range_map_name(
@@ -1049,6 +1789,36 @@ char const *firing_range_profile(
 	return firing_range.active ? firing_range.profile : "";
 }
 
+char const *firing_range_level_profile(
+	char const *scenario_name)
+{
+	return firing_range.requested && range_map_is(scenario_name) && firing_range.profile[0] ? firing_range.profile :
+		NULL;
+}
+
+void firing_range_tags_injected(
+	long const *roots,
+	long count)
+{
+	long index;
+
+	firing_range.weapon_count = 0;
+	for (index = 0; index < count && firing_range.weapon_count < MAXIMUM_RANGE_WEAPONS; index++)
+	{
+		short known;
+
+		if (roots[index] == NONE || tag_get_group_tag(roots[index]) != WEAPON_GROUP_TAG)
+			continue;
+		for (known = 0; known < firing_range.weapon_count && firing_range.weapons[known] != roots[index]; known++)
+			;
+		if (known == firing_range.weapon_count)
+			firing_range.weapons[firing_range.weapon_count++] = roots[index];
+	}
+	if (count > 0 && firing_range.weapon_count == MAXIMUM_RANGE_WEAPONS)
+		error(_error_silent, "firing range: %d of the profile's weapons laid out, the most there is room for",
+			MAXIMUM_RANGE_WEAPONS);
+}
+
 void firing_range_tags_loaded(
 	char const *scenario_name,
 	long scenario_tag_index)
@@ -1056,10 +1826,24 @@ void firing_range_tags_loaded(
 	struct scenario *scenario;
 
 	firing_range.active = FALSE;
+	firing_range.mirror_unit = NONE;
+	firing_range.mirrored_unit = NONE;
+	firing_range.next_check_time = 0;
+	firing_range.before_mirror = FALSE;
+	{
+		short weapon;
+
+		for (weapon = 0; weapon < MAXIMUM_RANGE_WEAPONS; weapon++)
+		{
+			firing_range.weapon_objects[weapon] = NONE;
+			firing_range.weapon_empty_since[weapon] = NONE;
+		}
+	}
 	/* (another map loaded: the range is left) */
 	if (!firing_range.requested || !range_map_is(scenario_name))
 	{
 		firing_range.requested = FALSE;
+		firing_range.weapon_count = 0;
 		return;
 	}
 	scenario = scenario_tag_index == NONE ? NULL : (struct scenario *)tag_get(SCENARIO_GROUP_TAG, scenario_tag_index);
@@ -1067,6 +1851,7 @@ void firing_range_tags_loaded(
 	{
 		error(_error_silent, "firing range: %s has no structure bsp to stand for", range_map_name);
 		firing_range.requested = FALSE;
+		firing_range.weapon_count = 0;
 		return;
 	}
 	firing_range.active = TRUE;
@@ -1078,24 +1863,29 @@ void firing_range_tags_unloaded(
 {
 	range_scenario_restore();
 	firing_range.active = FALSE;
+	firing_range.weapon_count = 0;
+	firing_range.mirror_unit = NONE;
+	firing_range.mirrored_unit = NONE;
 }
 
 boolean firing_range_structure_bsp_write(
 	void *base_address,
 	long size)
 {
+	static struct range_layout layout;
 	struct range_writer writer;
 	struct range_structure_bsp_header *header;
 	struct structure_bsp *bsp = NULL;
 
 	if (!firing_range.active || !base_address || size <= 0)
 		return FALSE;
+	range_layout_make(&layout, firing_range.weapon_count);
 	writer.base = base_address;
 	writer.size = (unsigned long)size;
 	writer.used = 0;
 	writer.full = FALSE;
 	header = range_allocate(&writer, sizeof(*header));
-	if (!header || !range_structure_bsp_build(&writer, &bsp))
+	if (!header || !range_structure_bsp_build(&writer, &layout, &bsp))
 	{
 		error(_error_silent, "firing range: the plane does not fit the map's %ld bytes of structure bsp (or its "
 			"shaders are missing): the map's is played", size);
@@ -1110,8 +1900,9 @@ boolean firing_range_structure_bsp_write(
 	header->index_buffers = header;
 	header->signature = STRUCTURE_BSP_HEADER_SIGNATURE;
 	firing_range.bsp_written = TRUE;
-	error(_error_silent, "firing range: the plane's structure bsp written (%lu bytes of %ld): %d surfaces, %d "
-		"collision surfaces", writer.used, size, RANGE_SURFACES, NUMBER_OF_RANGE_FACES);
+	error(_error_silent, "firing range: the plane's structure bsp written (%lu bytes of %ld): %ld surfaces, %d "
+		"collision surfaces, %d benches", writer.used, size, bsp->surfaces.count, layout.face_count,
+		layout.bench_count);
 
 	return TRUE;
 }
@@ -1126,4 +1917,72 @@ void firing_range_structure_bsp_unloaded(
 	void)
 {
 	firing_range.bsp_written = FALSE;
+}
+
+void firing_range_tick(
+	void)
+{
+	long now;
+
+	if (!firing_range.active || !firing_range.bsp_written)
+		return;
+	now = game_time_get();
+	/* (the weapons once the player is on its feet, then a few times a
+	second) */
+	if (firing_range.weapon_count && local_player_get_player_index(0) != NONE &&
+		player_get(local_player_get_player_index(0))->unit_index != NONE &&
+		now >= firing_range.next_check_time)
+	{
+		range_weapons_update(now);
+		firing_range.next_check_time = now + RANGE_CHECK_TICKS;
+	}
+	range_mirror_update();
+}
+
+void firing_range_player_control(
+	long unit_index,
+	struct unit_control_data const *control)
+{
+	struct unit_control_data mirrored;
+	struct unit_datum *unit;
+	struct unit_datum *mirror;
+	real_point3d place;
+	real dx;
+	real dy;
+
+	if (!firing_range.active || firing_range.mirror_unit == NONE || unit_index != firing_range.mirrored_unit ||
+		!object_try_and_get_and_verify_type(firing_range.mirror_unit, _object_mask_unit))
+		return;
+	unit = unit_get(unit_index);
+	mirror = unit_get(firing_range.mirror_unit);
+	/* (its controls the player's turned about the pane: the way it faces
+	and aims reflected, its sideways throttle the other way; it picks up
+	nothing) */
+	mirrored = *control;
+	mirrored.control_flags &= (word)~FLAG(_unit_control_action_bit);
+	range_mirror_vector(&control->facing_vector, &mirrored.facing_vector);
+	range_mirror_vector(&control->aiming_vector, &mirrored.aiming_vector);
+	range_mirror_vector(&control->looking_vector, &mirrored.looking_vector);
+	mirrored.throttle.j = -control->throttle.j;
+	unit_control(firing_range.mirror_unit, &mirrored);
+	/* (put where it should be when it has drifted: the floor is the same
+	both sides, but a step's push differs) */
+	range_mirror_point(&unit->object.position, &place);
+	dx = mirror->object.position.x - place.x;
+	dy = mirror->object.position.y - place.y;
+	if (dx * dx + dy * dy > RANGE_MIRROR_DRIFT * RANGE_MIRROR_DRIFT)
+	{
+		real_vector3d forward;
+
+		range_mirror_vector(&unit->object.forward, &forward);
+		object_set_position(firing_range.mirror_unit, &place, &forward, &unit->object.up);
+	}
+}
+
+boolean firing_range_damage_ignored(
+	long owner_object_index,
+	long object_index)
+{
+	return firing_range.active && firing_range.mirror_unit != NONE &&
+		(owner_object_index == firing_range.mirror_unit || object_index == firing_range.mirror_unit);
 }

@@ -487,8 +487,19 @@ until deleted by hand.
 ## The Tag Editor
 
 The overlay menu's **TAG EDITOR** (L, R and the d-pad's down) changes the
-weapon the first player holds, when it is one of the played profile's: its
-values (zoom, heat, triggers, magazines, projectiles, damage) and its HUD.
+weapon the first player holds, when it is one of the played profile's. Its
+first list has three:
+
+- **Weapon stats**: the weapon's own values (zoom, heat, autoaim), its
+  triggers, magazines and projectiles (their damage below them), and its
+  melee damage.
+- **HUD**: its HUD and the parent HUDs it draws too (below).
+- **Tag settings**: **Name**, the name the profile shows it by (A types it
+  over the game: the d-pad's up and down change the letter chosen, left and
+  right choose another, Back deletes the one before, A keeps it, B does
+  not), and **Remove from profile** (A twice: the level loaded keeps it
+  until it loads again).
+
 Each change is kept in the weapon's tag of the profile, under
 `[tags.edits]` in `profile.toml`, a number by its key
 (`port/linux/game/tag_editor.c` lists them), and every level that adds the
@@ -514,15 +525,29 @@ changes for them too until the level loads again.
 
 A profile's list ends with **FIRING RANGE**: A, from the main menu's
 settings, plays a level alone to try the profile's tags in
-(`port/linux/game/firing_range.c`). It will have four parts: north the
-AI, east their animations, west the weapons on pedestals, south a copy of
-the player that mirrors its moves (to see the third-person animations).
-For now it is the plane alone.
+(`port/linux/game/firing_range.c`). Its parts, from the start in the
+middle facing north:
+
+- **West**, the weapons: each of the profile's weapons the level could add,
+  once, laid on benches (twelve to a bench, the first 6 units west of the
+  start, the next 3 further each, 96 weapons at most). A weapon taken is
+  laid there again 3 seconds after its place is empty.
+- **South**, the mirror: a frame 8 units south, 12 wide and 1.4 high (drawn
+  alone: it does not stop you), with a pane of the teleporters' shield in
+  it. Standing up to 6 units before the pane (within the frame across), the
+  HUD says so, and a copy of you stands where your reflection is, holding
+  your weapons slot for slot (one picked up or swapped is its too, in
+  hand), and moves as you do: it is given your controls each tick, turned
+  about the pane, so it walks, jumps, crouches, aims, fires, reloads,
+  throws and strikes as you do, seen from the front. Stepping back lets it
+  go. Its shots and grenades hurt no one, and nothing hurts it.
+- **North** (the AI) and **east** (their animations) are to come.
 
 The level is Blood Gulch (`maps/bloodgulch.map`), for its sky, sounds and
 shaders, with its ground never read: the game writes a structure bsp of its
 own where the map's would be, a square floor 160 world units across, walled
-round 8 units high (and solid past the walls, up to a ceiling 100 up). It
+round 8 units high (and solid past the walls, up to a ceiling 100 up), with
+the benches its own (their collision and their faces). It
 has no lightmap: the floor is drawn with the renderer's own directional
 light, and objects are lit by the bsp's default lighting. While it plays,
 Blood Gulch's scenery, vehicles, items, netgame flags and decals are taken

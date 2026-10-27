@@ -6642,9 +6642,10 @@ static void tags_details_text(short place, char *title, size_t title_size, char 
 		if (place == TAGS_FIRING_RANGE_ROW)
 		{
 			snprintf(title, title_size, "FIRING RANGE");
-			snprintf(text, text_size, "A plays a plane to try %s's weapons and AI on, alone: north the AI, east their "
-				"animations, west the weapons, south your own animations.\n \nFor now the plane alone, to walk "
-				"on. The pause menu's QUIT leaves it.", profile);
+			snprintf(text, text_size, "A plays a plane to try %s's weapons and AI on, alone. West: its weapons on "
+				"benches, each back a moment after it is taken. South: a mirror, behind which a copy of you moves "
+				"as you do while you stand before it. North (the AI) and east (their animations) are to come.\n \n"
+				"The pause menu's QUIT leaves it.", profile);
 			break;
 		}
 		snprintf(title, title_size, "%s", profile);

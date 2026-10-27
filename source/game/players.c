@@ -5004,6 +5004,14 @@ void players_update_before_game(
 						0x2E5,
 						(NONE == control_data.zoom_level) || ((control_data.zoom_level >= 0)));
 					unit_control(player->unit_index, &control_data);
+					/* port: the firing range's mirror moves as the player does
+					(port/linux/game/firing_range.c) */
+					{
+						extern void firing_range_player_control(long unit_index,
+							struct unit_control_data const *control);
+
+						firing_range_player_control(player->unit_index, &control_data);
+					}
 				}
 				else if (unit->unit.swarm_actor_index == NONE &&
 					unit->unit.actor_index == NONE)

@@ -104,6 +104,9 @@ enum
 	HUD_BLINK_MILLISECONDS = 1200,
 	HUD_BLINK_PERIOD_MILLISECONDS = 200,
 	HUD_BLINK_OFFSET = 4000,
+	/* a name typed: its length at most (a profile's settings' values are
+	31 characters: port_tag_profiles.c) */
+	RENAME_LENGTH = 31,
 
 	/* a weapon HUD interface's elements (tag_schema_effects.c's structures):
 	of each its bytes, where its placement is in it, and where an element
@@ -209,6 +212,11 @@ enum edit_hud_value
 enum editor_page
 {
 	_page_root,
+	/* the first list's: the weapon's values, its HUDs, and its tag's
+	settings in the profile */
+	_page_stats,
+	_page_huds,
+	_page_settings,
 	_page_weapon,
 	_page_trigger,
 	_page_magazine,
@@ -228,6 +236,9 @@ enum editor_action
 	_action_hud_element,
 	_action_reset_page,
 	_action_reset_all,
+	/* the tag's name in the profile typed, and the tag taken out of it */
+	_action_rename,
+	_action_remove,
 };
 
 /* ---------- structures */
@@ -321,6 +332,8 @@ int port_tag_profiles_tag_set_edit(long profile, long tag, char const *key, doub
 int port_tag_profiles_tag_clear_edit(long profile, long tag, char const *key);
 int port_tag_profiles_tag_clear_edits(long profile, long tag, char const *prefix);
 int port_tag_profiles_shared(long profile);
+int port_tag_profiles_tag_set_option(long profile, long tag, const char *key, const char *value);
+int port_tag_profiles_tag_remove(long profile, long tag);
 char const *port_tag_mp_profiles_option(long profile, char const *key);
 
 /* ---------- the values */
@@ -469,7 +482,18 @@ static struct
 	unsigned long blink_until;
 	boolean blinked;
 	point2d blink_offset;
+
+	/* the name being typed (in place of the lists, as a HUD element is
+	moved), its character chosen, and the buttons' repeat */
+	boolean renaming;
+	char name[RENAME_LENGTH + 1];
+	short cursor;
+	unsigned long rename_repeat_at;
 } tag_editor;
+
+/* the characters a name is typed of, in the order up steps through them */
+static char const rename_characters[] =
+	" ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.()'+#";
 
 static void pending_write(void);
 
@@ -1849,9 +1873,24 @@ static short page_rows(
 	}
 	if (page == _page_root)
 	{
+		row_add(rows, &count, _tag_editor_row_text, _action_none, 0, 0, 0, NULL, context->name);
+		row_add(rows, &count, _tag_editor_row_folder, _action_page, _page_stats, 0, 0, NULL, "Weapon stats");
+		if (weapon_hud_levels(context->weapon))
+			row_add(rows, &count, _tag_editor_row_folder, _action_page, _page_huds, 0, 0, NULL, "HUD");
+		row_add(rows, &count, _tag_editor_row_folder, _action_page, _page_settings, 0, 0, NULL, "Tag settings");
+		row_add(rows, &count, _tag_editor_row_command, _action_reset_all, 0, 0, 0, NULL, "Reset all edits");
+		return count;
+	}
+	if (page == _page_settings)
+	{
+		row_add(rows, &count, _tag_editor_row_command, _action_rename, 0, 0, 0, NULL, "Name");
+		row_add(rows, &count, _tag_editor_row_command, _action_remove, 0, 0, 0, NULL, "Remove from profile");
+		return count;
+	}
+	if (page == _page_stats)
+	{
 		short trigger_index;
 
-		row_add(rows, &count, _tag_editor_row_text, _action_none, 0, 0, 0, NULL, context->name);
 		row_add(rows, &count, _tag_editor_row_folder, _action_page, _page_weapon, 0, 0, NULL, "Weapon");
 		for (trigger_index = 0; trigger_index < definition->weapon.triggers.count && trigger_index < 2; trigger_index++)
 		{
@@ -1876,6 +1915,12 @@ static short page_rows(
 			row_add(rows, &count, _tag_editor_row_folder, _action_page, _page_damage, NONE, _damage_melee, NULL,
 				damage_part_names[_damage_melee]);
 		}
+		return count;
+	}
+	if (page == _page_huds)
+	{
+		short trigger_index;
+
 		/* (its HUD, and each parent HUD it draws too) */
 		for (trigger_index = 0; trigger_index < weapon_hud_levels(context->weapon); trigger_index++)
 		{
@@ -1889,7 +1934,6 @@ static short page_rows(
 				snprintf(label, sizeof(label), "HUD");
 			row_add(rows, &count, _tag_editor_row_folder, _action_page, _page_hud, trigger_index, 0, NULL, label);
 		}
-		row_add(rows, &count, _tag_editor_row_command, _action_reset_all, 0, 0, 0, NULL, "Reset all edits");
 		return count;
 	}
 	/* (a list of a shared tag: whether its edits are every sharer's) */
@@ -2119,6 +2163,9 @@ char const *tag_editor_menu_title(
 
 	switch (page)
 	{
+	case _page_stats: return "Weapon stats";
+	case _page_huds: return "HUD";
+	case _page_settings: return "Tag settings";
 	case _page_weapon: return "Weapon";
 	case _page_trigger: return index ? "Secondary trigger" : "Primary trigger";
 	case _page_magazine: return index ? "Second magazine" : "Magazine";
@@ -2236,6 +2283,16 @@ static void row_fill(
 		if (tag_editor.confirming == row)
 			snprintf(result->note, sizeof(result->note), "Press A again to put them back as the map had them.");
 		break;
+	case _action_rename:
+		snprintf(result->value, sizeof(result->value), "%s", context.name);
+		snprintf(result->note, sizeof(result->note), "A types its name in the profile (the menus' and the HUD "
+			"notices'; its path stays).");
+		break;
+	case _action_remove:
+		snprintf(result->note, sizeof(result->note), "%s", tag_editor.confirming == row ?
+			"Press A again to take it out of the profile, and delete its bundle." :
+			"Takes it out of the profile (this level keeps it until it loads again).");
+		break;
 	}
 }
 
@@ -2277,7 +2334,7 @@ void tag_editor_menu_choose(
 	if (row < 0 || row >= count)
 		return;
 	spec = &rows[row];
-	if (spec->action != _action_reset_page && spec->action != _action_reset_all)
+	if (spec->action != _action_reset_page && spec->action != _action_reset_all && spec->action != _action_remove)
 		tag_editor.confirming = NONE;
 	switch (spec->action)
 	{
@@ -2335,6 +2392,41 @@ void tag_editor_menu_choose(
 		original_keep(context.weapon, key, placement->scale.i);
 		row_key(spec, _hud_scale_y, key, sizeof(key));
 		original_keep(context.weapon, key, placement->scale.j);
+		return;
+	}
+	case _action_rename:
+		/* (typed over the game, as a HUD element is moved) */
+		snprintf(tag_editor.name, sizeof(tag_editor.name), "%s", context.name);
+		tag_editor.cursor = (short)strlen(tag_editor.name);
+		tag_editor.rename_repeat_at = 0;
+		tag_editor.held_since = 0;
+		tag_editor.renaming = TRUE;
+		return;
+	case _action_remove:
+	{
+		char name[TAG_EDITOR_LABEL_LENGTH];
+
+		if (tag_editor.confirming != row)
+		{
+			tag_editor.confirming = row;
+			return;
+		}
+		tag_editor.confirming = NONE;
+		/* (the edits made written first: the profile's tags are numbered
+		again once one is taken out) */
+		pending_write();
+		snprintf(name, sizeof(name), "%s", context.name);
+		if (port_tag_profiles_tag_remove(context.profile, context.tag))
+		{
+			error(_error_silent, "tag editor: %s taken out of its profile", name);
+			snprintf(status, status_size, "%s: taken out of the profile", name);
+			tag_editor.depth = 0;
+			*selected = 0;
+		}
+		else
+		{
+			snprintf(status, status_size, "%s could not be taken out (the log says why)", name);
+		}
 		return;
 	}
 	case _action_reset_page:
@@ -2435,6 +2527,11 @@ boolean tag_editor_menu_back(
 	short *selected)
 {
 	tag_editor.confirming = NONE;
+	if (tag_editor.renaming)
+	{
+		tag_editor.renaming = FALSE;
+		return TRUE;
+	}
 	if (tag_editor.capturing)
 	{
 		capture_end();
@@ -2451,7 +2548,89 @@ boolean tag_editor_menu_back(
 boolean tag_editor_menu_capturing(
 	void)
 {
-	return tag_editor.capturing;
+	return tag_editor.capturing || tag_editor.renaming;
+}
+
+/* the name typed: left and right the character chosen (past the end, one
+more), up and down it changed (held, again and again), Back the one before
+it taken out, A the name kept, B none */
+static void rename_capture(
+	unsigned long pressed,
+	unsigned long held)
+{
+	enum
+	{
+		CHANGES = (1UL << HALO_OVERLAY_PAD_UP) | (1UL << HALO_OVERLAY_PAD_DOWN),
+	};
+	unsigned long now = system_milliseconds();
+	unsigned long changes = pressed & CHANGES;
+	short length = (short)strlen(tag_editor.name);
+
+	if (pressed & (1UL << HALO_OVERLAY_PAD_B))
+	{
+		tag_editor.renaming = FALSE;
+		return;
+	}
+	if (pressed & (1UL << HALO_OVERLAY_PAD_A))
+	{
+		struct editor_context context;
+		short end = length;
+
+		/* (no spaces at its end; none at all: its path's last part again) */
+		while (end > 0 && tag_editor.name[end - 1] == ' ')
+			tag_editor.name[--end] = 0;
+		editor_context(&context);
+		tag_editor.renaming = FALSE;
+		if (context.weapon == NONE || context.profile == NONE ||
+			!port_tag_profiles_tag_set_option(context.profile, context.tag, "name", tag_editor.name))
+		{
+			error(_error_silent, "tag editor: the name %s could not be written", tag_editor.name);
+			return;
+		}
+		error(_error_silent, "tag editor: %s named %s", tag_get_name(context.weapon), tag_editor.name);
+		return;
+	}
+	if (pressed & (1UL << HALO_OVERLAY_PAD_BACK))
+	{
+		if (tag_editor.cursor > 0)
+		{
+			memmove(tag_editor.name + tag_editor.cursor - 1, tag_editor.name + tag_editor.cursor,
+				(size_t)(length - tag_editor.cursor + 1));
+			tag_editor.cursor--;
+		}
+		return;
+	}
+	if (pressed & (1UL << HALO_OVERLAY_PAD_LEFT))
+		tag_editor.cursor = (short)MAX(tag_editor.cursor - 1, 0);
+	if (pressed & (1UL << HALO_OVERLAY_PAD_RIGHT))
+		tag_editor.cursor = (short)MIN(tag_editor.cursor + 1, MIN(length, RENAME_LENGTH - 1));
+	/* (up or down held changes it again and again) */
+	if (changes)
+	{
+		tag_editor.rename_repeat_at = now + HUD_REPEAT_DELAY_MILLISECONDS;
+	}
+	else if ((held & CHANGES) && tag_editor.rename_repeat_at && (long)(now - tag_editor.rename_repeat_at) >= 0)
+	{
+		changes = held & CHANGES;
+		tag_editor.rename_repeat_at = now + HUD_REPEAT_MILLISECONDS * 2;
+	}
+	if (changes)
+	{
+		char current = tag_editor.cursor < length ? tag_editor.name[tag_editor.cursor] : ' ';
+		char const *found = strchr(rename_characters, current);
+		short count = (short)(sizeof(rename_characters) - 1);
+		short index = found && current ? (short)(found - rename_characters) : 0;
+
+		index = (short)((index + ((changes & (1UL << HALO_OVERLAY_PAD_UP)) ? 1 : count - 1)) % count);
+		if (tag_editor.cursor >= length)
+		{
+			if (length >= RENAME_LENGTH)
+				return;
+			tag_editor.name[length] = 0;
+			tag_editor.name[length + 1] = 0;
+		}
+		tag_editor.name[tag_editor.cursor] = rename_characters[index];
+	}
 }
 
 void tag_editor_menu_capture(
@@ -2470,6 +2649,11 @@ void tag_editor_menu_capture(
 	short step;
 	char key[EDIT_KEY_LENGTH];
 
+	if (tag_editor.renaming)
+	{
+		rename_capture(pressed, held);
+		return;
+	}
 	editor_context(&context);
 	placement = context.weapon == NONE ? NULL : captured_placement(&context);
 	if (!placement)
@@ -2558,6 +2742,18 @@ void tag_editor_menu_capture_text(
 
 	first[0] = 0;
 	second[0] = 0;
+	/* (the name typed, the character chosen in brackets) */
+	if (tag_editor.renaming)
+	{
+		short length = (short)strlen(tag_editor.name);
+
+		snprintf(first, size, "NAME: %.*s[%c]%s", tag_editor.cursor, tag_editor.name,
+			tag_editor.cursor < length ? tag_editor.name[tag_editor.cursor] : ' ',
+			tag_editor.cursor < length ? tag_editor.name + tag_editor.cursor + 1 : "");
+		snprintf(second, size, "D-pad: up/down letter, left/right move   %%back-button Delete   %%a-button Save   "
+			"%%b-button Cancel");
+		return;
+	}
 	editor_context(&context);
 	placement = context.weapon == NONE ? NULL : captured_placement(&context);
 	if (!placement)
@@ -2589,6 +2785,8 @@ void tag_editor_menu_update(
 {
 	if (closing && tag_editor.capturing)
 		capture_end();
+	if (closing)
+		tag_editor.renaming = FALSE;
 	if (!closing && (long)(system_milliseconds() - tag_editor.changed_at) < EDITOR_WRITE_MILLISECONDS)
 		return;
 	pending_write();

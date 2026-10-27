@@ -1571,6 +1571,14 @@ void object_cause_damage(
 	/* port: the gametype's friendly fire (game_engine_friendly_damage) */
 	short friendly_damage;
 
+	/* port: the firing range's mirror's copy of the player hurts no one,
+	and nothing hurts it (port/linux/game/firing_range.c) */
+	{
+		extern boolean firing_range_damage_ignored(long owner_object_index, long object_index);
+
+		if (firing_range_damage_ignored(damage->owner_object_index, object_index))
+			return;
+	}
 	/* the distributed netcode (port/linux/NETCODE.md): the host deals
 	damage; a client reports its own players' hits instead, and the host
 	deals those (port/linux/game/network_damage.c) */

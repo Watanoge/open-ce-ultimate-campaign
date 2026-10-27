@@ -87,6 +87,8 @@ void platform_log(char const *format, ...);
 #include "tag_schema.h"
 #include "tag_injector.h"
 #include "tag_multiplayer.h"
+#include "firing_range.h"
+#include "../src/port_tag_profiles.h"
 
 #include <xtl.h>
 /* the port's zlib, the same one that unpacks a map while precaching it
@@ -3894,7 +3896,10 @@ void randomizer_tag_table_fingerprint(long *count, unsigned long *hash)
 the share's tags added as a profile's are to a campaign level, the stock
 HUDs its weapons want copied first, and its weapons told
 tag_multiplayer.c, which the host swaps the map's for */
-static void multiplayer_tags_loaded(char const *scenario_name, long profile)
+/* a profile's tags added to a level not of the campaign: a multiplayer
+game's shared ones (multiplayer: given the game's swaps and loadouts), or
+the firing range's */
+static void multiplayer_tags_loaded(char const *scenario_name, long profile, int multiplayer)
 {
 	int index;
 
@@ -3907,7 +3912,10 @@ static void multiplayer_tags_loaded(char const *scenario_name, long profile)
 		import_wanted();
 	}
 	custom_root_count = tag_injector_tags_load(custom_profile, custom_roots, custom_root_tags, CUSTOM_ROOT_MAX);
-	tag_multiplayer_level_loaded(custom_profile, custom_roots, custom_root_tags, custom_root_count);
+	if (multiplayer)
+		tag_multiplayer_level_loaded(custom_profile, custom_roots, custom_root_tags, custom_root_count);
+	else
+		firing_range_tags_injected(custom_roots, custom_root_count);
 	donor_reads = 0;
 	donor_misses = 0;
 	donor_logged = 0;
@@ -3923,8 +3931,8 @@ static void multiplayer_tags_loaded(char const *scenario_name, long profile)
 		unsigned long hash;
 
 		randomizer_tag_table_fingerprint(&count, &hash);
-		error(_error_silent, "tag multiplayer: %s's tag table: %ld tags, fingerprint %08lx", map_name_leaf, count,
-			hash);
+		error(_error_silent, "%s: %s's tag table: %ld tags, fingerprint %08lx",
+			multiplayer ? "tag multiplayer" : "firing range", map_name_leaf, count, hash);
 	}
 }
 
@@ -3947,7 +3955,24 @@ void randomizer_tags_loaded(char const *scenario_name)
 
 		if (profile != NONE)
 		{
-			multiplayer_tags_loaded(scenario_name, profile);
+			multiplayer_tags_loaded(scenario_name, profile, 1);
+			return;
+		}
+	}
+	/* (the firing range's profile, played alone on its map: firing_range.c) */
+	{
+		char const *range_profile = firing_range_level_profile(scenario_name);
+
+		if (range_profile)
+		{
+			long profile;
+
+			port_tag_profiles_scan();
+			profile = port_tag_profiles_find(range_profile);
+			if (profile != NONE)
+				multiplayer_tags_loaded(scenario_name, profile, 0);
+			else
+				error(_error_silent, "firing range: no profile %s", range_profile);
 			return;
 		}
 	}

@@ -34,6 +34,16 @@ boolean firing_range_active(
 char const *firing_range_profile(
 	void);
 
+/* randomizer.c's, as the range's level loads: the profile it plays (its
+folder's name; NULL when the level is not the range), and the weapons and
+actor variants its tags added (tag_injector_tags_load's roots), of which the
+weapons are laid out, each once, on the benches the bsp is written with */
+char const *firing_range_level_profile(
+	char const *scenario_name);
+void firing_range_tags_injected(
+	long const *roots,
+	long count);
+
 /* cache_files.c's tags_load and tags_unload: the range's scenario has its
 map's objects taken out and its players start on the plane (put back as the
 tags go) */
@@ -58,5 +68,21 @@ boolean firing_range_structure_bsp_written(
 	void);
 void firing_range_structure_bsp_unloaded(
 	void);
+
+/* game.c's, each tick of a level: the weapons put back on the benches,
+and the mirror's copy made, given the player's weapons, or let go */
+void firing_range_tick(
+	void);
+/* players.c's, as a player's controls are given its unit: the mirror's
+copy given them, turned about the mirror */
+struct unit_control_data;
+void firing_range_player_control(
+	long unit_index,
+	struct unit_control_data const *control);
+/* damage.c's: whether damage is not dealt, the mirror's copy's (it hurts
+no one) or to it (nothing hurts it) */
+boolean firing_range_damage_ignored(
+	long owner_object_index,
+	long object_index);
 
 #endif

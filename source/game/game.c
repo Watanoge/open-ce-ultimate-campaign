@@ -419,6 +419,13 @@ void game_tick(
 
 		tag_injector_tick();
 	}
+	/* port: the firing range's weapons put back, and its mirror's copy of
+	the player (port/linux/game/firing_range.c) */
+	{
+		extern void firing_range_tick(void);
+
+		firing_range_tick();
+	}
 	/* port: the campaign's score's time, counted on through checkpoints
 	(port/linux/game/campaign_score.c) */
 	{
