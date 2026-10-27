@@ -141,6 +141,7 @@ symbols in this file:
 #include "custom_edition_cache.h" /* port: port/linux/game/custom_edition_cache.c */
 #include "cache_file_formats.h" /* port: CUSTOM_EDITION_TAG_CACHE_BYTES */
 #include "map_share.h" /* port: port/linux/game/map_share.c */
+#include "firing_range.h" /* port: port/linux/game/firing_range.c */
 
 /* ---------- constants */
 
@@ -675,6 +676,9 @@ void scenario_tags_unload(
 	(port/linux/game/randomizer.c). Added before the mods' and the menus',
 	they go after them */
 	skulls_level_unloaded();
+	/* port: the firing range's scenario put back as its map has it
+	(port/linux/game/firing_range.c) */
+	firing_range_tags_unloaded();
 	{
 		extern void randomizer_tags_unloaded(void);
 
@@ -1423,6 +1427,9 @@ long scenario_tags_load(
 
 				randomizer_tags_loaded(scenario_name);
 			}
+			/* port: the firing range, played on this map: its objects taken
+			out, and its players on the plane (port/linux/game/firing_range.c) */
+			firing_range_tags_loaded(scenario_name, cache_file_globals.tag_header->scenario_tag_index);
 			skulls_level_loaded(cache_file_globals.tag_header->scenario_tag_index);
 			/* port: the menus' tags, added to the map's (port/linux/game/menu_tags.c) */
 			{
@@ -1464,6 +1471,8 @@ boolean scenario_structure_bsp_load(
 	byte *tag_cache_base_address;
 	/* port: the bsp's header, once read and checked */
 	struct cache_file_structure_bsp_header *structure_bsp_header;
+	/* port: whether it was written, not read (the firing range's) */
+	boolean generated;
 
 #if defined(HALO_ANDROID) || defined(HALO_MOVABLE_WINDOW)
 	/* the scenario's own tag data names where the level is read to, in an
@@ -1501,16 +1510,22 @@ boolean scenario_structure_bsp_load(
 			0xCD,
 			TAG_CACHE_SIZE - cache_file_globals.header.tag_data_size);
 	}
+	/* port: the firing range's plane is written where the map's bsp would
+	be read, with its pointers this process's (port/linux/game/firing_range.c) */
+	generated = firing_range_structure_bsp_write(reference->base_address, reference->file_size);
 	{
-		boolean read_complete;
+		boolean read_complete = TRUE;
 
-		cache_file_read(
-			NONE,
-			reference->file_offset,
-			reference->file_size,
-			reference->base_address,
-			&read_complete,
-			TRUE);
+		if (!generated)
+		{
+			cache_file_read(
+				NONE,
+				reference->file_offset,
+				reference->file_size,
+				reference->base_address,
+				&read_complete,
+				TRUE);
+		}
 		while (!read_complete)
 		{
 			SwitchToThread();
@@ -1524,7 +1539,7 @@ boolean scenario_structure_bsp_load(
 		leave what was read, is not loaded */
 		structure_bsp_header = reference->base_address;
 #if defined(HALO_ANDROID) || defined(HALO_MOVABLE_WINDOW)
-		if (read_complete == TRUE)
+		if (read_complete == TRUE && !generated)
 		{
 			cache_file_rebase_structure_bsp(structure_bsp_header);
 		}
@@ -1562,19 +1577,27 @@ boolean scenario_structure_bsp_load(
 	}
 
 	/* port: and checked against its schema, as the map's tags were
-	(port/linux/game/tag_validate.c; a Custom Edition map's too) */
-	if (!tag_validate_structure_bsp(
-		reference->structure_bsp.index,
-		reference->base_address,
-		reference->file_size))
+	(port/linux/game/tag_validate.c; a Custom Edition map's too). The
+	firing range's is this build's own, laid out as a Custom Edition bsp is,
+	which the checks of an Xbox map's would refuse */
+	if (!generated &&
+		!tag_validate_structure_bsp(
+			reference->structure_bsp.index,
+			reference->base_address,
+			reference->file_size))
 	{
 		return FALSE;
 	}
 	/* port: a Halo Custom Edition bsp has no Xbox vertex buffers: its
 	materials' vertices, as checked, are compressed and given buffers
-	(port/linux/game/custom_edition_geometry.c) */
-	if (custom_edition_cache_tags_loaded() && !custom_edition_structure_bsp_load(structure_bsp_header->base_address))
+	(port/linux/game/custom_edition_geometry.c); the firing range's too */
+	if ((custom_edition_cache_tags_loaded() || generated) &&
+		!custom_edition_structure_bsp_load(structure_bsp_header->base_address))
+	{
+		if (generated)
+			firing_range_structure_bsp_unloaded();
 		return FALSE;
+	}
 
 	cache_file_globals.structure_bsp_header = structure_bsp_header;
 	match_assert(
@@ -1603,9 +1626,10 @@ void scenario_structure_bsp_unload(
 
 	structure_bsp_header_deregister_vertex_buffers(cache_file_globals.structure_bsp_header);
 	/* port: the buffers a Halo Custom Edition bsp was given
-	(port/linux/game/custom_edition_geometry.c) */
-	if (custom_edition_cache_tags_loaded())
+	(port/linux/game/custom_edition_geometry.c), and the firing range's */
+	if (custom_edition_cache_tags_loaded() || firing_range_structure_bsp_written())
 		custom_edition_structure_bsp_unload();
+	firing_range_structure_bsp_unloaded();
 	tag_instance = cache_get_tag_instance(reference->structure_bsp.index);
 	match_assert(
 		"c:\\halo\\SOURCE\\cache\\cache_files.c",

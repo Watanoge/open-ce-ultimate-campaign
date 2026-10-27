@@ -510,6 +510,25 @@ While the level plays, a change is made to the tags it plays at once: a
 parent HUD shared with other weapons (**Edits apply to** names them)
 changes for them too until the level loads again.
 
+## The firing range
+
+A profile's list ends with **FIRING RANGE**: A, from the main menu's
+settings, plays a level alone to try the profile's tags in
+(`port/linux/game/firing_range.c`). It will have four parts: north the
+AI, east their animations, west the weapons on pedestals, south a copy of
+the player that mirrors its moves (to see the third-person animations).
+For now it is the plane alone.
+
+The level is Blood Gulch (`maps/bloodgulch.map`), for its sky, sounds and
+shaders, with its ground never read: the game writes a structure bsp of its
+own where the map's would be, a square floor 160 world units across, walled
+round 8 units high (and solid past the walls, up to a ceiling 100 up). It
+has no lightmap: the floor is drawn with the renderer's own directional
+light, and objects are lit by the bsp's default lighting. While it plays,
+Blood Gulch's scenery, vehicles, items, netgame flags and decals are taken
+out, and its players start at the middle facing north; the next time the
+map is loaded it is as it was. The pause menu's QUIT leaves the range.
+
 ## The game's log
 
 The game's log says what is taken out and added (`tag injector:`), and why
