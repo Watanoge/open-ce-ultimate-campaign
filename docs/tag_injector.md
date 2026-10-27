@@ -484,6 +484,32 @@ Not built yet: Custom Edition maps and the campaign; a profile's AI or
 equipment. Downloaded shares stay in `tag_injector/.shared`
 until deleted by hand.
 
+## The Tag Editor
+
+The overlay menu's **TAG EDITOR** (L, R and the d-pad's down) changes the
+weapon the first player holds, when it is one of the played profile's: its
+values (zoom, heat, triggers, magazines, projectiles, damage) and its HUD.
+Each change is kept in the weapon's tag of the profile, under
+`[tags.edits]` in `profile.toml`, a number by its key
+(`port/linux/game/tag_editor.c` lists them), and every level that adds the
+weapon gives it its edits; a network game's clients play the host's.
+
+**HUD** lists the weapon's HUD, and below it each **PARENT HUD** the HUD
+draws too (a Custom Edition HUD often keeps its visor, its ammunition
+counter's frame or its grenades in parent HUDs, shared by every weapon of
+the mod): their anchor, and each element with its bitmap's name. A on an
+element moves it over the game (the d-pad; A switches to its scale, Back
+puts it back, B is done); left or right on it hides it, and shows it again.
+A parent HUD's elements are its keys under `hud.parent1.` (its parent),
+`hud.parent2.` (that one's) and so on; a hidden one's `hide` is 1.
+
+A weapon given edits plays a copy of each tag they change (its HUD, and a
+parent HUD changed: every HUD up to it), named for its edits, so that the
+weapons that share them keep theirs; weapons edited alike share one copy.
+While the level plays, a change is made to the tags it plays at once: a
+parent HUD shared with other weapons (**Edits apply to** names them)
+changes for them too until the level loads again.
+
 ## The game's log
 
 The game's log says what is taken out and added (`tag injector:`), and why

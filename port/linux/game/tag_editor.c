@@ -18,6 +18,10 @@ by its key:
 	hud.anchor                       the corner its HUD is drawn from
 	hud.<element><n>.<x|y|sx|sy>     a HUD element's offset and scale
 	hud.<element><n>.<m>.<x|y|sx|sy> a crosshair's or overlay's item's
+	hud.<element><n>[.<m>].hide      1: the element (the item) not drawn
+	hud.parent<l>.<any of hud.'s>    of its HUD's parent HUD l levels up
+	                                 (parent1 its parent, parent2 that
+	                                 one's: a visor drawn for many weapons)
 
 each value as the tag keeps it (a projectile's speeds a tick's, angles in
 radians), which the menu shows as Guerilla does (a second's, degrees).
@@ -25,7 +29,8 @@ radians), which the menu shows as Guerilla does (a second's, degrees).
 A level adds a profile's weapons with their edits (tag_editor_weapon_loaded,
 from tag_injector_tags_load): the weapon's own values are changed in it, and
 a projectile, a damage effect, a detonation effect or a HUD it changes is
-given to it as a copy of its own (tag_injector_tag_copy), named for the
+given to it as a copy of its own (a parent HUD changed: every HUD up to it,
+each naming the next's copy) (tag_injector_tag_copy), named for the
 edits (its path, # and their hash), so that the other weapons that share it
 keep theirs, and those edited the same way share one copy: five weapons of
 one damage effect, two of them not edited, two edited one way and one
@@ -111,6 +116,21 @@ enum
 	HUD_ITEMS_OFFSET = 0x34,
 	HUD_CROSSHAIR_ITEM_BYTES = 0x6C,
 	HUD_OVERLAY_ITEM_BYTES = 0x88,
+	/* their bitmaps (a static's and a meter's, a crosshair's and an
+	overlay's: a number has none) */
+	HUD_ELEMENT_BITMAP_OFFSET = 0x48,
+	HUD_ITEMS_BITMAP_OFFSET = 0x24,
+	/* an element hidden: its map type (hud_weapon.c draws one whose bit
+	of the map's types is set: this bit never is), and an item hidden: its
+	runtime invalid flag (a crosshair's flags' bit 7, an overlay's bit 1) */
+	HUD_ELEMENT_MAP_TYPE_OFFSET = 0x04,
+	HUD_HIDDEN_MAP_TYPE = 15,
+	HUD_CROSSHAIR_ITEM_FLAGS_OFFSET = 0x48,
+	HUD_CROSSHAIR_ITEM_HIDDEN_FLAG = 1 << 7,
+	HUD_OVERLAY_ITEM_FLAGS_OFFSET = 0x4C,
+	HUD_OVERLAY_ITEM_HIDDEN_FLAG = 1 << 1,
+	/* a HUD and its parents (hud_weapon.c's MAXIMUM_WEAPON_HUD_DEFINITION_DEPTH) */
+	MAXIMUM_HUD_LEVELS = 16,
 };
 
 #define EDITOR_PI 3.14159265358979f
@@ -151,6 +171,12 @@ enum edit_kind
 	_kind_angle,
 	/* world units a tick, shown a second's */
 	_kind_speed,
+	/* whether a HUD element (its map type), a crosshair's item or an
+	overlay's (its flags: a short) is hidden, 1 or 0; kept as it was as
+	the short it is (value_raw) */
+	_kind_hidden_element,
+	_kind_hidden_crosshair_item,
+	_kind_hidden_overlay_item,
 };
 
 /* the HUD's elements, by what they are (the key's word) */
@@ -172,6 +198,9 @@ enum edit_hud_value
 	_hud_y,
 	_hud_scale_x,
 	_hud_scale_y,
+	NUMBER_OF_HUD_PLACEMENT_VALUES,
+	/* (whether it is drawn) */
+	_hud_hide = NUMBER_OF_HUD_PLACEMENT_VALUES,
 
 	NUMBER_OF_EDIT_HUD_VALUES
 };
@@ -218,8 +247,9 @@ struct edit_field
 };
 
 /* a key read: its field (NULL for the HUD's), of what (its trigger,
-magazine or projectile; its damage effect's part), or its HUD element (its
-kind, element and item: NONE for none) and value (NONE: the anchor) */
+magazine or projectile, or its HUD's level: 0 its own, 1 its parent; its
+damage effect's part), or its HUD element (its kind, element and item: NONE
+for none) and value (NONE: the anchor) */
 struct edit_key
 {
 	short target;
@@ -377,7 +407,7 @@ static char const *const hud_kind_keys[NUMBER_OF_EDIT_HUD_KINDS] =
 	{ "static", "meter", "number", "crosshair", "overlay" };
 static char const *const hud_kind_names[NUMBER_OF_EDIT_HUD_KINDS] =
 	{ "Static", "Meter", "Number", "Crosshair", "Overlay" };
-static char const *const hud_value_keys[NUMBER_OF_EDIT_HUD_VALUES] = { "x", "y", "sx", "sy" };
+static char const *const hud_value_keys[NUMBER_OF_EDIT_HUD_VALUES] = { "x", "y", "sx", "sy", "hide" };
 static char const *const anchor_names[NUMBER_OF_HUD_ANCHORS] =
 	{ "TOP LEFT", "TOP RIGHT", "BOTTOM LEFT", "BOTTOM RIGHT", "CENTRE" };
 
@@ -425,10 +455,11 @@ static struct
 	short pending_count;
 	unsigned long changed_at;
 
-	/* the HUD element moved (its kind, element and item), whether its
-	scale is (not its offset), the buttons' repeat, its blink, and its
-	placement as it was when it was chosen */
+	/* the HUD element moved (its HUD's level, its kind, element and
+	item), whether its scale is (not its offset), the buttons' repeat, its
+	blink, and its placement as it was when it was chosen */
 	boolean capturing;
+	short hud_level;
 	short hud_kind;
 	short hud_element;
 	short hud_item;
@@ -578,8 +609,39 @@ static long damage_effect(
 	return NONE;
 }
 
+/* a weapon's HUD of a level (0 its own, 1 its parent HUD, and so on), or
+NONE */
+static long weapon_hud(
+	long weapon,
+	short level)
+{
+	struct weapon_definition *definition = weapon_definition(weapon);
+	long hud = definition ? definition->weapon.interface_definition.hud_interface.index : NONE;
+	short up;
+
+	for (up = 0; up < MAX(level, 0) && up < MAXIMUM_HUD_LEVELS; up++)
+	{
+		struct weapon_hud_interface_definition *hud_definition = (struct weapon_hud_interface_definition *)tag_root(
+			WEAPON_HUD_GROUP_TAG, hud);
+
+		hud = hud_definition ? hud_definition->parent_hud.index : NONE;
+	}
+	return level < MAXIMUM_HUD_LEVELS && tag_root(WEAPON_HUD_GROUP_TAG, hud) ? hud : NONE;
+}
+
+/* how many HUDs a weapon draws (its own and its parents) */
+static short weapon_hud_levels(
+	long weapon)
+{
+	short levels = 0;
+
+	while (levels < MAXIMUM_HUD_LEVELS && weapon_hud(weapon, levels) != NONE)
+		levels++;
+	return levels;
+}
+
 /* the tag a key of a weapon's is a value of (the weapon's for its own, a
-trigger's and a magazine's): NONE for none */
+trigger's and a magazine's; a HUD's of its level): NONE for none */
 static long target_tag(
 	long weapon,
 	short target,
@@ -600,19 +662,19 @@ static long target_tag(
 	case _target_damage:
 		return damage_effect(weapon, part == _damage_melee || !trigger ? NONE : trigger->projectile.index, part);
 	case _target_hud:
-		return definition && tag_root(WEAPON_HUD_GROUP_TAG, definition->weapon.interface_definition.hud_interface.index) ?
-			definition->weapon.interface_definition.hud_interface.index : NONE;
+		return weapon_hud(weapon, index);
 	}
 	return NONE;
 }
 
-/* a HUD element's placement (its item's, for a crosshair's or an
-overlay's), or NULL */
-static struct hud_placement_definition *hud_placement(
+/* a HUD element (its item, for a crosshair's or an overlay's: `element`,
+when it is not NULL, its element), or NULL */
+static byte *hud_part(
 	long hud,
 	short kind,
 	short element,
-	short item)
+	short item,
+	byte **element_address)
 {
 	struct weapon_hud_interface_definition *definition = (struct weapon_hud_interface_definition *)tag_root(
 		WEAPON_HUD_GROUP_TAG, hud);
@@ -634,13 +696,80 @@ static struct hud_placement_definition *hud_placement(
 	if (element >= block->count || !block->address)
 		return NULL;
 	address = (byte *)block->address + element * bytes;
+	if (element_address)
+		*element_address = address;
 	if (kind == _hud_static || kind == _hud_meter || kind == _hud_number)
-		return (struct hud_placement_definition *)(address + HUD_ELEMENT_PLACEMENT_OFFSET);
+		return address;
 	block = (struct tag_block *)(address + HUD_ITEMS_OFFSET);
 	if (item < 0 || item >= block->count || !block->address)
 		return NULL;
-	return (struct hud_placement_definition *)((byte *)block->address +
-		item * (kind == _hud_crosshair ? HUD_CROSSHAIR_ITEM_BYTES : HUD_OVERLAY_ITEM_BYTES));
+	return (byte *)block->address + item * (kind == _hud_crosshair ? HUD_CROSSHAIR_ITEM_BYTES :
+		HUD_OVERLAY_ITEM_BYTES);
+}
+
+/* a HUD element's placement (its item's, for a crosshair's or an
+overlay's), or NULL */
+static struct hud_placement_definition *hud_placement(
+	long hud,
+	short kind,
+	short element,
+	short item)
+{
+	byte *address = hud_part(hud, kind, element, item, NULL);
+
+	if (!address)
+		return NULL;
+	return (struct hud_placement_definition *)(kind == _hud_crosshair || kind == _hud_overlay ? address :
+		address + HUD_ELEMENT_PLACEMENT_OFFSET);
+}
+
+/* where whether a HUD element (its item) is drawn is kept, and how, or
+NULL */
+static void *hud_hidden_address(
+	long hud,
+	short kind,
+	short element,
+	short item,
+	short *value_kind)
+{
+	byte *address = hud_part(hud, kind, element, item, NULL);
+
+	if (!address)
+		return NULL;
+	switch (kind)
+	{
+	case _hud_crosshair:
+		*value_kind = _kind_hidden_crosshair_item;
+		return address + HUD_CROSSHAIR_ITEM_FLAGS_OFFSET;
+	case _hud_overlay:
+		*value_kind = _kind_hidden_overlay_item;
+		return address + HUD_OVERLAY_ITEM_FLAGS_OFFSET;
+	}
+	*value_kind = _kind_hidden_element;
+	return address + HUD_ELEMENT_MAP_TYPE_OFFSET;
+}
+
+/* the last part of the path of a HUD element's bitmap ("" for none) */
+static char const *hud_bitmap_name(
+	long hud,
+	short kind,
+	short element)
+{
+	byte *address = NULL;
+	struct tag_reference const *reference;
+	char const *path;
+	char const *leaf;
+
+	hud_part(hud, kind, element, 0, &address);
+	if (kind == _hud_number || !address)
+		return "";
+	reference = (struct tag_reference const *)(address + (kind == _hud_crosshair || kind == _hud_overlay ?
+		HUD_ITEMS_BITMAP_OFFSET : HUD_ELEMENT_BITMAP_OFFSET));
+	path = reference->index == NONE ? NULL : tag_get_name(reference->index);
+	if (!path)
+		return "";
+	leaf = strrchr(path, '\\');
+	return leaf ? leaf + 1 : path;
 }
 
 /* how many elements of a kind a HUD has, and items an element */
@@ -766,16 +895,26 @@ static boolean key_parse(
 	}
 	if (!strncmp(key, "hud.", 4))
 	{
+		char const *words = key + 4;
 		short kind;
 
 		result->target = _target_hud;
-		if (!strcmp(key + 4, "anchor"))
+		result->index = 0;
+		/* (a parent HUD's: its level) */
+		if (prefix_number(words, "parent", &number, &rest))
+		{
+			if (number < 1 || number >= MAXIMUM_HUD_LEVELS)
+				return FALSE;
+			result->index = number;
+			words = rest;
+		}
+		if (!strcmp(words, "anchor"))
 			return TRUE;
 		for (kind = 0; kind < NUMBER_OF_EDIT_HUD_KINDS; kind++)
 		{
 			short value;
 
-			if (!prefix_number(key + 4, hud_kind_keys[kind], &number, &rest))
+			if (!prefix_number(words, hud_kind_keys[kind], &number, &rest))
 				continue;
 			result->hud_kind = kind;
 			result->hud_element = number;
@@ -824,12 +963,18 @@ static void key_prefix(
 		else
 			snprintf(prefix, size, "projectile%d.%s.", index, damage_part_keys[part]);
 		break;
-	case _target_hud: snprintf(prefix, size, "hud."); break;
+	case _target_hud:
+		if (index > 0)
+			snprintf(prefix, size, "hud.parent%d.", index);
+		else
+			snprintf(prefix, size, "hud.");
+		break;
 	default: prefix[0] = 0; break;
 	}
 }
 
 static void hud_key(
+	short level,
 	short kind,
 	short element,
 	short item,
@@ -837,12 +982,15 @@ static void hud_key(
 	char *key,
 	long size)
 {
+	char prefix[EDIT_KEY_LENGTH];
+
+	key_prefix(_target_hud, level, NONE, prefix, sizeof(prefix));
 	if (value == NONE)
-		snprintf(key, size, "hud.anchor");
+		snprintf(key, size, "%sanchor", prefix);
 	else if (kind == _hud_crosshair || kind == _hud_overlay)
-		snprintf(key, size, "hud.%s%d.%d.%s", hud_kind_keys[kind], element, item, hud_value_keys[value]);
+		snprintf(key, size, "%s%s%d.%d.%s", prefix, hud_kind_keys[kind], element, item, hud_value_keys[value]);
 	else
-		snprintf(key, size, "hud.%s%d.%s", hud_kind_keys[kind], element, hud_value_keys[value]);
+		snprintf(key, size, "%s%s%d.%s", prefix, hud_kind_keys[kind], element, hud_value_keys[value]);
 }
 
 /* where a key's value is in the tags of a weapon as they are, or NULL; and
@@ -868,9 +1016,11 @@ static void *key_address(
 		break;
 	case _target_hud:
 	{
-		long hud = target_tag(weapon, _target_hud, NONE, NONE);
+		long hud = target_tag(weapon, _target_hud, key->index, NONE);
 		struct hud_placement_definition *placement;
 
+		if (key->hud_value == _hud_hide)
+			return hud_hidden_address(hud, key->hud_kind, key->hud_element, key->hud_item, kind);
 		if (key->hud_value == NONE)
 		{
 			struct weapon_hud_interface_definition *definition = (struct weapon_hud_interface_definition *)tag_root(
@@ -891,22 +1041,74 @@ static void *key_address(
 	return base && key->field ? base + key->field->offset : NULL;
 }
 
+static boolean kind_hidden(
+	short kind)
+{
+	return kind == _kind_hidden_element || kind == _kind_hidden_crosshair_item || kind == _kind_hidden_overlay_item;
+}
+
 static real value_read(
 	void const *address,
 	short kind)
 {
-	return kind == _kind_short ? (real)*(short const *)address : *(real const *)address;
+	short raw = kind_hidden(kind) ? *(short const *)address : 0;
+
+	switch (kind)
+	{
+	case _kind_short: return (real)*(short const *)address;
+	case _kind_hidden_element: return raw == HUD_HIDDEN_MAP_TYPE ? 1.0f : 0.0f;
+	case _kind_hidden_crosshair_item: return (raw & HUD_CROSSHAIR_ITEM_HIDDEN_FLAG) ? 1.0f : 0.0f;
+	case _kind_hidden_overlay_item: return (raw & HUD_OVERLAY_ITEM_HIDDEN_FLAG) ? 1.0f : 0.0f;
+	}
+	return *(real const *)address;
 }
 
+/* a value written (an edit's: a hidden one's 1 hides it, 0 does nothing,
+its own kept puts it back: value_restore) */
 static void value_write(
 	void *address,
 	short kind,
 	real value)
 {
-	if (kind == _kind_short)
+	switch (kind)
+	{
+	case _kind_short:
 		*(short *)address = (short)(value < 0.0f ? value - 0.5f : value + 0.5f);
+		return;
+	case _kind_hidden_element:
+		if (value >= 0.5f)
+			*(short *)address = HUD_HIDDEN_MAP_TYPE;
+		return;
+	case _kind_hidden_crosshair_item:
+		if (value >= 0.5f)
+			*(short *)address |= HUD_CROSSHAIR_ITEM_HIDDEN_FLAG;
+		return;
+	case _kind_hidden_overlay_item:
+		if (value >= 0.5f)
+			*(short *)address |= HUD_OVERLAY_ITEM_HIDDEN_FLAG;
+		return;
+	}
+	*(real *)address = value;
+}
+
+/* a value as it is kept to be put back (a hidden one's: the short it is),
+and put back */
+static real value_raw(
+	void const *address,
+	short kind)
+{
+	return kind_hidden(kind) ? (real)*(short const *)address : value_read(address, kind);
+}
+
+static void value_restore(
+	void *address,
+	short kind,
+	real raw)
+{
+	if (kind_hidden(kind))
+		*(short *)address = (short)raw;
 	else
-		*(real *)address = value;
+		value_write(address, kind, raw);
 }
 
 /* the value of a key as the weapon had it before it was edited (FALSE:
@@ -1059,10 +1261,29 @@ static void edits_write(
 				error(_error_silent, "tag editor: %s has nothing of the edit %s", tag_get_name(weapon), key);
 			continue;
 		}
-		original_keep(weapon, key, value_read(address, kind));
+		original_keep(weapon, key, value_raw(address, kind));
 		if (write)
 			value_write(address, kind, (real)port_tag_profiles_tag_edit_value(profile, tag, edit));
 	}
+}
+
+/* the highest level of a HUD a weapon's edits are of (0: its own) */
+static short hud_edits_deepest(
+	long profile,
+	long tag)
+{
+	long count = port_tag_profiles_tag_edit_count(profile, tag);
+	short deepest = 0;
+	long edit;
+
+	for (edit = 0; edit < count; edit++)
+	{
+		struct edit_key parsed;
+
+		if (key_parse(port_tag_profiles_tag_edit_key(profile, tag, edit), &parsed) && parsed.target == _target_hud)
+			deepest = MAX(deepest, parsed.index);
+	}
+	return deepest;
 }
 
 /* a projectile's damage effect of a part given the weapon's copy of it */
@@ -1217,21 +1438,36 @@ void tag_editor_weapon_loaded(
 				edits_write(profile, tag, weapon_datum, "melee.", _target_damage, TRUE);
 		}
 	}
-	if (edits_any(profile, tag, "hud.") &&
-		tag_root(WEAPON_HUD_GROUP_TAG, definition->weapon.interface_definition.hud_interface.index))
+	if (edits_any(profile, tag, "hud.") && weapon_hud(weapon_datum, 0) != NONE)
 	{
-		boolean made_before;
-		long copy;
+		struct tag_reference *reference = &definition->weapon.interface_definition.hud_interface;
+		boolean made_before = FALSE;
+		boolean first_made_before = FALSE;
+		short deepest = hud_edits_deepest(profile, tag);
+		short level;
 
 		edits_write(profile, tag, weapon_datum, "hud.", _target_hud, FALSE);
-		copy = edited_copy(definition->weapon.interface_definition.hud_interface.index, profile, tag, "hud.", TRUE,
-			&made_before);
-		if (copy != NONE)
+		/* (its HUD a copy, and each parent up to the last edited, each copy
+		naming the next's: one made before names its own already) */
+		for (level = 0; level <= deepest && !made_before && reference && reference->index != NONE; level++)
 		{
-			reference_set(&definition->weapon.interface_definition.hud_interface, copy);
-			if (!made_before)
-				edits_write(profile, tag, weapon_datum, "hud.", _target_hud, TRUE);
+			long copy = edited_copy(reference->index, profile, tag, "hud.", TRUE, &made_before);
+			struct weapon_hud_interface_definition *copied;
+
+			if (copy == NONE)
+			{
+				error(_error_silent, "tag editor: no copy of %s for %s", tag_get_name(reference->index),
+					tag_get_name(weapon_datum));
+				break;
+			}
+			reference_set(reference, copy);
+			if (level == 0)
+				first_made_before = made_before;
+			copied = (struct weapon_hud_interface_definition *)tag_root(WEAPON_HUD_GROUP_TAG, copy);
+			reference = copied ? &copied->parent_hud : NULL;
 		}
+		if (level > 0 && !first_made_before)
+			edits_write(profile, tag, weapon_datum, "hud.", _target_hud, TRUE);
 	}
 }
 
@@ -1350,12 +1586,30 @@ static short sharers_find(
 
 		if (instances[absolute].group_tag != WEAPON_DEFINITION_TAG || !(definition = weapon_definition(other)))
 			continue;
-		if (target == _target_hud || (target == _target_damage && part == _damage_melee))
+		if (target == _target_damage && part == _damage_melee)
 		{
 			if (other != weapon && target_tag(other, target, NONE, part) == datum)
 			{
 				sharers[found].weapon = other;
 				key_prefix(target, NONE, part, sharers[found++].prefix, EDIT_KEY_LENGTH);
+			}
+			continue;
+		}
+		/* (a HUD: of any of its levels, a parent HUD drawn for many) */
+		if (target == _target_hud)
+		{
+			short level;
+
+			for (level = 0; level < MAXIMUM_HUD_LEVELS && found < capacity; level++)
+			{
+				long hud = weapon_hud(other, level);
+
+				if (hud == NONE)
+					break;
+				if (hud != datum || (other == weapon && level == index))
+					continue;
+				sharers[found].weapon = other;
+				key_prefix(target, level, NONE, sharers[found++].prefix, EDIT_KEY_LENGTH);
 			}
 			continue;
 		}
@@ -1502,9 +1756,9 @@ static boolean value_set(
 	{
 		real original;
 
-		original_keep(context->weapon, key, value_read(address, kind));
+		original_keep(context->weapon, key, value_raw(address, kind));
 		if (clear && original_find(context->weapon, key, &original))
-			value_write(address, kind, original);
+			value_restore(address, kind, original);
 		else if (!clear)
 			value_write(address, kind, value);
 	}
@@ -1622,8 +1876,19 @@ static short page_rows(
 			row_add(rows, &count, _tag_editor_row_folder, _action_page, _page_damage, NONE, _damage_melee, NULL,
 				damage_part_names[_damage_melee]);
 		}
-		if (target_tag(context->weapon, _target_hud, NONE, NONE) != NONE)
-			row_add(rows, &count, _tag_editor_row_folder, _action_page, _page_hud, 0, 0, NULL, "HUD");
+		/* (its HUD, and each parent HUD it draws too) */
+		for (trigger_index = 0; trigger_index < weapon_hud_levels(context->weapon); trigger_index++)
+		{
+			char const *path = tag_get_name(weapon_hud(context->weapon, trigger_index));
+			char const *leaf = path ? strrchr(path, '\\') : NULL;
+
+			if (trigger_index)
+				snprintf(label, sizeof(label), "Parent HUD %d (%s)", trigger_index, leaf ? leaf + 1 :
+					path ? path : "?");
+			else
+				snprintf(label, sizeof(label), "HUD");
+			row_add(rows, &count, _tag_editor_row_folder, _action_page, _page_hud, trigger_index, 0, NULL, label);
+		}
 		row_add(rows, &count, _tag_editor_row_command, _action_reset_all, 0, 0, 0, NULL, "Reset all edits");
 		return count;
 	}
@@ -1642,22 +1907,25 @@ static short page_rows(
 		row_add(rows, &count, _tag_editor_row_value, _action_hud_anchor, 0, 0, 0, NULL, "Anchor");
 		for (kind = 0; kind < NUMBER_OF_EDIT_HUD_KINDS; kind++)
 		{
-			long hud = target_tag(context->weapon, _target_hud, NONE, NONE);
+			long hud = target_tag(context->weapon, _target_hud, index, NONE);
 			short element;
 
 			for (element = 0; element < hud_count(hud, kind, NONE); element++)
 			{
+				char const *bitmap = hud_bitmap_name(hud, kind, element);
 				short item;
 
 				if (kind != _hud_crosshair && kind != _hud_overlay)
 				{
-					snprintf(label, sizeof(label), "%s %d", hud_kind_names[kind], element + 1);
+					snprintf(label, sizeof(label), bitmap[0] ? "%s %d (%s)" : "%s %d", hud_kind_names[kind],
+						element + 1, bitmap);
 					row_add(rows, &count, _tag_editor_row_value, _action_hud_element, kind, element, NONE, NULL, label);
 					continue;
 				}
 				for (item = 0; item < hud_count(hud, kind, element); item++)
 				{
-					snprintf(label, sizeof(label), "%s %d.%d", hud_kind_names[kind], element + 1, item + 1);
+					snprintf(label, sizeof(label), bitmap[0] ? "%s %d.%d (%s)" : "%s %d.%d", hud_kind_names[kind],
+						element + 1, item + 1, bitmap);
 					row_add(rows, &count, _tag_editor_row_value, _action_hud_element, kind, element, item, NULL, label);
 				}
 			}
@@ -1698,12 +1966,13 @@ static void row_key(
 
 	if (row->action == _action_hud_anchor)
 	{
-		hud_key(NONE, NONE, NONE, NONE, key, size);
+		hud_key(tag_editor.pages[tag_editor.depth].index, NONE, NONE, NONE, NONE, key, size);
 		return;
 	}
 	if (row->action == _action_hud_element)
 	{
-		hud_key(row->arguments[0], row->arguments[1], row->arguments[2], hud_value, key, size);
+		hud_key(tag_editor.pages[tag_editor.depth].index, row->arguments[0], row->arguments[1], row->arguments[2],
+			hud_value, key, size);
 		return;
 	}
 	key_prefix(page_target(page), tag_editor.pages[tag_editor.depth].index, tag_editor.pages[tag_editor.depth].part,
@@ -1725,29 +1994,43 @@ static void number_text(
 		snprintf(text, size, "%.2f", value);
 }
 
+/* whether a key is of a list's (of its keys' beginning; of a HUD's level,
+unless it is NONE: "hud." begins its parents' too) */
+static boolean key_of_list(
+	char const *key,
+	char const *prefix,
+	short hud_level)
+{
+	struct edit_key parsed;
+
+	if (strncmp(key, prefix, strlen(prefix)))
+		return FALSE;
+	return hud_level == NONE || (key_parse(key, &parsed) && parsed.target == _target_hud && parsed.index == hud_level);
+}
+
 /* the list's rows' edits taken out (all of the weapon's: the whole
 profile's tag's), and their values put back where they were kept */
 static void edits_reset(
 	struct editor_context const *context,
-	char const *prefix)
+	char const *prefix,
+	short hud_level)
 {
 	long count = port_tag_profiles_tag_edit_count(context->profile, context->tag);
 	long edit;
 	short index;
-	size_t length = strlen(prefix);
 
 	for (edit = 0; edit < count; edit++)
 	{
 		char key[EDIT_KEY_LENGTH];
 
 		snprintf(key, sizeof(key), "%s", port_tag_profiles_tag_edit_key(context->profile, context->tag, edit));
-		if (!strncmp(key, prefix, length))
+		if (key_of_list(key, prefix, hud_level))
 			value_set(context, key, 0.0f, TRUE);
 	}
 	for (index = 0; index < tag_editor.pending_count; index++)
 	{
 		if (tag_editor.pending[index].profile == context->profile && tag_editor.pending[index].tag == context->tag &&
-			!strncmp(tag_editor.pending[index].key, prefix, length))
+			key_of_list(tag_editor.pending[index].key, prefix, hud_level))
 			tag_editor.pending[index].clear = TRUE;
 	}
 	/* (the values kept are put back, though the edits were written) */
@@ -1758,12 +2041,12 @@ static void edits_reset(
 		short kind;
 
 		if (tag_editor.originals[index].weapon != context->weapon ||
-			strncmp(tag_editor.originals[index].key, prefix, length) ||
+			!key_of_list(tag_editor.originals[index].key, prefix, hud_level) ||
 			(!context->live && strncmp(tag_editor.originals[index].key, "hud.", 4)) ||
 			!key_parse(tag_editor.originals[index].key, &parsed) ||
 			!(address = key_address(context->weapon, &parsed, &kind)))
 			continue;
-		value_write(address, kind, tag_editor.originals[index].value);
+		value_restore(address, kind, tag_editor.originals[index].value);
 	}
 }
 
@@ -1772,8 +2055,17 @@ static void edits_reset(
 static struct hud_placement_definition *captured_placement(
 	struct editor_context const *context)
 {
-	return hud_placement(target_tag(context->weapon, _target_hud, NONE, NONE), tag_editor.hud_kind,
+	return hud_placement(target_tag(context->weapon, _target_hud, tag_editor.hud_level, NONE), tag_editor.hud_kind,
 		tag_editor.hud_element, tag_editor.hud_item);
+}
+
+/* a value's key of the element moved */
+static void captured_key(
+	short value,
+	char *key,
+	long size)
+{
+	hud_key(tag_editor.hud_level, tag_editor.hud_kind, tag_editor.hud_element, tag_editor.hud_item, value, key, size);
 }
 
 /* the element blinking put back where it is */
@@ -1835,7 +2127,11 @@ char const *tag_editor_menu_title(
 		snprintf(title, sizeof(title), "%s", damage_part_names[PIN(tag_editor.pages[tag_editor.depth].part, 0,
 			NUMBER_OF_EDIT_DAMAGE_PARTS - 1)]);
 		return title;
-	case _page_hud: return "HUD";
+	case _page_hud:
+		if (index <= 0)
+			return "HUD";
+		snprintf(title, sizeof(title), "Parent HUD %d", index);
+		return title;
 	}
 	return "Tag Editor";
 }
@@ -1919,12 +2215,20 @@ static void row_fill(
 		real x = 0.0f;
 		real y = 0.0f;
 
+		real hidden = 0.0f;
+
 		row_key(spec, _hud_x, key, sizeof(key));
 		shown_value(&context, key, &x);
 		row_key(spec, _hud_y, key, sizeof(key));
 		shown_value(&context, key, &y);
-		snprintf(result->value, sizeof(result->value), "%d, %d", (int)x, (int)y);
-		snprintf(result->note, sizeof(result->note), "A moves it over the game.");
+		row_key(spec, _hud_hide, key, sizeof(key));
+		shown_value(&context, key, &hidden);
+		if (hidden >= 0.5f)
+			snprintf(result->value, sizeof(result->value), "HIDDEN");
+		else
+			snprintf(result->value, sizeof(result->value), "%d, %d", (int)x, (int)y);
+		snprintf(result->note, sizeof(result->note), "%s", hidden >= 0.5f ?
+			"Left or right shows it again." : "A moves it over the game. Left or right hides it.");
 		break;
 	}
 	case _action_reset_page:
@@ -2009,6 +2313,7 @@ void tag_editor_menu_choose(
 	{
 		struct hud_placement_definition *placement;
 
+		tag_editor.hud_level = tag_editor.pages[tag_editor.depth].index;
 		tag_editor.hud_kind = spec->arguments[0];
 		tag_editor.hud_element = spec->arguments[1];
 		tag_editor.hud_item = spec->arguments[2];
@@ -2045,7 +2350,8 @@ void tag_editor_menu_choose(
 		else
 			key_prefix(page_target(page_top()), tag_editor.pages[tag_editor.depth].index,
 				tag_editor.pages[tag_editor.depth].part, prefix, sizeof(prefix));
-		edits_reset(&context, prefix);
+		edits_reset(&context, prefix, spec->action == _action_reset_page && page_top() == _page_hud ?
+			tag_editor.pages[tag_editor.depth].index : NONE);
 		snprintf(status, status_size, "Put back as the map had them");
 		return;
 	}
@@ -2083,6 +2389,24 @@ void tag_editor_menu_adjust(
 		if (shown_value(&context, key, &value))
 			value_set(&context, key, (real)(((short)value + direction + NUMBER_OF_HUD_ANCHORS) % NUMBER_OF_HUD_ANCHORS),
 				FALSE);
+		return;
+	}
+	/* (an element hidden, or shown as its map has it) */
+	if (spec->action == _action_hud_element)
+	{
+		row_key(spec, _hud_hide, key, sizeof(key));
+		if (!shown_value(&context, key, &value))
+			return;
+		if (value >= 0.5f)
+		{
+			value_set(&context, key, 0.0f, TRUE);
+			snprintf(status, status_size, "%s: shown", spec->label);
+		}
+		else
+		{
+			value_set(&context, key, 1.0f, FALSE);
+			snprintf(status, status_size, "%s: hidden", spec->label);
+		}
 		return;
 	}
 	if (spec->action != _action_field)
@@ -2175,9 +2499,9 @@ void tag_editor_menu_capture(
 		short value;
 
 		blink_end(placement);
-		for (value = 0; value < NUMBER_OF_EDIT_HUD_VALUES; value++)
+		for (value = 0; value < NUMBER_OF_HUD_PLACEMENT_VALUES; value++)
 		{
-			hud_key(tag_editor.hud_kind, tag_editor.hud_element, tag_editor.hud_item, value, key, sizeof(key));
+			captured_key(value, key, sizeof(key));
 			value_set(&context, key, 0.0f, TRUE);
 		}
 		return;
@@ -2206,16 +2530,16 @@ void tag_editor_menu_capture(
 		real width = height + ((steps & (1UL << HALO_OVERLAY_PAD_RIGHT)) ? 0.02f :
 			(steps & (1UL << HALO_OVERLAY_PAD_LEFT)) ? -0.02f : 0.0f);
 
-		hud_key(tag_editor.hud_kind, tag_editor.hud_element, tag_editor.hud_item, _hud_scale_x, key, sizeof(key));
+		captured_key(_hud_scale_x, key, sizeof(key));
 		value_set(&context, key, PIN(placement->scale.i + width * step, 0.1f, 8.0f), FALSE);
-		hud_key(tag_editor.hud_kind, tag_editor.hud_element, tag_editor.hud_item, _hud_scale_y, key, sizeof(key));
+		captured_key(_hud_scale_y, key, sizeof(key));
 		value_set(&context, key, PIN(placement->scale.j + height * step, 0.1f, 8.0f), FALSE);
 		return;
 	}
-	hud_key(tag_editor.hud_kind, tag_editor.hud_element, tag_editor.hud_item, _hud_x, key, sizeof(key));
+	captured_key(_hud_x, key, sizeof(key));
 	value_set(&context, key, (real)PIN(placement->offset.x + ((steps & (1UL << HALO_OVERLAY_PAD_RIGHT)) ? step :
 		(steps & (1UL << HALO_OVERLAY_PAD_LEFT)) ? -step : 0), -640, 640), FALSE);
-	hud_key(tag_editor.hud_kind, tag_editor.hud_element, tag_editor.hud_item, _hud_y, key, sizeof(key));
+	captured_key(_hud_y, key, sizeof(key));
 	value_set(&context, key, (real)PIN(placement->offset.y + ((steps & (1UL << HALO_OVERLAY_PAD_DOWN)) ? step :
 		(steps & (1UL << HALO_OVERLAY_PAD_UP)) ? -step : 0), -480, 480), FALSE);
 }
@@ -2228,6 +2552,9 @@ void tag_editor_menu_capture_text(
 	struct editor_context context;
 	struct hud_placement_definition *placement;
 	struct hud_placement_definition shown;
+	char name[TAG_EDITOR_LABEL_LENGTH] = "";
+	char key[EDIT_KEY_LENGTH];
+	real hidden = 0.0f;
 
 	first[0] = 0;
 	second[0] = 0;
@@ -2238,13 +2565,20 @@ void tag_editor_menu_capture_text(
 	shown = *placement;
 	if (tag_editor.blinked)
 		shown.offset = tag_editor.blink_offset;
+	/* (of a parent HUD: which; hidden: said) */
+	if (tag_editor.hud_level > 0)
+		snprintf(name, sizeof(name), "PARENT %d: ", tag_editor.hud_level);
 	if (tag_editor.hud_kind == _hud_crosshair || tag_editor.hud_kind == _hud_overlay)
-		snprintf(first, size, "%s %d.%d   X %d   Y %d   SCALE %.2f x %.2f", hud_kind_names[tag_editor.hud_kind],
-			tag_editor.hud_element + 1, tag_editor.hud_item + 1, shown.offset.x, shown.offset.y, shown.scale.i,
-			shown.scale.j);
+		snprintf(name + strlen(name), sizeof(name) - strlen(name), "%s %d.%d", hud_kind_names[tag_editor.hud_kind],
+			tag_editor.hud_element + 1, tag_editor.hud_item + 1);
 	else
-		snprintf(first, size, "%s %d   X %d   Y %d   SCALE %.2f x %.2f", hud_kind_names[tag_editor.hud_kind],
-			tag_editor.hud_element + 1, shown.offset.x, shown.offset.y, shown.scale.i, shown.scale.j);
+		snprintf(name + strlen(name), sizeof(name) - strlen(name), "%s %d", hud_kind_names[tag_editor.hud_kind],
+			tag_editor.hud_element + 1);
+	captured_key(_hud_hide, key, sizeof(key));
+	if (shown_value(&context, key, &hidden) && hidden >= 0.5f)
+		snprintf(name + strlen(name), sizeof(name) - strlen(name), " (HIDDEN)");
+	snprintf(first, size, "%s   X %d   Y %d   SCALE %.2f x %.2f", name, shown.offset.x, shown.offset.y, shown.scale.i,
+		shown.scale.j);
 	snprintf(second, size, "%s   %%a-button %s   %%back-button Reset   %%b-button Done",
 		tag_editor.scaling ? "D-pad: scale (up/down), width (left/right)" : "D-pad: move", tag_editor.scaling ?
 		"Move" : "Scale");
