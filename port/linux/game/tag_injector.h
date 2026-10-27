@@ -129,6 +129,9 @@ a tag has */
 #define TAG_INJECTOR_MESH_MAXIMUM_TEXTURES 32
 #define TAG_INJECTOR_MESH_MAXIMUM_MATERIALS 32
 #define TAG_INJECTOR_MAXIMUM_NEEDS 8
+#define TAG_INJECTOR_MAXIMUM_ANIMATIONS 16
+/* a weapon's label (tag_files.h's TAG_STRING_LENGTH, and its terminator) */
+#define TAG_INJECTOR_LABEL_LENGTH 32
 
 /* A texture of a preview's mesh: a map of a shader of its model (a base
 map, or a multipurpose map), one mipmap level of its first bitmap (the
@@ -201,10 +204,31 @@ struct tag_injector_need
 	short state;
 };
 
+/* What a tag is seen doing in a game (its animations: the usability
+report), each animation it has or has not: a weapon's first-person ones
+that every weapon of the game's has (idle, ready, reload, melee, grenade:
+the last three where it does them), and whether the campaign's player is
+animated holding it (third_person: present when the player has animations
+for its label, missing when it is held as another, none when that cannot
+be read); an actor variant's (actor), whether its unit is animated holding
+its weapon (third_person), and its moves holding it (idle, walk, fire,
+reload, melee, grenade, evade, dive, berserk). */
+struct tag_injector_usability
+{
+	boolean actor;
+	short third_person;
+	char label[TAG_INJECTOR_LABEL_LENGTH];
+	short count;
+	struct tag_injector_need animations[TAG_INJECTOR_MAXIMUM_ANIMATIONS];
+};
+
 struct tag_injector_needs
 {
 	short count;
 	struct tag_injector_need needs[TAG_INJECTOR_MAXIMUM_NEEDS];
+	/* (weapons' and actor variants' alone: else third_person none, and no
+	animations) */
+	struct tag_injector_usability usability;
 };
 
 /* The mesh and the needs of the open map's tag of a category, or of a
@@ -327,6 +351,19 @@ HUD, without stopping it (each was turned off, its "failed" setting saying
 why: tag_injector_tags_read). */
 void tag_injector_tick(
 	void);
+/* The profile whose tags the level loaded has (tag_injector_tags_load: a
+network game's shared profile too), else NONE. */
+long tag_injector_level_profile(
+	void);
+/* The Tag Editor's (tag_editor.c), as a level adds a profile's tags: a copy
+of a tag of the level (its root, and with `blocks` its blocks and theirs,
+its data and the tags it names shared), named `name`, added to the level's
+tags past those added, and let go with them; the one of that group and name
+when the level has it. Its index, or NONE when it cannot be made. */
+long tag_injector_tag_copy(
+	long datum,
+	char const *name,
+	boolean blocks);
 /* whether a tag is one a profile added, and whether the level has any:
 Halo PC's tags, which the engine takes as a Custom Edition map's
 (tag_groups.c, hud_draw.c and the texture cache) */

@@ -64,6 +64,7 @@ off. Each map read is a donor of one pack or the other.
 #include "interface/progress_bar.h"
 #include "items/weapon_definitions.h"
 #include "main/main.h"
+#include "models/model_animation_definitions.h"
 #include "models/model_definitions.h"
 #include "networking/network_game_globals.h"
 #include "networking/network_game_manager.h"
@@ -3727,6 +3728,142 @@ int randomizer_stock_tag_exists(long group_tag, char const *name)
 			return 1;
 	}
 
+	return 0;
+}
+
+/* the weapons the campaign's player is animated holding, by their weapon
+types' labels (a weapon's label: "ar"; "unarmed" for a type without one),
+with their weapon class's animations and the type's
+(randomizer_stock_player_class): read once, the first time one is asked
+for, from a10's characters\cyborg\cyborg (its standing seat's) */
+#define STOCK_PLAYER_CLASS_MAX 64
+#define STOCK_PLAYER_ANIMATIONS "characters\\cyborg\\cyborg"
+static struct
+{
+	char label[TAG_STRING_LENGTH + 1];
+	unsigned long long animations;
+	unsigned long long overlays;
+} stock_player_classes[STOCK_PLAYER_CLASS_MAX];
+static long stock_player_class_count;
+/* 0 not read, 1 read, -1 not readable */
+static int stock_player_classes_read;
+
+/* which of the first 64 of a donor's block of animation indices are some
+animation (not NONE) */
+static unsigned long long stock_animation_bits(struct donor *donor, struct tag_block const *block)
+{
+	short const *indices = donor_address(donor, block->address);
+	unsigned long long bits = 0;
+	long index;
+
+	if (!indices || block->count <= 0 || !range_in(donor, indices, (unsigned long)block->count * sizeof(short)))
+		return 0;
+	for (index = 0; index < block->count && index < 64; index++)
+	{
+		if (indices[index] != NONE)
+			bits |= 1ULL << index;
+	}
+	return bits;
+}
+
+static void stock_player_classes_gather(void)
+{
+	int pack_was_open = randomizer_pack.state == 1;
+	struct donor donor;
+	long tag;
+
+	stock_player_classes_read = -1;
+	if (!open_donor(&donor, "a10", &randomizer_pack))
+	{
+		close_donor_bytes(&donor);
+		if (!pack_was_open)
+			pack_close(&randomizer_pack);
+		error(_error_silent, "randomizer: a10 cannot be read for the player's animations");
+		return;
+	}
+	for (tag = 0; tag < donor.count; tag++)
+	{
+		struct randomizer_tag_instance *instance = donor.instances + tag;
+		struct animation_graph const *graph;
+		struct animation_graph_unit_seat const *seats;
+		char const *name;
+		long seat_index;
+		long chosen = 0;
+
+		if (instance->group_tag != ANIMATION_GRAPH_TAG || !(name = instance_name(&donor, instance)) ||
+			_stricmp(name, STOCK_PLAYER_ANIMATIONS))
+			continue;
+		graph = donor_address(&donor, instance->base_address);
+		if (!graph || !range_in(&donor, graph, sizeof(*graph)))
+			break;
+		seats = donor_address(&donor, graph->unit_seats.address);
+		if (!seats || graph->unit_seats.count <= 0 ||
+			!range_in(&donor, seats, (unsigned long)graph->unit_seats.count * sizeof(*seats)))
+			break;
+		/* (its standing seat, else its first) */
+		for (seat_index = 0; seat_index < graph->unit_seats.count; seat_index++)
+		{
+			if (!_strnicmp(seats[seat_index].label, "stand", 5))
+			{
+				chosen = seat_index;
+				break;
+			}
+		}
+		{
+			struct animation_graph_unit_seat const *seat = &seats[chosen];
+			struct animation_graph_weapon_class const *classes = donor_address(&donor, seat->weapon_classes.address);
+			long class_index;
+
+			if (!classes || !range_in(&donor, classes, (unsigned long)seat->weapon_classes.count * sizeof(*classes)))
+				break;
+			for (class_index = 0; class_index < seat->weapon_classes.count; class_index++)
+			{
+				struct animation_graph_weapon_class const *weapon_class = &classes[class_index];
+				struct animation_graph_weapon_type const *types = donor_address(&donor,
+					weapon_class->weapon_types.address);
+				long type_index;
+
+				if (!types || !range_in(&donor, types, (unsigned long)weapon_class->weapon_types.count * sizeof(*types)))
+					continue;
+				for (type_index = 0; type_index < weapon_class->weapon_types.count &&
+					stock_player_class_count < STOCK_PLAYER_CLASS_MAX; type_index++)
+				{
+					snprintf(stock_player_classes[stock_player_class_count].label, TAG_STRING_LENGTH + 1, "%.*s",
+						TAG_STRING_LENGTH, types[type_index].label[0] ? types[type_index].label : "unarmed");
+					stock_player_classes[stock_player_class_count].animations = stock_animation_bits(&donor,
+						&weapon_class->animations);
+					stock_player_classes[stock_player_class_count].overlays = stock_animation_bits(&donor,
+						&types[type_index].animations);
+					stock_player_class_count++;
+				}
+			}
+			stock_player_classes_read = 1;
+		}
+		break;
+	}
+	close_donor_bytes(&donor);
+	if (!pack_was_open)
+		pack_close(&randomizer_pack);
+	error(_error_silent, "randomizer: the player is animated holding %ld weapon types", stock_player_class_count);
+}
+
+int randomizer_stock_player_class(char const *label, unsigned long long *animations, unsigned long long *overlays)
+{
+	long index;
+
+	if (!stock_player_classes_read)
+		stock_player_classes_gather();
+	if (stock_player_classes_read < 0)
+		return -1;
+	for (index = 0; label && index < stock_player_class_count; index++)
+	{
+		if (!_stricmp(stock_player_classes[index].label, label))
+		{
+			*animations = stock_player_classes[index].animations;
+			*overlays = stock_player_classes[index].overlays;
+			return 1;
+		}
+	}
 	return 0;
 }
 

@@ -7788,7 +7788,37 @@ static void tags_needs_text(short state, struct tag_injector_needs const *needs,
 		snprintf(text + strlen(text), text_size - strlen(text), "%s%s", text[0] ? ", " : "MISSING: ",
 			needs->needs[index].name);
 	}
-	snprintf(text + strlen(text), text_size - strlen(text), "%s", text[0] ? "." : "No data missing.");
+	/* (and what it is seen doing: the usability report, a weapon's and an
+	actor variant's) */
+	{
+		struct tag_injector_usability const *usability = &needs->usability;
+		boolean lacking = FALSE;
+		size_t start;
+
+		if (text[0])
+			snprintf(text + strlen(text), text_size - strlen(text), ".");
+		if (usability->third_person == _tag_injector_need_missing)
+		{
+			snprintf(text + strlen(text), text_size - strlen(text), "%sNo '%s' animations: %s", text[0] ? " " : "",
+				usability->label, usability->actor ? "it holds its weapon wrong." :
+				"the Spartan holds it as another weapon.");
+		}
+		start = strlen(text);
+		for (index = 0; index < usability->count; index++)
+		{
+			char const *heading = usability->actor ? "CANNOT: " : "NO ANIMATION: ";
+
+			if (usability->animations[index].state != _tag_injector_need_missing)
+				continue;
+			snprintf(text + strlen(text), text_size - strlen(text), "%s%s%s", strlen(text) > start ? ", " :
+				text[0] ? " " : "", strlen(text) > start ? "" : heading, usability->animations[index].name);
+			lacking = TRUE;
+		}
+		if (lacking)
+			snprintf(text + strlen(text), text_size - strlen(text), ".");
+		if (!text[0])
+			snprintf(text, text_size, usability->count ? "Fully usable: nothing missing." : "No data missing.");
+	}
 }
 
 /* a text's blank lines (" " between its parts) taken out */

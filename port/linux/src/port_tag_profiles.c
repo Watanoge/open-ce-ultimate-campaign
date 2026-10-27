@@ -100,6 +100,10 @@ profile of bundles alone is written 1, which an earlier build reads) */
 #define MAXIMUM_FILE_NAME_LENGTH 128
 #define MAXIMUM_PATH_LENGTH 1024
 #define MAXIMUM_OPTION_LENGTH 32
+/* a tag's edits (port_tag_profiles_tag_edit_*): the most a tag has, and the
+longest key */
+#define MAXIMUM_TAG_EDITS 512
+#define MAXIMUM_EDIT_KEY_LENGTH 48
 /* the most a character takes in profile.toml (\u00XX) */
 #define TOML_CHARACTER_LENGTH 6
 /* the most bundles open at once (a level's), and what their reads go
@@ -129,6 +133,13 @@ static const char *const tag_option_keys[] = { "faction", "type", "class", "cust
 	"failed" };
 #define TAG_OPTION_COUNT (sizeof(tag_option_keys) / sizeof(tag_option_keys[0]))
 
+/* an edit of a tag's values (the Tag Editor's: tag_editor.c), by its key */
+struct tag_profile_edit
+{
+	char key[MAXIMUM_EDIT_KEY_LENGTH];
+	double value;
+};
+
 struct tag_profile_tag
 {
 	char map[MAXIMUM_MAP_NAME_LENGTH];
@@ -137,6 +148,9 @@ struct tag_profile_tag
 	char file[MAXIMUM_FILE_NAME_LENGTH];
 	int enabled;
 	char options[TAG_OPTION_COUNT][MAXIMUM_OPTION_LENGTH];
+	/* its edits, by key (allocated: NULL for none) */
+	struct tag_profile_edit *edits;
+	long edit_count;
 	/* its bundle's bytes, as the scan found it (0: missing), its file's,
 	and whether that is a tag file (port_tag_store.c) */
 	unsigned long size;
@@ -334,6 +348,62 @@ static int tag_option_clean(int option, const char *value, char *clean)
 	return 1;
 }
 
+/* whether an edit's key is one: lower case letters, digits, . and _, as
+long as one is kept */
+static int edit_key_valid(const char *key)
+{
+	size_t length;
+
+	if (!key || !key[0])
+		return 0;
+	for (length = 0; key[length]; length++)
+	{
+		char character = key[length];
+
+		if (length + 1 >= MAXIMUM_EDIT_KEY_LENGTH ||
+			!((character >= 'a' && character <= 'z') || (character >= '0' && character <= '9') || character == '.' ||
+			character == '_'))
+			return 0;
+	}
+	return 1;
+}
+
+/* a tag's edit of a key, or NULL */
+static struct tag_profile_edit *edit_find(struct tag_profile_tag *tag, const char *key)
+{
+	long index;
+
+	for (index = 0; key && index < tag->edit_count; index++)
+	{
+		if (!strcmp(tag->edits[index].key, key))
+			return &tag->edits[index];
+	}
+	return NULL;
+}
+
+/* a tag's edit of a key set to value, added if it has none; 0 if there is
+no room */
+static int edit_set(struct tag_profile_tag *tag, const char *key, double value)
+{
+	struct tag_profile_edit *found = edit_find(tag, key);
+
+	if (!found)
+	{
+		struct tag_profile_edit *grown;
+
+		if (tag->edit_count >= MAXIMUM_TAG_EDITS)
+			return 0;
+		grown = realloc(tag->edits, (size_t)(tag->edit_count + 1) * sizeof(*grown));
+		if (!grown)
+			return 0;
+		tag->edits = grown;
+		found = &tag->edits[tag->edit_count++];
+		text_copy(found->key, sizeof(found->key), key);
+	}
+	found->value = value;
+	return 1;
+}
+
 /* writes `size` bytes to the file `path`, whole: to a file beside it first,
 which then takes its place (so that a write cut short leaves the file as it
 was) */
@@ -389,6 +459,10 @@ static int file_is_stored(const char *file)
 
 static void profile_dispose(struct tag_profile *profile)
 {
+	long index;
+
+	for (index = 0; profile->tags && index < profile->tag_count; index++)
+		free(profile->tags[index].edits);
 	free(profile->tags);
 	memset(profile, 0, sizeof(*profile));
 }
@@ -501,6 +575,28 @@ static int profile_read(struct tag_profile *profile, const char *root, const cha
 					tag->options[option][0] = 0;
 				}
 			}
+			/* (its edits: a table of numbers by key) */
+			{
+				toml_datum_t edits = toml_get(entry, "edits");
+				int edit;
+
+				if (edits.type != TOML_UNKNOWN && edits.type != TOML_TABLE)
+					platform_log("tag injector: %s line %d: edits is not a table", path, edits.lineno);
+				for (edit = 0; edits.type == TOML_TABLE && edit < edits.u.tab.size; edit++)
+				{
+					toml_datum_t number = edits.u.tab.value[edit];
+					const char *key = edits.u.tab.key[edit];
+					double value = number.type == TOML_FP64 ? number.u.fp64 :
+						number.type == TOML_INT64 ? (double)number.u.int64 : 0.0;
+
+					if (!edit_key_valid(key) || (number.type != TOML_FP64 && number.type != TOML_INT64) ||
+						value != value || value > 1e9 || value < -1e9 || !edit_set(tag, key, value))
+					{
+						platform_log("tag injector: %s line %d: the edit %s is left out", path, number.lineno,
+							key ? key : "?");
+					}
+				}
+			}
 			snprintf(bundle_path, sizeof(bundle_path), "%s/%s/%s", root, folder, tag->file);
 			tag->stored = file_is_stored(tag->file);
 			if (posix_stat(bundle_path, &information) == 0 && !(information.flags & _posix_file_is_directory))
@@ -531,8 +627,13 @@ static char *profile_text(const struct tag_profile *profile)
 {
 	size_t capacity = 256 + (size_t)profile->tag_count * (256 + (MAXIMUM_TAG_NAME_LENGTH + MAXIMUM_MAP_NAME_LENGTH +
 		MAXIMUM_FILE_NAME_LENGTH + TAG_OPTION_COUNT * MAXIMUM_OPTION_LENGTH) * TOML_CHARACTER_LENGTH);
-	char *text = malloc(capacity);
+	char *text;
 	long index;
+
+	/* (and its tags' edits, each a line) */
+	for (index = 0; index < profile->tag_count; index++)
+		capacity += 32 + (size_t)profile->tags[index].edit_count * (MAXIMUM_EDIT_KEY_LENGTH + 40);
+	text = malloc(capacity);
 	int format = TAG_PROFILES_BUNDLES_FORMAT;
 
 	if (!text)
@@ -573,6 +674,20 @@ static char *profile_text(const struct tag_profile *profile)
 			snprintf(text + strlen(text), capacity - strlen(text), "%s = \"", tag_option_keys[option]);
 			toml_string_append(text, capacity, tag->options[option]);
 			snprintf(text + strlen(text), capacity - strlen(text), "\"\n");
+		}
+		/* (its edits last: a table of the tag's, after its own keys) */
+		if (tag->edit_count)
+		{
+			long edit;
+
+			snprintf(text + strlen(text), capacity - strlen(text), "\n[tags.edits]\n");
+			for (edit = 0; edit < tag->edit_count; edit++)
+			{
+				snprintf(text + strlen(text), capacity - strlen(text), "\"%s\" = %.9g%s\n", tag->edits[edit].key,
+					tag->edits[edit].value,
+					/* (a whole number written as a float, as it was read) */
+					tag->edits[edit].value == (double)(long long)tag->edits[edit].value ? ".0" : "");
+			}
 		}
 	}
 	return text;
@@ -814,6 +929,17 @@ long port_tag_profiles_duplicate(long profile, const char *name)
 		if (!tags)
 			return -1;
 		memcpy(tags, found->tags, (size_t)tag_count * sizeof(*tags));
+		/* (and their edits, which the scans below let go with the original) */
+		for (index = 0; index < tag_count; index++)
+		{
+			struct tag_profile_edit *edits = tags[index].edit_count ?
+				malloc((size_t)tags[index].edit_count * sizeof(*edits)) : NULL;
+
+			if (edits)
+				memcpy(edits, tags[index].edits, (size_t)tags[index].edit_count * sizeof(*edits));
+			tags[index].edits = edits;
+			tags[index].edit_count = edits ? tags[index].edit_count : 0;
+		}
 	}
 	text_copy(folder, sizeof(folder), found->folder);
 	profile_path(found, NULL, from_folder, sizeof(from_folder));
@@ -849,6 +975,8 @@ long port_tag_profiles_duplicate(long profile, const char *name)
 	copy.tags = tags;
 	copy.tag_count = tag_count;
 	copied = copied && profile_write(&copy);
+	for (index = 0; index < tag_count; index++)
+		free(tags[index].edits);
 	free(tags);
 	text_copy(file, sizeof(file), copy.folder);
 	port_tag_profiles_scan();
@@ -1008,6 +1136,119 @@ int port_tag_profiles_tag_set_option(long profile, long tag, const char *key, co
 	return profile_write(profile_get(profile));
 }
 
+long port_tag_profiles_tag_edit_count(long profile, long tag)
+{
+	return tag_get(profile, tag) ? tag_get(profile, tag)->edit_count : 0;
+}
+
+const char *port_tag_profiles_tag_edit_key(long profile, long tag, long edit)
+{
+	struct tag_profile_tag *found = tag_get(profile, tag);
+
+	return found && edit >= 0 && edit < found->edit_count ? found->edits[edit].key : "";
+}
+
+double port_tag_profiles_tag_edit_value(long profile, long tag, long edit)
+{
+	struct tag_profile_tag *found = tag_get(profile, tag);
+
+	return found && edit >= 0 && edit < found->edit_count ? found->edits[edit].value : 0.0;
+}
+
+int port_tag_profiles_tag_edit_find(long profile, long tag, const char *key, double *value)
+{
+	struct tag_profile_tag *found = tag_get(profile, tag);
+	struct tag_profile_edit *edit = found ? edit_find(found, key) : NULL;
+
+	if (edit && value)
+		*value = edit->value;
+	return edit != NULL;
+}
+
+int port_tag_profiles_tag_set_edit(long profile, long tag, const char *key, double value)
+{
+	struct tag_profile_tag *found = tag_get(profile, tag);
+	struct tag_profile_edit *edit;
+
+	if (!found || !edit_key_valid(key) || value != value || value > 1e9 || value < -1e9)
+		return 0;
+	edit = edit_find(found, key);
+	if (edit && edit->value == value)
+		return 1;
+	if (!edit_set(found, key, value))
+	{
+		platform_log("tag injector: %s of the profile %s has %d edits already", found->name,
+			profile_get(profile)->name, MAXIMUM_TAG_EDITS);
+		return 0;
+	}
+	port_tag_profiles.scans++;
+	return profile_write(profile_get(profile));
+}
+
+/* takes out a tag's edits whose keys begin with `prefix` (exact: that are
+it), writing the profile */
+static int edits_clear(long profile, long tag, const char *prefix, int exact)
+{
+	struct tag_profile_tag *found = tag_get(profile, tag);
+	size_t length = prefix ? strlen(prefix) : 0;
+	long kept = 0;
+	long index;
+
+	if (!found)
+		return 0;
+	for (index = 0; index < found->edit_count; index++)
+	{
+		if (exact ? !strcmp(found->edits[index].key, prefix ? prefix : "") :
+			!strncmp(found->edits[index].key, prefix ? prefix : "", length))
+			continue;
+		found->edits[kept++] = found->edits[index];
+	}
+	if (kept == found->edit_count)
+		return 1;
+	found->edit_count = kept;
+	port_tag_profiles.scans++;
+	return profile_write(profile_get(profile));
+}
+
+int port_tag_profiles_tag_clear_edits(long profile, long tag, const char *prefix)
+{
+	return edits_clear(profile, tag, prefix, 0);
+}
+
+int port_tag_profiles_tag_clear_edit(long profile, long tag, const char *key)
+{
+	return edits_clear(profile, tag, key, 1);
+}
+
+unsigned long port_tag_profiles_tag_signature(long profile, long tag)
+{
+	struct tag_profile_tag *found = tag_get(profile, tag);
+	unsigned long value = 2166136261UL;
+	const unsigned char *byte;
+	size_t index;
+	long edit;
+
+	if (!found)
+		return 0;
+	for (index = 0; index < TAG_OPTION_COUNT; index++)
+	{
+		for (byte = (const unsigned char *)found->options[index]; *byte; byte++)
+			value = (value ^ *byte) * 16777619UL & 0xFFFFFFFFUL;
+		value = (value ^ 0xFF) * 16777619UL & 0xFFFFFFFFUL;
+	}
+	for (edit = 0; edit < found->edit_count; edit++)
+	{
+		char number[32];
+
+		snprintf(number, sizeof(number), "=%.9g;", found->edits[edit].value);
+		for (byte = (const unsigned char *)found->edits[edit].key; *byte; byte++)
+			value = (value ^ *byte) * 16777619UL & 0xFFFFFFFFUL;
+		for (byte = (const unsigned char *)number; *byte; byte++)
+			value = (value ^ *byte) * 16777619UL & 0xFFFFFFFFUL;
+	}
+	return value;
+}
+
 long port_tag_profiles_tag_find(long profile, unsigned long group, const char *name)
 {
 	struct tag_profile *found = profile_get(profile);
@@ -1087,6 +1328,8 @@ int port_tag_profiles_tag_add(long profile, const char *map, unsigned long group
 		text_copy(tag.file, sizeof(tag.file), found->tags[existing].file);
 		tag.enabled = found->tags[existing].enabled;
 		memcpy(tag.options, found->tags[existing].options, sizeof(tag.options));
+		tag.edits = found->tags[existing].edits;
+		tag.edit_count = found->tags[existing].edit_count;
 		if (found->tags[existing].stored != tag.stored)
 			text_copy(replaced, sizeof(replaced), found->tags[existing].file);
 	}
@@ -1165,6 +1408,7 @@ int port_tag_profiles_tag_remove(long profile, long tag)
 		return 0;
 	profile_path(found, found->tags[tag].file, path, sizeof(path));
 	platform_log("tag injector: took %s out of the profile %s", found->tags[tag].name, found->name);
+	free(found->tags[tag].edits);
 	memmove(&found->tags[tag], &found->tags[tag + 1], (size_t)(found->tag_count - tag - 1) * sizeof(found->tags[0]));
 	found->tag_count--;
 	port_tag_profiles.scans++;

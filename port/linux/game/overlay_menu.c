@@ -47,6 +47,7 @@ the data root (below, "the files' entries").
 #include "text/font_group.h"
 #include "halo_overlay_menu.h"
 #include "halo_ui_pointer.h"
+#include "tag_editor.h"
 
 #include "../src/posix.h"
 #include "../../third_party/tomlc17/tomlc17.h"
@@ -81,6 +82,9 @@ enum
 	OVERLAY_ROW_RADIUS = 8,
 	OVERLAY_OUTLINE = 2,
 	OVERLAY_VALUE_WIDTH = 64,
+	/* (a Tag Editor's values: a number, a corner's name, a HUD element's
+	place) */
+	OVERLAY_EDITOR_VALUE_WIDTH = 88,
 	OVERLAY_ARROW_SIZE = 4,
 	/* a held direction steps again after this long, then this often */
 	OVERLAY_REPEAT_DELAY_MILLISECONDS = 400,
@@ -130,6 +134,10 @@ enum overlay_entry_type
 	/* a file's entry that could not be read (overlay/, below): shown in red,
 	and chosen, says why */
 	_overlay_entry_malformed,
+	/* the Tag Editor (tag_editor.c): a folder whose rows it makes as they
+	are shown, each one of them a row of its (editor_kind, value) */
+	_overlay_entry_editor,
+	_overlay_entry_editor_row,
 };
 
 /* where a toggle's or a choice's state is read */
@@ -199,6 +207,10 @@ struct overlay_entry
 	/* a line about it, shown above the foot while it is chosen ("Applies
 	at the next restart"), or NULL */
 	char const *note;
+	/* a Tag Editor row's: what it is (tag_editor.h's), and its value (NULL
+	for none) */
+	short editor_kind;
+	char const *value;
 };
 
 /* a built-in folder: its entries */
@@ -254,6 +266,8 @@ unsigned char network_chat_typing(void);
 #define OVERLAY_FOLDER(label, source) \
 	{ _overlay_entry_folder, _overlay_state_none, label, NULL, NULL, NULL, 0.0f, &source, FALSE, FALSE, NONE }
 #define OVERLAY_FOLDER_OF(label, entries) { label, (short)NUMBEROF(entries), entries }
+#define OVERLAY_EDITOR(label) \
+	{ _overlay_entry_editor, _overlay_state_none, label, NULL, NULL, NULL, 0.0f, NULL, FALSE, FALSE, NONE }
 
 static struct overlay_entry overlay_cheats_entries[] =
 {
@@ -390,6 +404,7 @@ static struct overlay_entry overlay_root_entries[] =
 {
 	OVERLAY_FOLDER("Cheats", overlay_cheats),
 	OVERLAY_FOLDER("Bots", overlay_bots),
+	OVERLAY_EDITOR("Tag Editor"),
 	OVERLAY_FOLDER("Game Speed", overlay_speed),
 	OVERLAY_FOLDER("HUD", overlay_hud),
 	OVERLAY_FOLDER("Camera", overlay_camera),
@@ -499,7 +514,19 @@ static struct
 	struct overlay_folder *scroll_folder;
 	short scroll_row;
 	unsigned long scroll_since;
+	/* since when left or right has been held (a value changes faster) */
+	unsigned long sideways_since;
 } overlay;
+
+/* the Tag Editor's folder, as tag_editor.c last made its rows */
+static struct
+{
+	struct overlay_folder folder;
+	struct overlay_entry entries[TAG_EDITOR_MAXIMUM_ROWS];
+	struct overlay_entry *pointers[TAG_EDITOR_MAXIMUM_ROWS];
+	struct tag_editor_row rows[TAG_EDITOR_MAXIMUM_ROWS];
+	char title[TAG_EDITOR_LABEL_LENGTH];
+} overlay_editor;
 
 /* ---------- private code */
 
@@ -507,6 +534,39 @@ static struct overlay_folder *overlay_folder(
 	void)
 {
 	return overlay.folders[overlay.depth];
+}
+
+/* the Tag Editor's rows made again, while its folder is shown */
+static void overlay_editor_refresh(
+	void)
+{
+	short count;
+	short row;
+
+	if (!overlay.open || overlay_folder() != &overlay_editor.folder)
+		return;
+	count = tag_editor_menu_rows(overlay_editor.rows, TAG_EDITOR_MAXIMUM_ROWS);
+	for (row = 0; row < count; row++)
+	{
+		struct overlay_entry *entry = &overlay_editor.entries[row];
+		struct tag_editor_row const *made = &overlay_editor.rows[row];
+
+		memset(entry, 0, sizeof(*entry));
+		entry->type = _overlay_entry_editor_row;
+		entry->state = _overlay_state_none;
+		entry->label = made->label;
+		entry->global_index = NONE;
+		entry->editor_kind = made->kind;
+		entry->value = made->value[0] ? made->value : NULL;
+		entry->note = made->note[0] ? made->note : NULL;
+		overlay_editor.pointers[row] = entry;
+	}
+	snprintf(overlay_editor.title, sizeof(overlay_editor.title), "%s", tag_editor_menu_title());
+	overlay_editor.folder.label = overlay_editor.title;
+	overlay_editor.folder.count = count;
+	overlay_editor.folder.entries = overlay_editor.pointers;
+	if (overlay.selected[overlay.depth] >= count)
+		overlay.selected[overlay.depth] = (short)MAX(count - 1, 0);
 }
 
 static struct hs_external_global_definition *overlay_global(
@@ -1181,6 +1241,10 @@ static void overlay_set_open(
 
 	if (overlay.open == open)
 		return;
+	/* (the Tag Editor's edits written as it closes, an element it moved let
+	go) */
+	if (!open)
+		tag_editor_menu_update(TRUE);
 	overlay.open = open;
 	overlay.logged_draw = FALSE;
 	/* (the buttons that opened or closed it act on nothing: each acts at
@@ -1208,6 +1272,17 @@ static void overlay_set_open(
 static void overlay_back(
 	void)
 {
+	short selected = 0;
+
+	/* (the Tag Editor's lists first) */
+	if (overlay_folder() == &overlay_editor.folder && tag_editor_menu_back(&selected))
+	{
+		overlay.selected[overlay.depth] = selected;
+		overlay.first_row = 0;
+		overlay_editor_refresh();
+		overlay_keep_selection_shown();
+		return;
+	}
 	if (overlay.depth > 0)
 	{
 		overlay.depth--;
@@ -1263,6 +1338,35 @@ static void overlay_choose(
 		snprintf(status, sizeof(status), "%s: %s", entry->file ? entry->file : "?", entry->problem);
 		overlay_set_status(status);
 		return;
+	case _overlay_entry_editor:
+		if (overlay.depth + 1 < MAXIMUM_OVERLAY_DEPTH)
+		{
+			tag_editor_menu_open();
+			overlay.depth++;
+			overlay.folders[overlay.depth] = &overlay_editor.folder;
+			overlay.selected[overlay.depth] = 0;
+			overlay.first_row = 0;
+			overlay_editor_refresh();
+		}
+		return;
+	case _overlay_entry_editor_row:
+	{
+		short selected = row;
+		char const *title = tag_editor_menu_title();
+		char before[TAG_EDITOR_LABEL_LENGTH];
+
+		snprintf(before, sizeof(before), "%s", title);
+		tag_editor_menu_choose((short)(entry - overlay_editor.entries), &selected, status, sizeof(status));
+		overlay.selected[overlay.depth] = selected;
+		/* (gone into a list: at its top) */
+		if (strcmp(before, tag_editor_menu_title()))
+			overlay.first_row = 0;
+		overlay_editor_refresh();
+		overlay_keep_selection_shown();
+		if (status[0])
+			overlay_set_status(status);
+		return;
+	}
 	case _overlay_entry_toggle:
 		on = !overlay_entry_on(entry);
 		command = on ? entry->command : entry->command_off;
@@ -1492,6 +1596,7 @@ void overlay_menu_pointer(
 
 	if (!overlay.open || !overlay.drawn)
 		return;
+	overlay_editor_refresh();
 	/* (the menus' centred 640, as the screen's) */
 	x = (short)(pointer->x + (halo_screen_width() - 640) / 2);
 	y = pointer->y;
@@ -1543,12 +1648,16 @@ void overlay_menu_update(
 {
 	enum
 	{
-		DIRECTIONS = (1UL << HALO_OVERLAY_PAD_UP) | (1UL << HALO_OVERLAY_PAD_DOWN),
+		SIDEWAYS = (1UL << HALO_OVERLAY_PAD_LEFT) | (1UL << HALO_OVERLAY_PAD_RIGHT),
+		/* (a Tag Editor's value held fast after this long) */
+		FAST_AFTER_MILLISECONDS = 1500,
 	};
+	unsigned long directions = (1UL << HALO_OVERLAY_PAD_UP) | (1UL << HALO_OVERLAY_PAD_DOWN);
 	unsigned long buttons = 0;
 	unsigned long pressed;
 	unsigned long now = system_milliseconds();
 	short port;
+	boolean value_chosen;
 
 	if (overlay.toggle_requested)
 	{
@@ -1561,14 +1670,39 @@ void overlay_menu_update(
 		buttons |= overlay.port_buttons[port];
 	pressed = buttons & ~overlay.previous_buttons;
 	overlay.previous_buttons = buttons;
-	/* (up and down held step again and again) */
-	if (pressed & DIRECTIONS)
+	/* (the Tag Editor's edits written a moment after the last) */
+	tag_editor_menu_update(FALSE);
+	/* (a HUD element moved over the game: its buttons are the Tag
+	Editor's, but Start, which closes it) */
+	if (tag_editor_menu_capturing())
+	{
+		if (pressed & (1UL << HALO_OVERLAY_PAD_START))
+			overlay_set_open(FALSE);
+		else
+			tag_editor_menu_capture(pressed, buttons);
+		return;
+	}
+	overlay_editor_refresh();
+	/* (up and down held step again and again, and left and right on a Tag
+	Editor's value) */
+	{
+		struct overlay_folder *folder = overlay_folder();
+		short selected = overlay.selected[overlay.depth];
+
+		value_chosen = selected < folder->count && folder->entries[selected]->type == _overlay_entry_editor_row &&
+			(folder->entries[selected]->editor_kind == _tag_editor_row_value);
+	}
+	if (value_chosen)
+		directions |= SIDEWAYS;
+	if (pressed & SIDEWAYS)
+		overlay.sideways_since = now;
+	if (pressed & directions)
 	{
 		overlay.repeat_at = now + OVERLAY_REPEAT_DELAY_MILLISECONDS;
 	}
-	else if ((buttons & DIRECTIONS) && overlay.repeat_at && (long)(now - overlay.repeat_at) >= 0)
+	else if ((buttons & directions) && overlay.repeat_at && (long)(now - overlay.repeat_at) >= 0)
 	{
-		pressed |= buttons & DIRECTIONS;
+		pressed |= buttons & directions;
 		overlay.repeat_at = now + OVERLAY_REPEAT_MILLISECONDS;
 	}
 	if (pressed & (1UL << HALO_OVERLAY_PAD_UP))
@@ -1586,13 +1720,30 @@ void overlay_menu_update(
 		struct overlay_folder *folder = overlay_folder();
 		short selected = overlay.selected[overlay.depth];
 		short type = selected < folder->count ? folder->entries[selected]->type : NONE;
+		short editor_kind = type == _overlay_entry_editor_row ? folder->entries[selected]->editor_kind : NONE;
 
 		if (type == _overlay_entry_toggle)
+		{
 			overlay_choose(selected);
+		}
+		else if (editor_kind == _tag_editor_row_value)
+		{
+			char status[96];
+
+			tag_editor_menu_adjust(selected, (short)((pressed & (1UL << HALO_OVERLAY_PAD_LEFT)) ? -1 : 1),
+				(long)(now - overlay.sideways_since) >= FAST_AFTER_MILLISECONDS, status, sizeof(status));
+			if (status[0])
+				overlay_set_status(status);
+		}
 		else if (pressed & (1UL << HALO_OVERLAY_PAD_LEFT))
+		{
 			overlay_back();
-		else if (type == _overlay_entry_folder)
+		}
+		else if (type == _overlay_entry_folder || type == _overlay_entry_editor ||
+			editor_kind == _tag_editor_row_folder)
+		{
 			overlay_choose(selected);
+		}
 	}
 	if (pressed & (1UL << HALO_OVERLAY_PAD_B))
 		overlay_back();
@@ -1647,6 +1798,37 @@ void overlay_menu_draw(
 	height = (short)(render.camera.viewport_bounds.y1 - render.camera.viewport_bounds.y0);
 	if (line_height <= 0 || width <= 0 || height <= 0)
 		return;
+	/* (a HUD element moved over the game: no panel, which would hide the
+	HUD, but a band at the foot saying where it is, and the buttons) */
+	if (tag_editor_menu_capturing())
+	{
+		char first[128];
+		char second[128];
+		wchar_t wide[128];
+		short index;
+		rectangle2d band;
+
+		tag_editor_menu_capture_text(first, second, sizeof(first));
+		band.x0 = 0;
+		band.x1 = width;
+		band.y1 = (short)(height - OVERLAY_MARGIN);
+		band.y0 = (short)(band.y1 - 2 * small_line_height - 3 * OVERLAY_ROW_PADDING);
+		draw_quad(&band, (pixel32)0xA0 << 24);
+		bounds.x0 = OVERLAY_MARGIN;
+		bounds.x1 = (short)(width - OVERLAY_MARGIN);
+		bounds.y0 = (short)(band.y0 + OVERLAY_ROW_PADDING);
+		bounds.y1 = (short)(bounds.y0 + small_line_height);
+		overlay_text(small_font_index, &bounds, _overlay_text_left, &white, first);
+		for (index = 0; second[index] && index < (short)NUMBEROF(wide) - 1; index++)
+			wide[index] = (wchar_t)(unsigned char)second[index];
+		wide[index] = 0;
+		bounds.y0 = (short)(bounds.y1 + OVERLAY_ROW_PADDING);
+		bounds.y1 = (short)(bounds.y0 + small_line_height);
+		draw_string_set_draw_mode(small_font_index, NONE, _overlay_text_left, 0, &blue);
+		draw_string_and_hack_in_icons(&bounds, NULL, NULL, 0, wide, FALSE);
+		return;
+	}
+	overlay_editor_refresh();
 	folder = overlay_folder();
 
 	/* the panel, down the left of the screen */
@@ -1753,12 +1935,28 @@ void overlay_menu_draw(
 		case _overlay_entry_choice:
 			value = overlay_entry_on(entry) ? "ON" : NULL;
 			break;
+		case _overlay_entry_editor:
+			overlay_arrow((short)(room.x1 - OVERLAY_ARROW_SIZE - 2), middle, TRUE, BLUE);
+			room.x1 = (short)(room.x1 - 3 * OVERLAY_ARROW_SIZE);
+			break;
+		case _overlay_entry_editor_row:
+			/* (a list: an arrow into it; a value: between arrows; words: their
+			value alone) */
+			if (entry->editor_kind == _tag_editor_row_folder)
+			{
+				overlay_arrow((short)(room.x1 - OVERLAY_ARROW_SIZE - 2), middle, TRUE, BLUE);
+				room.x1 = (short)(room.x1 - 3 * OVERLAY_ARROW_SIZE);
+			}
+			value = entry->value;
+			arrows = entry->editor_kind == _tag_editor_row_value;
+			break;
 		}
 		if (value || arrows)
 		{
 			rectangle2d value_room = room;
 
-			value_room.x0 = (short)(room.x1 - OVERLAY_VALUE_WIDTH);
+			value_room.x0 = (short)(room.x1 - (entry->type == _overlay_entry_editor_row ? OVERLAY_EDITOR_VALUE_WIDTH :
+				OVERLAY_VALUE_WIDTH));
 			if (arrows)
 			{
 				overlay_arrow(value_room.x0, middle, FALSE, BLUE);
