@@ -486,7 +486,7 @@ until deleted by hand.
 
 ## The Tag Editor
 
-The overlay menu's **TAG EDITOR** (L, R and the d-pad's down) changes the
+The overlay menu's **TAG EDITOR** (L, R and the d-pad's down, or | on the keyboard) changes the
 weapon the first player holds, when it is one of the played profile's. Its
 first list has three:
 
@@ -494,11 +494,21 @@ first list has three:
   triggers, magazines and projectiles (their damage below them), and its
   melee damage.
 - **HUD**: its HUD and the parent HUDs it draws too (below).
-- **Tag settings**: **Name**, the name the profile shows it by (A types it
-  over the game: the d-pad's up and down change the letter chosen, left and
-  right choose another, Back deletes the one before, A keeps it, B does
-  not), and **Remove from profile** (A twice: the level loaded keeps it
-  until it loads again).
+- **Tag settings**: **Name**, the name the profile shows it by;
+  **Faction** and **Class**, the randomizer's pools it joins (left and
+  right choose, A puts back AUTO), as the Tag Injector menu has them;
+  **Custom type**, the randomizer's ONE TYPE name it is played by (nothing
+  typed: its name); and **Remove from profile** (A twice: the level loaded
+  keeps it until it loads again).
+
+  A name and a custom type are typed over the game, on the keyboard (Enter
+  keeps it, Escape does not, the arrows, Home and End move the cursor) or
+  on an on-screen keyboard, shown while a controller or the touchscreen was
+  used last: the d-pad picks a key, A presses it, a click or a tap presses
+  the key under it; < and > move the cursor, Aa gives capitals, Back or DEL
+  deletes the character before the cursor, SAVE keeps it, B or a right
+  click does not. Letters, digits, spaces, - and _ alone, as a profile
+  keeps them.
 
 Each change is kept in the weapon's tag of the profile, under
 `[tags.edits]` in `profile.toml`, a number by its key

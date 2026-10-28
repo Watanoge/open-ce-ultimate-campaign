@@ -19,6 +19,7 @@ and the debug keyboard that the game's console reads.
 #include "server_master.h"
 #include "xiso.h"
 #include "touch_input.h"
+#include "halo_keyboard.h"
 #include "../game/text_filter.h"
 
 #include <SDL3/SDL.h>
@@ -1660,7 +1661,20 @@ static void queue_keystroke(const SDL_KeyboardEvent *event)
 	keystroke->virtual_key = virtual_key_from_scancode(event->scancode);
 	keystroke->ascii = event->down ? ascii_from_key(event->key, event->mod) : 0;
 	keystroke->flags = flags;
+	/* (SDL's key is the one typed, its modifiers taken: | wherever the
+	layout has it; a build's SDL that gives the key bare still has Shift+\) */
+	keystroke->overlay = event->down && !event->repeat && (event->key == SDLK_PIPE ||
+		(event->key == SDLK_BACKSLASH && (event->mod & SDL_KMOD_SHIFT)));
 	keystroke_count++;
+}
+
+/* whether a key was pressed after a controller or the touchscreen was last
+used (halo_keyboard.h's halo_keyboard_typed_last): none yet is not */
+static int keyboard_typed_last;
+
+int halo_keyboard_typed_last(void)
+{
+	return keyboard_typed_last;
 }
 
 BOOL platform_next_keystroke(struct platform_keystroke *keystroke)
@@ -2123,6 +2137,10 @@ void platform_pump_events(void)
 				break;
 			}
 			queue_keystroke(&event.key);
+			/* (Android's back, a gesture or a controller's button too, is no
+			keyboard's) */
+			if (event.key.down && !event.key.repeat && event.key.scancode != SDL_SCANCODE_AC_BACK)
+				keyboard_typed_last = TRUE;
 			if (SDL_GetTicks() < scoreboard_open_until_ms && event.key.down &&
 				(event.key.scancode == SDL_SCANCODE_PAGEUP || event.key.scancode == SDL_SCANCODE_PAGEDOWN))
 			{
@@ -2326,6 +2344,8 @@ void platform_pump_events(void)
 		case SDL_EVENT_FINGER_MOTION:
 		case SDL_EVENT_FINGER_UP:
 		case SDL_EVENT_FINGER_CANCELED:
+			if (event.type == SDL_EVENT_FINGER_DOWN)
+				keyboard_typed_last = FALSE;
 			touch_input_event(event.type, &event.tfinger);
 			break;
 #endif
@@ -2355,17 +2375,23 @@ void platform_pump_events(void)
 			}
 #endif
 			break;
-#if !defined(HALO_ANDROID) && !defined(HALO_GLES)
 		case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+			keyboard_typed_last = FALSE;
+#if !defined(HALO_ANDROID) && !defined(HALO_GLES)
 			menu_cursor_controller_used(input_state.ui_pointer);
+#endif
 			break;
 		case SDL_EVENT_GAMEPAD_AXIS_MOTION:
 			/* (past a stick's or trigger's rest, as gamepad_idle in
 			xinput_sdl.c has it) */
 			if (event.gaxis.value > 8000 || event.gaxis.value < -8000)
+			{
+				keyboard_typed_last = FALSE;
+#if !defined(HALO_ANDROID) && !defined(HALO_GLES)
 				menu_cursor_controller_used(input_state.ui_pointer);
-			break;
 #endif
+			}
+			break;
 		case SDL_EVENT_GAMEPAD_REMOVED:
 			/* (SDL keeps a gamepad open until it is closed, even once the
 			controller has gone) */

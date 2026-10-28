@@ -504,11 +504,11 @@ static const struct config_setting config_settings[] =
 #endif
 	{ "game.overlay_menu", _config_boolean, "true", "HALO_OVERLAY_MENU", _environment_value, _platform_all,
 		"Holding L and R and pressing the d-pad's down opens the game's overlay\n"
-		"menu, and closes it: cheats, the game's speed, the HUD, the camera and\n"
-		"the renderer's switches, in a panel at the left of the screen (on\n"
-		"Android also three fingers on the screen together). While it is open\n"
-		"the game gets no input; it is not paused.\n"
-		"false: the buttons do not open it." },
+		"menu, and closes it, as | does on the keyboard: cheats, the game's\n"
+		"speed, the HUD, the camera and the renderer's switches, in a panel at\n"
+		"the left of the screen (on Android also three fingers on the screen\n"
+		"together). While it is open the game gets no input; it is not paused.\n"
+		"false: neither the buttons nor | open it." },
 #if defined(HALO_SWITCH) || defined(HALO_PS5)
 	{ "display.xbox_buttons", _config_boolean, "false", "HALO_XBOX_BUTTONS", _environment_value, _platform_all,
 		"Draw the controller's buttons as the Xbox's (the green A, the red B...)\n"

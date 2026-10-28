@@ -55,6 +55,7 @@ A client of a network game changes nothing: it plays the host's.
 #include "interface/hud_definitions.h"
 #include "interface/weapon_hud_interface_definition.h"
 #include "items/projectile_definitions.h"
+#include "input/input.h"
 #include "items/weapon_definitions.h"
 #include "networking/network_game_globals.h"
 #include "networking/network_server_manager.h"
@@ -63,6 +64,7 @@ A client of a network game changes nothing: it plays the host's.
 #include "tag_files/tag_files.h"
 #include "tag_files/tag_groups.h"
 #include "units/units.h"
+#include "halo_keyboard.h"
 #include "halo_overlay_menu.h"
 #include "tag_editor.h"
 #include "tag_injector.h"
@@ -107,6 +109,8 @@ enum
 	/* a name typed: its length at most (a profile's settings' values are
 	31 characters: port_tag_profiles.c) */
 	RENAME_LENGTH = 31,
+	/* a key's Ctrl (struct key_stroke's modifier_flags: input_xbox.c's) */
+	KEY_MODIFIER_CONTROL_BIT = 1,
 
 	/* a weapon HUD interface's elements (tag_schema_effects.c's structures):
 	of each its bytes, where its placement is in it, and where an element
@@ -236,9 +240,29 @@ enum editor_action
 	_action_hud_element,
 	_action_reset_page,
 	_action_reset_all,
-	/* the tag's name in the profile typed, and the tag taken out of it */
+	/* the tag's name in the profile typed, a setting of it the randomizer
+	reads chosen (arguments[0]: its option) and its custom type typed, and
+	the tag taken out of it */
 	_action_rename,
+	_action_option,
+	_action_custom_type,
 	_action_remove,
+};
+
+/* the settings of a weapon's tag in its profile chosen among values */
+enum editor_option
+{
+	_option_faction,
+	_option_class,
+	NUMBER_OF_EDITOR_OPTIONS
+};
+
+/* what is typed on the keyboard: of the profile's settings of the tag */
+enum editor_typing
+{
+	_typing_name,
+	_typing_custom_type,
+	NUMBER_OF_EDITOR_TYPINGS
 };
 
 /* ---------- structures */
@@ -484,18 +508,137 @@ static struct
 	point2d blink_offset;
 
 	/* the name being typed (in place of the lists, as a HUD element is
-	moved), its character chosen, and the buttons' repeat */
+	moved), of which setting, the character it is typed before, the
+	on-screen keyboard's key picked, its capitals, and the buttons' repeat */
 	boolean renaming;
+	short typing;
 	char name[RENAME_LENGTH + 1];
 	short cursor;
+	short key_row;
+	short key_column;
+	boolean shift;
 	unsigned long rename_repeat_at;
 } tag_editor;
 
-/* the characters a name is typed of, in the order up steps through them */
-static char const rename_characters[] =
-	" ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.()'+#";
+/* the on-screen keyboard's keys but the last row's: the characters a
+profile keeps in a name (port_tag_profiles.c's tag_option_clean: letters,
+digits, spaces, - and _), and < and > moving the cursor */
+static char const *const rename_keys[TAG_EDITOR_KEYBOARD_ROWS - 1] =
+	{ "1234567890", "qwertyuiop", "asdfghjkl-", "zxcvbnm_<>" };
+
+/* its last row's wide keys */
+enum
+{
+	_rename_key_shift,
+	_rename_key_space,
+	_rename_key_delete,
+	_rename_key_clear,
+	_rename_key_save,
+	NUMBER_OF_RENAME_WIDE_KEYS
+};
+
+static char const *const rename_wide_keys[NUMBER_OF_RENAME_WIDE_KEYS] =
+	{ "Aa", "SPACE", "DEL", "CLEAR", "SAVE" };
+
+/* a setting's value in the profile, and as it is shown (the Tag Injector
+menu's: menu_functions.c's tags_weapon_factions, tags_weapon_classes) */
+struct option_choice
+{
+	char const *value;
+	char const *shown;
+};
+
+static struct option_choice const faction_choices[] =
+	{ { "", "AUTO" }, { "covenant", "COVENANT" }, { "human", "HUMAN" } };
+static struct option_choice const class_choices[] =
+{
+	{ "", "AUTO" }, { "precision", "PRECISION" }, { "automatic", "AUTOMATIC" }, { "power", "POWER" },
+	{ "none", "NONE" },
+};
+
+/* each option's key in the profile, its row's label and note, and its
+values */
+static struct
+{
+	char const *key;
+	char const *label;
+	char const *note;
+	struct option_choice const *choices;
+	short count;
+} const editor_options[NUMBER_OF_EDITOR_OPTIONS] =
+{
+	{ "faction", "Faction", "The randomizer's pools it joins. AUTO: by its name. A puts it back to AUTO.",
+		faction_choices, (short)NUMBEROF(faction_choices) },
+	{ "class", "Class", "Its pool: PRECISION, AUTOMATIC or POWER. AUTO: by its name. NONE: none. A: AUTO.",
+		class_choices, (short)NUMBEROF(class_choices) },
+};
+
+/* each typing's key in the profile, and its words over the game */
+static struct
+{
+	char const *key;
+	char const *shown;
+} const editor_typings[NUMBER_OF_EDITOR_TYPINGS] =
+{
+	{ "name", "NAME" },
+	{ "custom_type", "CUSTOM TYPE" },
+};
 
 static void pending_write(void);
+
+/* ---------- private code: the tag's settings in its profile */
+
+/* an option's value of the weapon held, of its choices (AUTO, the first, for
+one not among them) */
+static short option_value(
+	struct editor_context const *context,
+	short option)
+{
+	char const *value = context->profile == NONE ? "" :
+		tag_injector_tag_setting(context->profile, context->tag, editor_options[option].key);
+	short index;
+
+	for (index = 0; value && index < editor_options[option].count; index++)
+	{
+		if (!strcmp(editor_options[option].choices[index].value, value))
+			return index;
+	}
+	return 0;
+}
+
+/* an option of the weapon held kept as one of its choices */
+static void option_set(
+	struct editor_context const *context,
+	short option,
+	short choice,
+	char *status,
+	long status_size)
+{
+	if (context->weapon == NONE || context->profile == NONE ||
+		!port_tag_profiles_tag_set_option(context->profile, context->tag, editor_options[option].key,
+			editor_options[option].choices[choice].value))
+	{
+		snprintf(status, status_size, "%s could not be kept (the log says why)", editor_options[option].label);
+		return;
+	}
+	snprintf(status, status_size, "%s: %s", editor_options[option].label, editor_options[option].choices[choice].shown);
+}
+
+/* a setting typed over the game (as a HUD element is moved), from what it
+is now */
+static void typing_begin(
+	short typing,
+	char const *text)
+{
+	snprintf(tag_editor.name, sizeof(tag_editor.name), "%s", text ? text : "");
+	tag_editor.typing = typing;
+	tag_editor.cursor = (short)strlen(tag_editor.name);
+	tag_editor.key_row = 1;
+	tag_editor.key_column = 0;
+	tag_editor.shift = FALSE;
+	tag_editor.rename_repeat_at = 0;
+	tag_editor.renaming = TRUE;
+}
 
 /* ---------- private code: the tags */
 
@@ -1883,7 +2026,13 @@ static short page_rows(
 	}
 	if (page == _page_settings)
 	{
+		short option;
+
 		row_add(rows, &count, _tag_editor_row_command, _action_rename, 0, 0, 0, NULL, "Name");
+		for (option = 0; option < NUMBER_OF_EDITOR_OPTIONS; option++)
+			row_add(rows, &count, _tag_editor_row_value, _action_option, option, 0, 0, NULL,
+				editor_options[option].label);
+		row_add(rows, &count, _tag_editor_row_command, _action_custom_type, 0, 0, 0, NULL, "Custom type");
 		row_add(rows, &count, _tag_editor_row_command, _action_remove, 0, 0, 0, NULL, "Remove from profile");
 		return count;
 	}
@@ -2285,8 +2434,19 @@ static void row_fill(
 		break;
 	case _action_rename:
 		snprintf(result->value, sizeof(result->value), "%s", context.name);
-		snprintf(result->note, sizeof(result->note), "A types its name in the profile (the menus' and the HUD "
-			"notices'; its path stays).");
+		snprintf(result->note, sizeof(result->note), "A types its name in the profile on a keyboard (the menus' "
+			"and the HUD notices'; its path stays).");
+		break;
+	case _action_option:
+		snprintf(result->value, sizeof(result->value), "%s",
+			editor_options[spec->arguments[0]].choices[option_value(&context, spec->arguments[0])].shown);
+		snprintf(result->note, sizeof(result->note), "%s", editor_options[spec->arguments[0]].note);
+		break;
+	case _action_custom_type:
+		if (context.profile != NONE)
+			tag_injector_tag_custom_type(context.profile, context.tag, result->value, sizeof(result->value));
+		snprintf(result->note, sizeof(result->note), "A types it: the randomizer's ONE TYPE plays a profile's "
+			"weapons of one together. Nothing typed: its name.");
 		break;
 	case _action_remove:
 		snprintf(result->note, sizeof(result->note), "%s", tag_editor.confirming == row ?
@@ -2396,11 +2556,14 @@ void tag_editor_menu_choose(
 	}
 	case _action_rename:
 		/* (typed over the game, as a HUD element is moved) */
-		snprintf(tag_editor.name, sizeof(tag_editor.name), "%s", context.name);
-		tag_editor.cursor = (short)strlen(tag_editor.name);
-		tag_editor.rename_repeat_at = 0;
-		tag_editor.held_since = 0;
-		tag_editor.renaming = TRUE;
+		typing_begin(_typing_name, context.name);
+		return;
+	case _action_custom_type:
+		typing_begin(_typing_custom_type, context.profile == NONE ? "" :
+			tag_injector_tag_setting(context.profile, context.tag, "custom_type"));
+		return;
+	case _action_option:
+		option_set(&context, spec->arguments[0], 0, status, status_size);
 		return;
 	case _action_remove:
 	{
@@ -2473,6 +2636,15 @@ void tag_editor_menu_adjust(
 	if (spec->action == _action_scope)
 	{
 		tag_editor.everyone = !tag_editor.everyone;
+		return;
+	}
+	if (spec->action == _action_option)
+	{
+		short option = spec->arguments[0];
+		short count = editor_options[option].count;
+
+		option_set(&context, option, (short)((option_value(&context, option) + direction + count) % count), status,
+			status_size);
 		return;
 	}
 	if (spec->action == _action_hud_anchor)
@@ -2551,86 +2723,208 @@ boolean tag_editor_menu_capturing(
 	return tag_editor.capturing || tag_editor.renaming;
 }
 
-/* the name typed: left and right the character chosen (past the end, one
-more), up and down it changed (held, again and again), Back the one before
-it taken out, A the name kept, B none */
+/* the name (or the custom type) kept in the profile (no spaces at its end;
+none at all: its path's last part again, its name) */
+static void rename_save(
+	void)
+{
+	struct editor_context context;
+	short end = (short)strlen(tag_editor.name);
+
+	while (end > 0 && tag_editor.name[end - 1] == ' ')
+		tag_editor.name[--end] = 0;
+	editor_context(&context);
+	tag_editor.renaming = FALSE;
+	if (context.weapon == NONE || context.profile == NONE ||
+		!port_tag_profiles_tag_set_option(context.profile, context.tag, editor_typings[tag_editor.typing].key,
+			tag_editor.name))
+	{
+		error(_error_silent, "tag editor: the %s %s could not be written", editor_typings[tag_editor.typing].key,
+			tag_editor.name);
+		return;
+	}
+	error(_error_silent, "tag editor: %s's %s is %s", tag_get_name(context.weapon),
+		editor_typings[tag_editor.typing].key, tag_editor.name);
+}
+
+/* a character typed before the cursor */
+static void rename_insert(
+	char character)
+{
+	short length = (short)strlen(tag_editor.name);
+
+	if (length >= RENAME_LENGTH)
+		return;
+	memmove(tag_editor.name + tag_editor.cursor + 1, tag_editor.name + tag_editor.cursor,
+		(size_t)(length - tag_editor.cursor + 1));
+	tag_editor.name[tag_editor.cursor++] = character;
+}
+
+/* the character before the cursor taken out */
+static void rename_delete(
+	void)
+{
+	short length = (short)strlen(tag_editor.name);
+
+	if (tag_editor.cursor <= 0)
+		return;
+	memmove(tag_editor.name + tag_editor.cursor - 1, tag_editor.name + tag_editor.cursor,
+		(size_t)(length - tag_editor.cursor + 1));
+	tag_editor.cursor--;
+}
+
+/* the on-screen keyboard's key pressed: its character typed, the cursor
+moved, or capitals, a space, a delete, the name cleared or kept */
+static void rename_press(
+	short row,
+	short column)
+{
+	if (row < 0 || row >= TAG_EDITOR_KEYBOARD_ROWS || column < 0 || column >= TAG_EDITOR_KEYBOARD_COLUMNS)
+		return;
+	if (row < TAG_EDITOR_KEYBOARD_ROWS - 1)
+	{
+		char character = rename_keys[row][column];
+
+		if (character == '<')
+			tag_editor.cursor = (short)MAX(tag_editor.cursor - 1, 0);
+		else if (character == '>')
+			tag_editor.cursor = (short)MIN(tag_editor.cursor + 1, (short)strlen(tag_editor.name));
+		else
+			rename_insert(tag_editor.shift && character >= 'a' && character <= 'z' ?
+				(char)(character - 'a' + 'A') : character);
+		return;
+	}
+	switch (column / TAG_EDITOR_KEYBOARD_WIDE)
+	{
+	case _rename_key_shift:
+		tag_editor.shift = !tag_editor.shift;
+		break;
+	case _rename_key_space:
+		rename_insert(' ');
+		break;
+	case _rename_key_delete:
+		rename_delete();
+		break;
+	case _rename_key_clear:
+		tag_editor.name[0] = 0;
+		tag_editor.cursor = 0;
+		break;
+	default:
+		rename_save();
+		break;
+	}
+}
+
+/* the keyboard's keys typed: a profile's characters (rename_keys'), the
+arrows, Home and End moving the cursor, Backspace and Delete, Enter keeping
+the name, Escape leaving it as it was */
+static void rename_keys_typed(
+	void)
+{
+	struct key_stroke key;
+
+	while (tag_editor.renaming && input_get_key(&key))
+	{
+		char character = key.ascii_code;
+		short length = (short)strlen(tag_editor.name);
+
+		switch (key.key_code)
+		{
+		case _key_escape:
+			tag_editor.renaming = FALSE;
+			break;
+		case _key_return:
+		case _keypad_enter:
+			rename_save();
+			break;
+		case _key_backspace:
+			rename_delete();
+			break;
+		case _key_delete:
+			if (tag_editor.cursor < length)
+			{
+				tag_editor.cursor++;
+				rename_delete();
+			}
+			break;
+		case _key_left_arrow:
+			tag_editor.cursor = (short)MAX(tag_editor.cursor - 1, 0);
+			break;
+		case _key_right_arrow:
+			tag_editor.cursor = (short)MIN(tag_editor.cursor + 1, length);
+			break;
+		case _key_home:
+			tag_editor.cursor = 0;
+			break;
+		case _key_end:
+			tag_editor.cursor = length;
+			break;
+		default:
+			if (TEST_FLAG(key.modifier_flags, KEY_MODIFIER_CONTROL_BIT))
+				break;
+			if ((character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+				(character >= '0' && character <= '9') || character == ' ' || character == '-' || character == '_')
+			{
+				rename_insert(character);
+			}
+			break;
+		}
+	}
+}
+
+/* the name typed: on the keyboard (rename_keys_typed), or on the on-screen
+keyboard: the d-pad (held, again and again) moves the key picked round its
+edges, A presses it, Back takes out the character before the cursor, B
+leaves the name as it was */
 static void rename_capture(
 	unsigned long pressed,
 	unsigned long held)
 {
 	enum
 	{
-		CHANGES = (1UL << HALO_OVERLAY_PAD_UP) | (1UL << HALO_OVERLAY_PAD_DOWN),
+		DIRECTIONS = (1UL << HALO_OVERLAY_PAD_UP) | (1UL << HALO_OVERLAY_PAD_DOWN) | (1UL << HALO_OVERLAY_PAD_LEFT) |
+			(1UL << HALO_OVERLAY_PAD_RIGHT),
 	};
 	unsigned long now = system_milliseconds();
-	unsigned long changes = pressed & CHANGES;
-	short length = (short)strlen(tag_editor.name);
+	unsigned long steps = pressed & DIRECTIONS;
 
+	rename_keys_typed();
+	if (!tag_editor.renaming)
+		return;
 	if (pressed & (1UL << HALO_OVERLAY_PAD_B))
 	{
 		tag_editor.renaming = FALSE;
 		return;
 	}
-	if (pressed & (1UL << HALO_OVERLAY_PAD_A))
-	{
-		struct editor_context context;
-		short end = length;
-
-		/* (no spaces at its end; none at all: its path's last part again) */
-		while (end > 0 && tag_editor.name[end - 1] == ' ')
-			tag_editor.name[--end] = 0;
-		editor_context(&context);
-		tag_editor.renaming = FALSE;
-		if (context.weapon == NONE || context.profile == NONE ||
-			!port_tag_profiles_tag_set_option(context.profile, context.tag, "name", tag_editor.name))
-		{
-			error(_error_silent, "tag editor: the name %s could not be written", tag_editor.name);
-			return;
-		}
-		error(_error_silent, "tag editor: %s named %s", tag_get_name(context.weapon), tag_editor.name);
-		return;
-	}
 	if (pressed & (1UL << HALO_OVERLAY_PAD_BACK))
-	{
-		if (tag_editor.cursor > 0)
-		{
-			memmove(tag_editor.name + tag_editor.cursor - 1, tag_editor.name + tag_editor.cursor,
-				(size_t)(length - tag_editor.cursor + 1));
-			tag_editor.cursor--;
-		}
-		return;
-	}
-	if (pressed & (1UL << HALO_OVERLAY_PAD_LEFT))
-		tag_editor.cursor = (short)MAX(tag_editor.cursor - 1, 0);
-	if (pressed & (1UL << HALO_OVERLAY_PAD_RIGHT))
-		tag_editor.cursor = (short)MIN(tag_editor.cursor + 1, MIN(length, RENAME_LENGTH - 1));
-	/* (up or down held changes it again and again) */
-	if (changes)
+		rename_delete();
+	if (steps)
 	{
 		tag_editor.rename_repeat_at = now + HUD_REPEAT_DELAY_MILLISECONDS;
 	}
-	else if ((held & CHANGES) && tag_editor.rename_repeat_at && (long)(now - tag_editor.rename_repeat_at) >= 0)
+	else if ((held & DIRECTIONS) && tag_editor.rename_repeat_at && (long)(now - tag_editor.rename_repeat_at) >= 0)
 	{
-		changes = held & CHANGES;
+		steps = held & DIRECTIONS;
 		tag_editor.rename_repeat_at = now + HUD_REPEAT_MILLISECONDS * 2;
 	}
-	if (changes)
+	if (steps)
 	{
-		char current = tag_editor.cursor < length ? tag_editor.name[tag_editor.cursor] : ' ';
-		char const *found = strchr(rename_characters, current);
-		short count = (short)(sizeof(rename_characters) - 1);
-		short index = found && current ? (short)(found - rename_characters) : 0;
+		short rows = TAG_EDITOR_KEYBOARD_ROWS;
+		short columns = TAG_EDITOR_KEYBOARD_COLUMNS;
+		short down = (short)((steps & (1UL << HALO_OVERLAY_PAD_DOWN)) ? 1 : (steps & (1UL << HALO_OVERLAY_PAD_UP)) ?
+			-1 : 0);
+		short right = (short)((steps & (1UL << HALO_OVERLAY_PAD_RIGHT)) ? 1 :
+			(steps & (1UL << HALO_OVERLAY_PAD_LEFT)) ? -1 : 0);
+		short width;
 
-		index = (short)((index + ((changes & (1UL << HALO_OVERLAY_PAD_UP)) ? 1 : count - 1)) % count);
-		if (tag_editor.cursor >= length)
-		{
-			if (length >= RENAME_LENGTH)
-				return;
-			tag_editor.name[length] = 0;
-			tag_editor.name[length + 1] = 0;
-		}
-		tag_editor.name[tag_editor.cursor] = rename_characters[index];
+		/* (on the last row a column is its wide key's first) */
+		tag_editor.key_row = (short)((tag_editor.key_row + down + rows) % rows);
+		width = tag_editor.key_row == rows - 1 ? TAG_EDITOR_KEYBOARD_WIDE : 1;
+		tag_editor.key_column = (short)(tag_editor.key_column - tag_editor.key_column % width);
+		tag_editor.key_column = (short)((tag_editor.key_column + right * width + columns) % columns);
 	}
+	if (pressed & (1UL << HALO_OVERLAY_PAD_A))
+		rename_press(tag_editor.key_row, tag_editor.key_column);
 }
 
 void tag_editor_menu_capture(
@@ -2747,11 +3041,15 @@ void tag_editor_menu_capture_text(
 	{
 		short length = (short)strlen(tag_editor.name);
 
-		snprintf(first, size, "NAME: %.*s[%c]%s", tag_editor.cursor, tag_editor.name,
+		snprintf(first, size, "%s: %.*s[%c]%s", editor_typings[tag_editor.typing].shown, tag_editor.cursor,
+			tag_editor.name,
 			tag_editor.cursor < length ? tag_editor.name[tag_editor.cursor] : ' ',
 			tag_editor.cursor < length ? tag_editor.name + tag_editor.cursor + 1 : "");
-		snprintf(second, size, "D-pad: up/down letter, left/right move   %%back-button Delete   %%a-button Save   "
-			"%%b-button Cancel");
+		if (halo_keyboard_typed_last())
+			snprintf(second, size, "Type it   Enter: Save   Esc: Cancel   Arrows, Home, End: move the cursor");
+		else
+			snprintf(second, size, "D-pad: pick a key   %%a-button Type   %%back-button Delete   %%b-button Cancel   "
+				"SAVE keeps it");
 		return;
 	}
 	editor_context(&context);
@@ -2778,6 +3076,53 @@ void tag_editor_menu_capture_text(
 	snprintf(second, size, "%s   %%a-button %s   %%back-button Reset   %%b-button Done",
 		tag_editor.scaling ? "D-pad: scale (up/down), width (left/right)" : "D-pad: move", tag_editor.scaling ?
 		"Move" : "Scale");
+}
+
+boolean tag_editor_menu_typing(
+	void)
+{
+	return tag_editor.renaming;
+}
+
+void tag_editor_menu_keyboard_key(
+	short row,
+	short column,
+	char *label,
+	long size,
+	boolean *picked,
+	boolean *lit)
+{
+	label[0] = 0;
+	*picked = FALSE;
+	*lit = FALSE;
+	if (row < 0 || row >= TAG_EDITOR_KEYBOARD_ROWS || column < 0 || column >= TAG_EDITOR_KEYBOARD_COLUMNS)
+		return;
+	*picked = row == tag_editor.key_row && column == tag_editor.key_column;
+	if (row < TAG_EDITOR_KEYBOARD_ROWS - 1)
+	{
+		char character = rename_keys[row][column];
+
+		snprintf(label, size, "%c", tag_editor.shift && character >= 'a' && character <= 'z' ?
+			(char)(character - 'a' + 'A') : character);
+		return;
+	}
+	if (column % TAG_EDITOR_KEYBOARD_WIDE)
+		return;
+	snprintf(label, size, "%s", rename_wide_keys[column / TAG_EDITOR_KEYBOARD_WIDE]);
+	*lit = column / TAG_EDITOR_KEYBOARD_WIDE == _rename_key_shift && tag_editor.shift;
+}
+
+void tag_editor_menu_keyboard_press(
+	short row,
+	short column)
+{
+	if (!tag_editor.renaming)
+		return;
+	if (row == TAG_EDITOR_KEYBOARD_ROWS - 1)
+		column = (short)(column - column % TAG_EDITOR_KEYBOARD_WIDE);
+	tag_editor.key_row = row;
+	tag_editor.key_column = column;
+	rename_press(row, column);
 }
 
 void tag_editor_menu_update(

@@ -649,6 +649,10 @@ static void keyboard_gamepad(const struct platform_input_state *input, XINPUT_GA
 		typing_gamepad(input, pad);
 		return;
 	}
+	/* (a name typed in the overlay menu takes the keys as typed, none as
+	the controller's: XInputDebugGetKeystroke) */
+	if (overlay_menu_typing())
+		return;
 
 	if (k[SDL_SCANCODE_D]) x++;
 	if (k[SDL_SCANCODE_A]) x--;
@@ -693,7 +697,7 @@ static void keys_held_over_switch(struct platform_input_state *input)
 	static unsigned char held[SDL_SCANCODE_COUNT];
 	static int context = -1;
 	int next_context = (input->menus != FALSE) | (text_typing ? 2 : 0) | (console_is_active() ? 4 : 0) |
-		(network_chat_typing() ? 8 : 0);
+		(network_chat_typing() ? 8 : 0) | (overlay_menu_typing() ? 16 : 0);
 	int scancode;
 
 	if (context != next_context)
@@ -1829,12 +1833,22 @@ DWORD WINAPI XInputDebugGetKeystroke(PXINPUT_DEBUG_KEYSTROKE keystroke)
 	{
 		BOOL key_up = (next.flags & XINPUT_DEBUG_KEYSTROKE_FLAG_KEYUP) != 0;
 
+		/* (| opens the overlay menu or closes it, but where a line is typed;
+		game.overlay_menu off, it opens it no more than the buttons do) */
+		if (next.overlay && !console_is_active() && !network_chat_typing() && !text_typing &&
+			!overlay_menu_typing() && (overlay_menu_open() || config_boolean("game.overlay_menu")))
+		{
+			overlay_menu_toggle_request();
+			continue;
+		}
 		/* key ups always pass, so no key is left latched down; while typing,
 		escape does not (it cancels, as B: the game's own escape leaves the
 		menus, main.c) */
 		/* (and while the overlay menu is open, key ups alone: it reads the
-		keys as the controller's) */
-		if (key_up || (!overlay_menu_open() && (next.virtual_key == VK_OEM_3_BACKQUOTE || console_is_active() ||
+		keys as the controller's; but a name typed in it, which reads them
+		as typed) */
+		if (key_up || overlay_menu_typing() || (!overlay_menu_open() && (next.virtual_key == VK_OEM_3_BACKQUOTE ||
+			console_is_active() ||
 			network_chat_typing() || (text_typing && next.virtual_key != 0x1B /* escape */))))
 		{
 			keystroke->VirtualKey = next.virtual_key;

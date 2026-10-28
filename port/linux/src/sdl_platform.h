@@ -73,6 +73,9 @@ struct platform_keystroke
 	BYTE virtual_key;
 	CHAR ascii;
 	BYTE flags;
+	/* a | typed (on any layout: Shift+\, AltGr+1), which opens the overlay
+	menu or closes it (xinput_sdl.c) */
+	BOOL overlay;
 };
 
 BOOL platform_sdl_initialize(void);

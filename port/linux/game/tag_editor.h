@@ -37,6 +37,11 @@ enum
 	TAG_EDITOR_NOTE_LENGTH = 128,
 	/* the most rows a list has */
 	TAG_EDITOR_MAXIMUM_ROWS = 160,
+	/* the on-screen keyboard a name is typed with: its columns, and its
+	rows (the last of wide keys, each TAG_EDITOR_KEYBOARD_WIDE columns) */
+	TAG_EDITOR_KEYBOARD_COLUMNS = 10,
+	TAG_EDITOR_KEYBOARD_ROWS = 5,
+	TAG_EDITOR_KEYBOARD_WIDE = 2,
 };
 
 /* ---------- structures */
@@ -106,6 +111,24 @@ void tag_editor_menu_capture_text(
 	char *first,
 	char *second,
 	long size);
+/* A name typed (Tag settings' Name), as a HUD element is moved: while it is
+(_typing), the overlay draws an on-screen keyboard over _capture_text's
+lines too. _keyboard_key is a key's label ("" for none: a wide key of the
+last row is given at its first column alone), whether it is the key picked,
+and whether it is lit (capitals on); _keyboard_press presses one (a click,
+a tap). */
+boolean tag_editor_menu_typing(
+	void);
+void tag_editor_menu_keyboard_key(
+	short row,
+	short column,
+	char *label,
+	long size,
+	boolean *picked,
+	boolean *lit);
+void tag_editor_menu_keyboard_press(
+	short row,
+	short column);
 /* each frame the overlay is open, and as it closes (`closing`): the edits
 made written to the profile a moment after the last */
 void tag_editor_menu_update(

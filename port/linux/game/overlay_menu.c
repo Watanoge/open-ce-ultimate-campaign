@@ -14,8 +14,9 @@ besides. A command is run at once: a line for the console
 saved as the menus save it).
 
 Holding L and R (the shoulders) and pressing the d-pad's down opens it and
-closes it, on any controller; on Android without one, three fingers on the
-screen together (TouchControls.java over the touch controls). While
+closes it, on any controller; on the keyboard | (wherever its layout has it:
+xinput_sdl.c); on Android without one, three fingers on the screen together
+(TouchControls.java over the touch controls). While
 it is open the game gets none of the controllers, the keyboard, the mouse
 or the touchscreen (port/linux/src/xinput_sdl.c, touch_input.c): the d-pad
 or the left stick moves through the list, A chooses, left and right turn a
@@ -45,6 +46,7 @@ the data root (below, "the files' entries").
 #include "text/draw_string.h"
 #include "tag_files/tag_groups.h"
 #include "text/font_group.h"
+#include "halo_keyboard.h"
 #include "halo_overlay_menu.h"
 #include "halo_ui_pointer.h"
 #include "tag_editor.h"
@@ -86,6 +88,10 @@ enum
 	place) */
 	OVERLAY_EDITOR_VALUE_WIDTH = 88,
 	OVERLAY_ARROW_SIZE = 4,
+	/* a Tag Editor's on-screen keyboard: its width, in hundredths of the
+	screen's, and the room round each key */
+	OVERLAY_KEYBOARD_PERCENT = 56,
+	OVERLAY_KEY_GAP = 2,
 	/* a held direction steps again after this long, then this often */
 	OVERLAY_REPEAT_DELAY_MILLISECONDS = 400,
 	OVERLAY_REPEAT_MILLISECONDS = 90,
@@ -103,6 +109,7 @@ enum
 	/* draw_string.c's justifications (its enum is its own) */
 	_overlay_text_left = 0,
 	_overlay_text_right = 1,
+	_overlay_text_centred = 2,
 };
 
 #if defined(HALO_SWITCH)
@@ -506,6 +513,10 @@ static struct
 	boolean logged_draw;
 	short panel_right;
 	short back_top, back_bottom;
+	/* where the last frame drew a Tag Editor's on-screen keyboard's keys,
+	if it did (the screen's coordinates) */
+	boolean keys_drawn;
+	rectangle2d keys;
 	short rows_top;
 	short row_height;
 	short rows_shown;
@@ -1546,6 +1557,12 @@ unsigned char overlay_menu_open(
 	return overlay.open;
 }
 
+unsigned char overlay_menu_typing(
+	void)
+{
+	return overlay.open && tag_editor_menu_typing();
+}
+
 void overlay_menu_toggle_request(
 	void)
 {
@@ -1594,6 +1611,33 @@ void overlay_menu_pointer(
 	short x;
 	short y;
 
+	/* (a name typed: a click or a tap on the on-screen keyboard presses a
+	key, a right click leaves the name as it was) */
+	if (overlay.open && tag_editor_menu_typing())
+	{
+		short ignored;
+
+		if (pointer->left_clicks && overlay.keys_drawn)
+		{
+			short click_x = (short)(pointer->click_x + (halo_screen_width() - 640) / 2);
+			short click_y = pointer->click_y;
+			short keys_width = (short)(overlay.keys.x1 - overlay.keys.x0);
+			short keys_height = (short)(overlay.keys.y1 - overlay.keys.y0);
+
+			if (keys_width > 0 && keys_height > 0 && click_x >= overlay.keys.x0 && click_x < overlay.keys.x1 &&
+				click_y >= overlay.keys.y0 && click_y < overlay.keys.y1)
+			{
+				tag_editor_menu_keyboard_press(
+					(short)((click_y - overlay.keys.y0) * TAG_EDITOR_KEYBOARD_ROWS / keys_height),
+					(short)((click_x - overlay.keys.x0) * TAG_EDITOR_KEYBOARD_COLUMNS / keys_width));
+			}
+		}
+		else if (pointer->right_clicks)
+		{
+			tag_editor_menu_back(&ignored);
+		}
+		return;
+	}
 	if (!overlay.open || !overlay.drawn)
 		return;
 	overlay_editor_refresh();
@@ -1751,6 +1795,68 @@ void overlay_menu_update(
 		overlay_set_open(FALSE);
 }
 
+/* a Tag Editor's on-screen keyboard (a name or a custom type typed), in the middle of the
+screen above its foot's band (whose top is `above`), the key picked lit;
+where its keys are kept, for the pointer */
+static void overlay_keyboard_draw(
+	long font_index,
+	short line_height,
+	short width,
+	short above)
+{
+	static pixel32 const KEY = 0xC0102438UL;
+	static pixel32 const PICKED_KEY = 0xF02896FFUL;
+	static pixel32 const LIT_KEY = 0xE0205080UL;
+	real_argb_color white = get_ui_argb_white();
+	short key_width = (short)(width * OVERLAY_KEYBOARD_PERCENT / 100 / TAG_EDITOR_KEYBOARD_COLUMNS);
+	short key_height = (short)MAX(key_width * 2 / 3, line_height + 2 * OVERLAY_KEY_GAP + 4);
+	rectangle2d keys;
+	rectangle2d panel;
+	short row;
+	short column;
+
+	if (key_width <= 2 * OVERLAY_KEY_GAP + 4 || line_height <= 0)
+		return;
+	keys.x0 = (short)((width - key_width * TAG_EDITOR_KEYBOARD_COLUMNS) / 2);
+	keys.x1 = (short)(keys.x0 + key_width * TAG_EDITOR_KEYBOARD_COLUMNS);
+	keys.y1 = (short)(above - OVERLAY_MARGIN);
+	keys.y0 = (short)(keys.y1 - key_height * TAG_EDITOR_KEYBOARD_ROWS);
+	if (keys.y0 < 0)
+		return;
+	panel = keys;
+	panel.x0 -= OVERLAY_KEY_GAP * 2;
+	panel.y0 -= OVERLAY_KEY_GAP * 2;
+	panel.x1 += OVERLAY_KEY_GAP * 2;
+	panel.y1 += OVERLAY_KEY_GAP * 2;
+	draw_quad(&panel, (pixel32)0xA0 << 24);
+	for (row = 0; row < TAG_EDITOR_KEYBOARD_ROWS; row++)
+	{
+		short span = row == TAG_EDITOR_KEYBOARD_ROWS - 1 ? TAG_EDITOR_KEYBOARD_WIDE : 1;
+
+		for (column = 0; column < TAG_EDITOR_KEYBOARD_COLUMNS; column += span)
+		{
+			char label[16];
+			boolean picked;
+			boolean lit;
+			rectangle2d key;
+			rectangle2d bounds;
+
+			tag_editor_menu_keyboard_key(row, column, label, sizeof(label), &picked, &lit);
+			key.x0 = (short)(keys.x0 + column * key_width + OVERLAY_KEY_GAP);
+			key.x1 = (short)(keys.x0 + (column + span) * key_width - OVERLAY_KEY_GAP);
+			key.y0 = (short)(keys.y0 + row * key_height + OVERLAY_KEY_GAP);
+			key.y1 = (short)(keys.y0 + (row + 1) * key_height - OVERLAY_KEY_GAP);
+			draw_quad(&key, picked ? PICKED_KEY : lit ? LIT_KEY : KEY);
+			bounds = key;
+			bounds.y0 = (short)(key.y0 + (key.y1 - key.y0 - line_height) / 2);
+			bounds.y1 = (short)(bounds.y0 + line_height);
+			overlay_text(font_index, &bounds, _overlay_text_centred, &white, label);
+		}
+	}
+	overlay.keys = keys;
+	overlay.keys_drawn = TRUE;
+}
+
 void overlay_menu_draw(
 	void)
 {
@@ -1784,6 +1890,7 @@ void overlay_menu_draw(
 	if (!overlay.open)
 		return;
 	overlay.drawn = FALSE;
+	overlay.keys_drawn = FALSE;
 	if (!overlay_font("ui\\large_ui", &font_index, &line_height) ||
 		!overlay_font("ui\\small_ui", &small_font_index, &small_line_height))
 	{
@@ -1826,6 +1933,10 @@ void overlay_menu_draw(
 		bounds.y1 = (short)(bounds.y0 + small_line_height);
 		draw_string_set_draw_mode(small_font_index, NONE, _overlay_text_left, 0, &blue);
 		draw_string_and_hack_in_icons(&bounds, NULL, NULL, 0, wide, FALSE);
+		/* (the on-screen keyboard for a controller or the touchscreen: none
+		once the keyboard types, until they are used again) */
+		if (tag_editor_menu_typing() && !halo_keyboard_typed_last())
+			overlay_keyboard_draw(font_index, line_height, width, band.y0);
 		return;
 	}
 	overlay_editor_refresh();
