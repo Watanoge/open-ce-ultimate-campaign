@@ -528,34 +528,50 @@ settings, plays a level alone to try the profile's tags in
 (`port/linux/game/firing_range.c`). Its parts, from the start in the
 middle facing north:
 
+Each side faces its other half: the weapons west and the AI east cover the
+same 12 units north to south, and the arena north and the mirror south are
+as wide as each other (16 units), 11 units from the start either way.
+
 - **West**, the weapons: each of the profile's weapons the level could add,
-  once, laid on benches (twelve to a bench, the first 6 units west of the
-  start, the next 3 further each, 96 weapons at most). A weapon taken is
-  laid there again 3 seconds after its place is empty.
-- **South**, the mirror: a frame 8 units south, 12 wide and 1.4 high (drawn
-  alone: it does not stop you). Standing up to 6 units before the pane (within the frame across), the
-  HUD says so, and a copy of you stands where your reflection is, holding
-  your weapons slot for slot (one picked up or swapped is its too, in
-  hand), and moves as you do: it is given your controls each tick, turned
-  about the pane, so it walks, jumps, crouches, aims, fires, reloads,
-  throws and strikes as you do, seen from the front. Stepping back lets it
-  go. Its shots and grenades hurt no one, and nothing hurts it.
-- **North**, the AI: each of the profile's actor variants the level could
-  add, once (32 at most), stands in rows of eight from 9 units north of the
-  start, facing you, unarmed, playing every base animation of its graph in
-  turn (each name once), and nothing hurts it. Walking up to one, the HUD
-  names it; action puts a live one of it in the arena further north (16 by
-  14 units, walled 1 high, a door in its south wall), holding one of the
-  profile's weapons by chance (its own when the profile has none), and the
-  HUD says which. Eight fight at once at most: the ninth takes the oldest's
-  place. The arena's AI walk the floor (its only walkable surface, so they
-  do not path round its walls) and have no encounter or firing positions.
-- **East** (the AI's animations, apart) is to come.
+  once, laid on benches (twelve to a bench, 12 units long, the first 4.5
+  units west of the start, the next 2.5 further each, 96 weapons at most). A
+  weapon taken is laid there again 3 seconds after its place is empty.
+  Past each bench's north end (its first weapon's) stands a dummy: the
+  multiplayer player's biped, unarmed, with a multiplayer player's health
+  and shield (no difficulty or skull scaling, the shield recharging as in
+  multiplayer, and multiplayer headshots), so a weapon's kill time is
+  multiplayer's. As it dies the HUD says how long it took from the first
+  hit; it is stood again 3 seconds later, healed 5 seconds after it was
+  last hurt, and put back when a blast pushes it. The AI leave it be.
+- **East**, the AI: each of the profile's actor variants the level could
+  add, once (32 at most), stands in columns of four from 4.5 units east of
+  the start (the next 2.5 further each), facing you, unarmed, playing every
+  base animation of its graph in turn (each name once), and nothing hurts
+  it. Walking up to one, the HUD says "Press action to fight" it; action
+  puts a live one of it in the arena, holding one of the profile's weapons
+  by chance (its own when the profile has none). Eight fight at once at
+  most: the ninth takes the oldest's place.
+- **North**, the arena: 16 by 14 units, walled 1 high, a door in its south
+  wall. Its AI walk the floor (its only walkable surface, so they do not
+  path round its walls) and have no encounter or firing positions. The pad
+  east of its door outside clears it: standing on it, the HUD says so, and
+  action takes away the bodies in it (and those of the AI fought, wherever
+  they fell) and the weapons and items lying in it.
+- **South**, the mirror: a frame 11 units south, 16 wide and 1.4 high
+  (drawn alone: it does not stop you). Standing up to 5 units before the
+  pane (within the frame across), a copy of you stands
+  where your reflection is, holding your weapons slot for slot (one picked
+  up or swapped is its too, in hand), and moves as you do: it is given your
+  controls each tick, turned about the pane, so it walks, jumps, crouches,
+  aims, fires, reloads, throws and strikes as you do, seen from the front.
+  Stepping back lets it go. Its shots and grenades hurt no one, and nothing
+  hurts it.
 
 The level is Blood Gulch (`maps/bloodgulch.map`), for its sky, sounds and
 shaders, with its ground never read: the game writes a structure bsp of its
-own where the map's would be, a square floor 160 world units across, walled
-round 8 units high (and solid past the walls, up to a ceiling 100 up), with
+own where the map's would be, a floor walled round 8 units high, reaching
+6 units past the mirror's reflection south, the arena north, the farthest
+bench west and the farthest AI east (no narrower than the arena) (and solid past the walls, up to a ceiling 100 up), with
 the benches its own (their collision and their faces). It
 has no lightmap: the floor is drawn with the renderer's own directional
 light, and objects are lit by the bsp's default lighting. While it plays,

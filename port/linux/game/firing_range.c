@@ -7,8 +7,9 @@ AI, opened from the profile in the Tag Injector menu.
 
 It is Blood Gulch, for all a level needs but its ground (the globals, the
 sky, the sounds and the shaders), with its structure bsp never read: one is
-written where it would be (firing_range_structure_bsp_write), a square
-floor walled round, its materials' vertices uncompressed as a Custom Edition
+written where it would be (firing_range_structure_bsp_write), a floor
+walled round, as long as the mirror and the arena need and as wide as the
+benches and the AI do, its materials' vertices uncompressed as a Custom Edition
 map's are, which custom_edition_geometry.c compresses and gives buffers. It
 has no lightmap: structure_render.c draws a bsp without one by its own
 directional light, and objects are lit by the bsp's default lighting
@@ -16,9 +17,16 @@ directional light, and objects are lit by the bsp's default lighting
 its scenario and its players start at the middle (put back as its tags go,
 for the next level of the map).
 
-Its sides are the range's parts: west the profile's weapons, laid on benches
-(the bsp's own, as many as they need), each put back a moment after it is
-taken; south a mirror, a frame on the floor (drawn alone: no collision), past
+Its sides are the range's parts, each across from its other half: west the
+profile's weapons and east its AI, over the same length north to south;
+north the arena and south the mirror, as wide as each other. The weapons
+are laid on benches (the bsp's own, as many as they need), each put back a
+moment after it is taken, and past each bench's north end (its first
+weapon's) stands a dummy, the multiplayer player's biped, hurt as a
+multiplayer game hurts a player (no difficulty, multiplayer headshots:
+firing_range_multiplayer_target), which the HUD gives the time it took to
+kill, and which is healed a moment after it was last hurt and stood again a
+moment after it dies. South, a mirror, a frame on the floor (drawn alone: no collision), past
 which a copy of the player (its biped, holding its weapons) moves as the
 player does, reflected, while the player stands before it: its controls are
 the player's each tick (firing_range_player_control), turned about the
@@ -28,12 +36,13 @@ shots and grenades hurt no one and nothing hurts it. It is made as the
 player steps up, and let go as the player steps back; its weapons are the
 player's slot for slot (units.c's unit_network_* helpers, as a network
 client's are: unit_delete_all_weapons keeps the one in hand, which left the
-copy holding the weapon it had). North, the profile's AI: each a unit of
-its actor variant standing still on its place, unarmed, playing every base
+copy holding the weapon it had). East, the profile's AI: each a unit of its
+actor variant standing still on its place, unarmed, playing every base
 animation of its graph in turn, which nothing hurts; action by one (the HUD
 names it as the player comes near) puts a live actor of it, of no encounter
 (actors.c's actor_port_place_free, as the Outbreak skull's), in the arena
-further north, holding one of the profile's weapons by chance.
+north, holding one of the profile's weapons by chance. Action on the pad
+beside the arena's door takes away its bodies and what lies on its floor.
 
 The bsp, as the engine reads one:
 
@@ -50,10 +59,9 @@ The bsp, as the engine reads one:
   surfaces' edge rings run counter-clockwise about their planes' normals,
   as the stock maps' do; a bench's bottom edges have one surface;
 - its render surfaces: the floor in tiles, the walls in panels, the benches'
-  faces, the mirror's line and frame, and its pane, two triangles each,
-  clockwise seen from the front (the stock maps' are), in four materials
-  (three when the map has not got the pane's shader) of one lightmap without
-  a bitmap;
+  faces, the mirror's line and frame, and the arena's pad, two triangles
+  each, clockwise seen from the front (the stock maps' are), in three
+  materials of one lightmap without a bitmap;
 - one cluster, which sees itself, whose subclusters (the floor's blocks of
   tiles, each wall's quarters, the benches and the line) list the surfaces
   the renderer culls by their bounds; one structure leaf of that cluster
@@ -67,6 +75,7 @@ The bsp, as the engine reads one:
 #include "errors.h"
 #include "cache/cache_files.h"
 #include "game/game.h"
+#include "game/game_globals.h"
 #include "ai/actor_definitions.h"
 #include "ai/actors.h"
 #include "game/players.h"
@@ -76,6 +85,7 @@ The bsp, as the engine reads one:
 #include "models/model_animation_definitions.h"
 #include "objects/objects.h"
 #include "physics/collision_bsp_definitions.h"
+#include "scenario/scenario.h"
 #include "scenario/scenario_definitions.h"
 #include "shaders/shader_definitions.h"
 #include "structures/structure_bsp_definitions.h"
@@ -106,10 +116,10 @@ enum
 	WEAPON_GROUP_TAG = 'weap',
 	ACTOR_VARIANT_GROUP_TAG = 'actv',
 
-	/* the AI stood north (each once), in rows of so many, and the live
+	/* the AI stood east (each once), in columns of so many, and the live
 	ones in the arena at once (the oldest let go for another) */
 	MAXIMUM_RANGE_AIS = 32,
-	RANGE_AIS_PER_ROW = 8,
+	RANGE_AIS_PER_COLUMN = 4,
 	MAXIMUM_RANGE_FIGHTERS = 8,
 	/* the longest name kept */
 	RANGE_NAME_LENGTH = 48,
@@ -158,10 +168,12 @@ enum
 	RANGE_WALL_SURFACES = RANGE_TILES * 2,
 	RANGE_FLOOR_VERTICES = (RANGE_TILES + 1) * (RANGE_TILES + 1),
 	RANGE_WALL_VERTICES = (RANGE_TILES + 1) * 2,
-	/* the details: each bench's faces, the mirror's line, and its frame (two
-	posts of five faces, a bar of six) */
+	/* the details: each bench's faces, the mirror's line and the arena's
+	pad, and the mirror's frame (two posts of five faces, a bar of six) */
 	RANGE_MIRROR_FRAME_QUADS = 2 * 5 + 6,
-	MAXIMUM_RANGE_DETAIL_QUADS = MAXIMUM_RANGE_BLOCKS * NUMBER_OF_BENCH_FACES + 1 + RANGE_MIRROR_FRAME_QUADS,
+	RANGE_FLAT_DETAIL_QUADS = 2,
+	MAXIMUM_RANGE_DETAIL_QUADS = MAXIMUM_RANGE_BLOCKS * NUMBER_OF_BENCH_FACES + RANGE_FLAT_DETAIL_QUADS +
+		RANGE_MIRROR_FRAME_QUADS,
 	/* the materials: the floor's, the walls' and the details' (the
 	collision's too) */
 	NUMBER_OF_RANGE_COLLISION_MATERIALS = 3,
@@ -175,12 +187,21 @@ enum
 	the benches are looked at this often */
 	RANGE_REFILL_TICKS = 3 * 30,
 	RANGE_CHECK_TICKS = 15,
+
+	/* a dummy is healed this long after it was last hurt, and stood again
+	this long after it dies */
+	RANGE_DUMMY_HEAL_TICKS = 5 * 30,
+	RANGE_DUMMY_RESPAWN_TICKS = 3 * 30,
+	/* the most objects the arena is cleared of at once */
+	MAXIMUM_RANGE_CLEARED = 256,
 };
 
-/* the plane's half width, the walls' height drawn and the ceiling's (its
+/* the room the walls leave past what the plane holds (the mirror's
+reflection south, the arena north, the farthest bench west and the
+farthest AI east), the walls' height drawn and the ceiling's (its
 collision's top, and the bsp's bounds'), in world units (one is ten feet:
 the player stands 0.7 tall) */
-#define RANGE_HALF_WIDTH 80.0f
+#define RANGE_ROOM_MARGIN 6.0f
 #define RANGE_WALL_HEIGHT 8.0f
 #define RANGE_CEILING 100.0f
 /* texture coordinates a world unit */
@@ -188,47 +209,67 @@ the player stands 0.7 tall) */
 /* where the players start: at the middle, a little above the floor, facing
 north (+y) */
 #define RANGE_START_HEIGHT 0.25f
-#define RANGE_START_SPACING 1.5f
+#define RANGE_START_SPACING 0.9f
 #define RANGE_START_FACING 1.5707963f
+/* the length (north to south, about the start) the weapons west and the AI
+east are laid over */
+#define RANGE_SIDE_LENGTH 12.0f
 /* the benches: the first's middle west of the start, the next further
-west each; their width, height and length (north to south), the room a
-weapon has on one, how high above it one is laid and how near its place
-one must lie to be there */
-#define RANGE_BENCH_FIRST_X -6.0f
-#define RANGE_BENCH_SPACING 3.0f
+west each; their width, height and length, the room a weapon has on one,
+how high above it one is laid and how near its place one must lie to be
+there; how far past a bench's north end its dummy stands, and how far off
+its place it may be pushed before it is put back */
+#define RANGE_BENCH_FIRST_X -4.5f
+#define RANGE_BENCH_SPACING 2.5f
 #define RANGE_BENCH_WIDTH 0.6f
 #define RANGE_BENCH_HEIGHT 0.3f
-#define RANGE_WEAPON_SPACING 0.9f
-#define RANGE_BENCH_LENGTH (RANGE_WEAPONS_PER_BENCH * RANGE_WEAPON_SPACING)
+#define RANGE_BENCH_LENGTH RANGE_SIDE_LENGTH
+#define RANGE_WEAPON_SPACING (RANGE_BENCH_LENGTH / RANGE_WEAPONS_PER_BENCH)
 #define RANGE_WEAPON_DROP 0.08f
 #define RANGE_WEAPON_NEAR 0.6f
+#define RANGE_DUMMY_GAP 1.5f
+#define RANGE_DUMMY_DRIFT 0.25f
+/* the arena north of the start and the mirror south, as far off as each
+other: the arena's inside's half width and its south wall's and north
+wall's distance from the start */
+#define RANGE_ARENA_HALF_WIDTH 8.0f
+#define RANGE_ARENA_NEAR 11.0f
+#define RANGE_ARENA_FAR (RANGE_ARENA_NEAR + 14.0f)
 /* the mirror: its line (y) south of the start, how far across it reaches
-each way and how far before it the player is mirrored; the line's width,
-and how far off the copy may be before it is put where it should be */
-#define RANGE_MIRROR_Y -8.0f
-#define RANGE_MIRROR_HALF_WIDTH 6.0f
-#define RANGE_MIRROR_DEPTH 6.0f
+each way (the arena's width) and how far before it the player is mirrored;
+the line's width, and how far off the copy may be before it is put where it
+should be */
+#define RANGE_MIRROR_Y (-RANGE_ARENA_NEAR)
+#define RANGE_MIRROR_HALF_WIDTH RANGE_ARENA_HALF_WIDTH
+#define RANGE_MIRROR_DEPTH 5.0f
 #define RANGE_MIRROR_LINE_WIDTH 0.1f
 #define RANGE_MIRROR_LINE_HEIGHT 0.01f
 #define RANGE_MIRROR_DRIFT 0.25f
-/* the arena north of the start, where the AI fought are put: its inside's
-bounds, its walls' height and thickness, its south wall's door's width, and
-the gap left at its walls' ends (the collision bsp parts them by planes
-between them: collision_bsp.c finds no surface on a plane of none, so
-touching walls would be passed through there) */
-#define RANGE_ARENA_X0 -8.0f
-#define RANGE_ARENA_X1 8.0f
-#define RANGE_ARENA_Y0 26.0f
-#define RANGE_ARENA_Y1 40.0f
+/* the arena, where the AI fought are put: its inside's bounds, its walls'
+height and thickness, its south wall's door's width, and the gap left at
+its walls' ends (the collision bsp parts them by planes between them:
+collision_bsp.c finds no surface on a plane of none, so touching walls
+would be passed through there); the pad that clears it, east of its door
+outside (its middle and half size), and how far past its walls a body or a
+weapon lying is its */
+#define RANGE_ARENA_X0 (-RANGE_ARENA_HALF_WIDTH)
+#define RANGE_ARENA_X1 RANGE_ARENA_HALF_WIDTH
+#define RANGE_ARENA_Y0 RANGE_ARENA_NEAR
+#define RANGE_ARENA_Y1 RANGE_ARENA_FAR
 #define RANGE_ARENA_WALL_HEIGHT 1.0f
 #define RANGE_ARENA_WALL_THICKNESS 0.3f
 #define RANGE_ARENA_DOOR_WIDTH 2.0f
 #define RANGE_BLOCK_GAP 0.05f
-/* the AI's places: the first row's middle north of the start, the room
-each has, and how near one the player is to fight it; how far off its place
-one may move as it plays before it is put back */
-#define RANGE_AI_FIRST_Y 9.0f
-#define RANGE_AI_SPACING 2.5f
+#define RANGE_CLEAR_X 2.5f
+#define RANGE_CLEAR_Y (RANGE_ARENA_Y0 - 1.5f)
+#define RANGE_CLEAR_HALF_SIZE 0.5f
+#define RANGE_ARENA_MARGIN 1.5f
+/* the AI's places: the first column's east of the start (across from the
+first bench), the next further east each, the room each has along one, and
+how near one the player is to fight it; how far off its place one may move
+as it plays before it is put back */
+#define RANGE_AI_FIRST_X (-RANGE_BENCH_FIRST_X)
+#define RANGE_AI_SPACING (RANGE_SIDE_LENGTH / RANGE_AIS_PER_COLUMN)
 #define RANGE_AI_NEAR 1.5f
 #define RANGE_AI_DRIFT 0.05f
 /* the frame: its posts' width and height, and its bar's height */
@@ -364,6 +405,7 @@ struct range_layout
 	short face_count;
 	real_point3d vertices[MAXIMUM_RANGE_COLLISION_VERTICES];
 	short vertex_count;
+	real_rectangle3d room;
 	short bench_count;
 	real_rectangle3d blocks[MAXIMUM_RANGE_BLOCKS];
 	short block_count;
@@ -414,12 +456,10 @@ static struct
 	long weapon_empty_since[MAXIMUM_RANGE_WEAPONS];
 	long next_check_time;
 
-	/* the mirror's copy of the player (NONE: none), the player's unit it
-	copies, and whether the player stood before the mirror (the HUD says
-	what it is as the player steps up) */
+	/* the mirror's copy of the player (NONE: none), and the player's unit
+	it copies */
 	long mirror_unit;
 	long mirrored_unit;
-	boolean before_mirror;
 
 	/* the weapons' names (as the profile names them) */
 	char weapon_names[MAXIMUM_RANGE_WEAPONS][RANGE_NAME_LENGTH];
@@ -441,6 +481,18 @@ static struct
 	short near_ai;
 	boolean action_held;
 	unsigned long random;
+
+	/* each bench's dummy: its unit (NONE: none), when it was first and
+	last hurt since it was whole (NONE: not), and when it died (NONE: it
+	has not); and whether the player stood on the arena's pad */
+	struct
+	{
+		long unit;
+		long first_hit;
+		long last_hit;
+		long dead_since;
+	} dummies[MAXIMUM_RANGE_BENCHES];
+	boolean on_clear_pad;
 } firing_range;
 
 /* ---------- private code: the bsp's room */
@@ -647,6 +699,13 @@ static void range_bench_bounds(
 	bounds->z1 = RANGE_BENCH_HEIGHT;
 }
 
+/* the benches so many weapons need */
+static short range_bench_count(
+	short weapon_count)
+{
+	return (short)((weapon_count + RANGE_WEAPONS_PER_BENCH - 1) / RANGE_WEAPONS_PER_BENCH);
+}
+
 /* where a weapon of the profile's is laid (its index of the weapons) */
 static void range_weapon_place(
 	short weapon,
@@ -662,15 +721,32 @@ static void range_weapon_place(
 
 static void range_layout_make(
 	struct range_layout *layout,
-	short weapon_count)
+	short weapon_count,
+	short ai_count)
 {
+	real_rectangle3d *room = &layout->room;
 	long first;
 	short bench;
 
 	csmemset(layout, 0, sizeof(*layout));
-	/* (the room: in this order, its faces' nodes the first) */
-	first = range_box_corners(layout, -RANGE_HALF_WIDTH, RANGE_HALF_WIDTH, -RANGE_HALF_WIDTH, RANGE_HALF_WIDTH,
-		0.0f, RANGE_CEILING);
+	/* (the room: the mirror's reflection and the arena north to south, as
+	wide as the arena, and further west and east as the benches and the
+	AI's columns need) */
+	{
+		short bench_count = range_bench_count(weapon_count);
+		short column_count = (short)((ai_count + RANGE_AIS_PER_COLUMN - 1) / RANGE_AIS_PER_COLUMN);
+		real west = RANGE_BENCH_FIRST_X - (bench_count - 1) * RANGE_BENCH_SPACING - RANGE_BENCH_WIDTH * 0.5f;
+		real east = RANGE_AI_FIRST_X + (column_count - 1) * RANGE_BENCH_SPACING;
+
+		room->x0 = MIN(-RANGE_ARENA_HALF_WIDTH - RANGE_ARENA_WALL_THICKNESS, west) - RANGE_ROOM_MARGIN;
+		room->x1 = MAX(RANGE_ARENA_HALF_WIDTH + RANGE_ARENA_WALL_THICKNESS, east) + RANGE_ROOM_MARGIN;
+		room->y0 = RANGE_MIRROR_Y - RANGE_MIRROR_DEPTH - RANGE_ROOM_MARGIN;
+		room->y1 = RANGE_ARENA_Y1 + RANGE_ARENA_WALL_THICKNESS + RANGE_ROOM_MARGIN;
+		room->z0 = 0.0f;
+		room->z1 = RANGE_CEILING;
+	}
+	/* (in this order, its faces' nodes the first) */
+	first = range_box_corners(layout, room->x0, room->x1, room->y0, room->y1, room->z0, room->z1);
 	range_box_face(layout, first, 2, FALSE, TRUE, 0, 0);
 	range_box_face(layout, first, 0, TRUE, TRUE, 1, 0);
 	range_box_face(layout, first, 0, FALSE, TRUE, 1, 0);
@@ -680,7 +756,7 @@ static void range_layout_make(
 	range_box_face(layout, first, 2, TRUE, TRUE, 1, FLAG(1));
 	/* (the benches, then the arena's walls: a gap between each two that
 meet) */
-	layout->bench_count = (short)((weapon_count + RANGE_WEAPONS_PER_BENCH - 1) / RANGE_WEAPONS_PER_BENCH);
+	layout->bench_count = range_bench_count(weapon_count);
 	for (bench = 0; bench < layout->bench_count; bench++)
 		range_bench_bounds(bench, &layout->blocks[layout->block_count++]);
 	{
@@ -1050,13 +1126,15 @@ static void range_flat_quad_add(
 
 /* the floor's tiles (surfaces from 0, a row of tiles at a time) */
 static void range_floor_build(
+	struct range_layout const *layout,
 	struct range_material_build *build,
 	struct structure_surface *surfaces,
 	long *surface_index)
 {
 	real_vector3d normal;
 	real_vector3d tangent;
-	real tile = 2.0f * RANGE_HALF_WIDTH / RANGE_TILES;
+	real tile_x = (layout->room.x1 - layout->room.x0) / RANGE_TILES;
+	real tile_y = (layout->room.y1 - layout->room.y0) / RANGE_TILES;
 	short row;
 	short column;
 
@@ -1069,7 +1147,7 @@ static void range_floor_build(
 		{
 			real_point3d position;
 
-			range_point(&position, -RANGE_HALF_WIDTH + column * tile, -RANGE_HALF_WIDTH + row * tile, 0.0f);
+			range_point(&position, layout->room.x0 + column * tile_x, layout->room.y0 + row * tile_y, 0.0f);
 			range_vertex_add(build, &position, &normal, &tangent, position.x * RANGE_TEXTURE_SCALE,
 				position.y * RANGE_TEXTURE_SCALE);
 		}
@@ -1098,7 +1176,7 @@ static void range_walls_build(
 	struct structure_surface *surfaces,
 	long *surface_index)
 {
-	real panel = 2.0f * RANGE_HALF_WIDTH / RANGE_TILES;
+	real_rectangle3d const *room = &layout->room;
 	short wall;
 
 	build->first_surface_index = *surface_index;
@@ -1107,19 +1185,31 @@ static void range_walls_build(
 		real_vector3d normal = layout->faces[_range_face_east + wall].normal;
 		real_vector3d tangent;
 		long first_vertex = build->vertex_count;
+		boolean across_x = fabsf(normal.i) > 0.5f;
+		/* (where the wall stands, behind its normal, and how far along it
+		reaches, along its tangent) */
+		real fixed = across_x ? (normal.i < 0.0f ? room->x1 : room->x0) : (normal.j < 0.0f ? room->y1 : room->y0);
+		real sign;
+		real start;
+		real panel;
 		short step;
 
 		/* (along the wall: the normal turned a quarter about up) */
 		range_vector(&tangent, -normal.j, normal.i, 0.0f);
+		sign = across_x ? tangent.j : tangent.i;
+		start = across_x ? MIN(room->y0 * sign, room->y1 * sign) : MIN(room->x0 * sign, room->x1 * sign);
+		panel = (across_x ? room->y1 - room->y0 : room->x1 - room->x0) / RANGE_TILES;
 		for (step = 0; step <= RANGE_TILES; step++)
 		{
-			real along = -RANGE_HALF_WIDTH + step * panel;
+			real along = start + step * panel;
 			real_point3d bottom;
 			real_point3d top;
 
 			/* (the wall's plane, at `along` across it) */
-			range_point(&bottom, -normal.i * RANGE_HALF_WIDTH + tangent.i * along,
-				-normal.j * RANGE_HALF_WIDTH + tangent.j * along, 0.0f);
+			if (across_x)
+				range_point(&bottom, fixed, along * sign, 0.0f);
+			else
+				range_point(&bottom, along * sign, fixed, 0.0f);
 			top = bottom;
 			top.z = RANGE_WALL_HEIGHT;
 			range_vertex_add(build, &bottom, &normal, &tangent, along * RANGE_TEXTURE_SCALE, 0.0f);
@@ -1184,7 +1274,8 @@ static void range_box_quads_add(
 }
 
 /* the details: each bench's faces (the collision's, drawn), then the
-mirror's line, a little above the floor */
+mirror's line and the arena's pad, a little above the floor, and the
+mirror's frame */
 static void range_details_build(
 	struct range_layout const *layout,
 	struct range_material_build *build,
@@ -1212,6 +1303,15 @@ static void range_details_build(
 	range_point(&points[2], RANGE_MIRROR_HALF_WIDTH, RANGE_MIRROR_Y + RANGE_MIRROR_LINE_WIDTH * 0.5f,
 		RANGE_MIRROR_LINE_HEIGHT);
 	range_point(&points[3], -RANGE_MIRROR_HALF_WIDTH, RANGE_MIRROR_Y + RANGE_MIRROR_LINE_WIDTH * 0.5f,
+		RANGE_MIRROR_LINE_HEIGHT);
+	range_flat_quad_add(build, surfaces, surface_index, points, &up);
+	range_point(&points[0], RANGE_CLEAR_X - RANGE_CLEAR_HALF_SIZE, RANGE_CLEAR_Y - RANGE_CLEAR_HALF_SIZE,
+		RANGE_MIRROR_LINE_HEIGHT);
+	range_point(&points[1], RANGE_CLEAR_X + RANGE_CLEAR_HALF_SIZE, RANGE_CLEAR_Y - RANGE_CLEAR_HALF_SIZE,
+		RANGE_MIRROR_LINE_HEIGHT);
+	range_point(&points[2], RANGE_CLEAR_X + RANGE_CLEAR_HALF_SIZE, RANGE_CLEAR_Y + RANGE_CLEAR_HALF_SIZE,
+		RANGE_MIRROR_LINE_HEIGHT);
+	range_point(&points[3], RANGE_CLEAR_X - RANGE_CLEAR_HALF_SIZE, RANGE_CLEAR_Y + RANGE_CLEAR_HALF_SIZE,
 		RANGE_MIRROR_LINE_HEIGHT);
 	range_flat_quad_add(build, surfaces, surface_index, points, &up);
 	/* (the frame: a post each side, and the bar between their tops) */
@@ -1328,7 +1428,7 @@ static void range_material_counts(
 	long *vertices,
 	long *surfaces)
 {
-	long quads = (layout->face_count - NUMBER_OF_ROOM_FACES) + 1;
+	long quads = (layout->face_count - NUMBER_OF_ROOM_FACES) + RANGE_FLAT_DETAIL_QUADS;
 
 	switch (material)
 	{
@@ -1389,12 +1489,7 @@ static boolean range_structure_bsp_build(
 	default lighting) */
 	range_reference(&bsp->lightmap_group, BITMAP_GROUP_TAG, NONE);
 	range_default_lighting(&bsp->default_lighting);
-	bsp->world_bounds.x0 = -RANGE_HALF_WIDTH;
-	bsp->world_bounds.x1 = RANGE_HALF_WIDTH;
-	bsp->world_bounds.y0 = -RANGE_HALF_WIDTH;
-	bsp->world_bounds.y1 = RANGE_HALF_WIDTH;
-	bsp->world_bounds.z0 = 0.0f;
-	bsp->world_bounds.z1 = RANGE_CEILING;
+	bsp->world_bounds = layout->room;
 
 	for (material_index = 0; material_index < material_count; material_index++)
 	{
@@ -1439,7 +1534,7 @@ static boolean range_structure_bsp_build(
 		materials[material_index].uncompressed_vertex_data.size = (long)vertex_bytes;
 		materials[material_index].uncompressed_vertex_data.address = vertex_data;
 	}
-	range_floor_build(&builds[0], surfaces, &surface_index);
+	range_floor_build(layout, &builds[0], surfaces, &surface_index);
 	range_walls_build(layout, &builds[1], surfaces, &surface_index);
 	range_details_build(layout, &builds[2], surfaces, &surface_index);
 	if (surface_index != surface_count)
@@ -1871,17 +1966,12 @@ static void range_mirror_update(
 	{
 		range_mirror_delete();
 	}
-	/* (before the mirror, on foot, the copy, and the HUD saying what it is
-	as the player steps up; else none) */
+	/* (before the mirror, on foot, the copy; else none) */
 	if (!before)
 	{
 		range_mirror_delete();
-		firing_range.before_mirror = FALSE;
 		return;
 	}
-	if (!firing_range.before_mirror)
-		hud_print_message(0, L"MIRROR: your copy moves as you do. Step back to leave it.");
-	firing_range.before_mirror = TRUE;
 	if (firing_range.mirror_unit == NONE)
 		range_mirror_create(unit_index);
 	if (firing_range.mirror_unit != NONE)
@@ -1890,13 +1980,14 @@ static void range_mirror_update(
 
 /* ---------- private code: the AI */
 
-/* an AI's place north (its index of the AI's), facing south */
+/* an AI's place east (its index of the AI's), facing west: its column's
+places as a bench's weapons, from its north end */
 static void range_ai_place(
 	short ai,
 	real_point3d *place)
 {
-	range_point(place, ((ai % RANGE_AIS_PER_ROW) - (RANGE_AIS_PER_ROW - 1) * 0.5f) * RANGE_AI_SPACING,
-		RANGE_AI_FIRST_Y + (ai / RANGE_AIS_PER_ROW) * RANGE_AI_SPACING, RANGE_START_HEIGHT);
+	range_point(place, RANGE_AI_FIRST_X + (ai / RANGE_AIS_PER_COLUMN) * RANGE_BENCH_SPACING,
+		RANGE_SIDE_LENGTH * 0.5f - RANGE_AI_SPACING * ((ai % RANGE_AIS_PER_COLUMN) + 0.5f), RANGE_START_HEIGHT);
 }
 
 /* a unit's weapons taken from it, slot for slot */
@@ -1930,7 +2021,7 @@ static long range_ai_stand(
 		return NONE;
 	object_placement_data_new(&placement, variant->unit_reference.index, NONE);
 	range_ai_place(ai, &placement.position);
-	range_vector(&placement.forward, 0.0f, -1.0f, 0.0f);
+	range_vector(&placement.forward, -1.0f, 0.0f, 0.0f);
 	range_vector(&placement.up, 0.0f, 0.0f, 1.0f);
 	unit_index = object_new(&placement);
 	if (unit_index == NONE || !object_try_and_get_and_verify_type(unit_index, _object_mask_unit))
@@ -2005,7 +2096,7 @@ static void range_ais_update(
 			real_vector3d up;
 
 			place.z = unit->object.position.z;
-			range_vector(&forward, 0.0f, -1.0f, 0.0f);
+			range_vector(&forward, -1.0f, 0.0f, 0.0f);
 			range_vector(&up, 0.0f, 0.0f, 1.0f);
 			object_set_position(firing_range.ais[ai].unit, &place, &forward, &up);
 		}
@@ -2076,7 +2167,7 @@ static void range_ai_fight(
 	}
 	firing_range.fighters[firing_range.next_fighter] = unit_index;
 	firing_range.next_fighter = (short)((firing_range.next_fighter + 1) % MAXIMUM_RANGE_FIGHTERS);
-	snprintf(text, sizeof(text), "%s is in the arena (north) with %s.", firing_range.ais[ai].name, weapon_name);
+	snprintf(text, sizeof(text), "%s is in the arena.", firing_range.ais[ai].name);
 	range_hud_say(text);
 	error(_error_silent, "firing range: %s put in the arena with %s", firing_range.ais[ai].name,
 		weapon_definition == NONE ? weapon_name : tag_get_name(weapon_definition));
@@ -2106,6 +2197,227 @@ static short range_ai_near(
 		}
 	}
 	return best;
+}
+
+/* ---------- private code: the dummies */
+
+/* a bench's dummy's place: past its north end, facing south along it */
+static void range_dummy_place(
+	short bench,
+	real_point3d *place)
+{
+	real_rectangle3d bounds;
+
+	range_bench_bounds(bench, &bounds);
+	range_point(place, (bounds.x0 + bounds.x1) * 0.5f, bounds.y1 + RANGE_DUMMY_GAP, RANGE_START_HEIGHT);
+}
+
+/* the dummies' unit: the multiplayer player's (the globals'), else the
+player's own */
+static long range_dummy_definition(
+	void)
+{
+	struct game_globals *globals = scenario_get_game_globals();
+	long player_index = local_player_get_player_index(0);
+	long unit_index = player_index == NONE ? NONE : player_get(player_index)->unit_index;
+
+	if (globals && globals->multiplayer_information.count > 0 && globals->multiplayer_information.address)
+	{
+		long unit = TAG_BLOCK_GET_ELEMENT(&globals->multiplayer_information, 0,
+			struct game_globals_multiplayer_information)->unit.index;
+
+		if (unit != NONE)
+			return unit;
+	}
+	return unit_index == NONE ? NONE : unit_get(unit_index)->definition_index;
+}
+
+/* a bench's dummy stood, unarmed, of an enemy's team (the player's shots
+hurt it as an enemy's, not as a friend's), which the AI do not see */
+static long range_dummy_stand(
+	short bench)
+{
+	long definition = range_dummy_definition();
+	struct object_placement_data placement;
+	long unit_index;
+
+	firing_range.dummies[bench].first_hit = NONE;
+	firing_range.dummies[bench].last_hit = NONE;
+	firing_range.dummies[bench].dead_since = NONE;
+	if (definition == NONE)
+		return NONE;
+	object_placement_data_new(&placement, definition, NONE);
+	range_dummy_place(bench, &placement.position);
+	range_vector(&placement.forward, 0.0f, -1.0f, 0.0f);
+	range_vector(&placement.up, 0.0f, 0.0f, 1.0f);
+	unit_index = object_new(&placement);
+	if (unit_index == NONE || !object_try_and_get_and_verify_type(unit_index, _object_mask_unit))
+	{
+		error(_error_silent, "firing range: the dummy (%s) could not be stood", tag_get_name(definition));
+		if (unit_index != NONE)
+			object_delete(unit_index);
+		/* (tried again as a dead one's is stood again) */
+		firing_range.dummies[bench].dead_since = game_time_get();
+		return NONE;
+	}
+	range_unit_disarm(unit_index);
+	unit_get(unit_index)->object.owner_team_index = _game_team_covenant;
+	/* (the AI fought leave it be, as ai_disregard has them) */
+	SET_FLAG(unit_get(unit_index)->unit.flags, _unit_ignored_by_actors_bit, TRUE);
+	return unit_index;
+}
+
+/* each bench's dummy stood, the time it took to kill told as it dies, a
+dead one stood again a moment after, and a hurt one healed a moment after
+it was last hurt */
+static void range_dummies_update(
+	long now)
+{
+	short bench_count = range_bench_count(firing_range.weapon_count);
+	short bench;
+
+	for (bench = 0; bench < bench_count; bench++)
+	{
+		long *unit_index = &firing_range.dummies[bench].unit;
+		struct unit_datum *unit = *unit_index == NONE ? NULL :
+			(struct unit_datum *)object_try_and_get_and_verify_type(*unit_index, _object_mask_unit);
+		long dead_since = firing_range.dummies[bench].dead_since;
+		real_point3d place;
+		real dx;
+		real dy;
+
+		if (!unit || TEST_FLAG(unit->object.damage_flags, _object_dead_bit))
+		{
+			if (unit && dead_since == NONE)
+			{
+				long first_hit = firing_range.dummies[bench].first_hit;
+				char text[160];
+
+				firing_range.dummies[bench].dead_since = now;
+				if (first_hit == NONE || now == first_hit)
+					snprintf(text, sizeof(text), "DUMMY: killed at once (one tick).");
+				else
+				{
+					snprintf(text, sizeof(text), "DUMMY: killed in %.2f s (%ld ticks) from the first hit.",
+						(double)(now - first_hit) / TICKS_PER_SECOND, now - first_hit);
+				}
+				range_hud_say(text);
+				continue;
+			}
+			if (dead_since != NONE && now - dead_since < RANGE_DUMMY_RESPAWN_TICKS)
+				continue;
+			if (unit)
+				object_delete(*unit_index);
+			*unit_index = range_dummy_stand(bench);
+			continue;
+		}
+		if (firing_range.dummies[bench].last_hit != NONE &&
+			now - firing_range.dummies[bench].last_hit >= RANGE_DUMMY_HEAL_TICKS)
+		{
+			unit->object.body_vitality = 1.0f;
+			if (unit->object.maximum_shield_vitality > 0.0f)
+				unit->object.shield_vitality = 1.0f;
+			unit->object.shield_stun_ticks = 0;
+			SET_FLAG(unit->object.damage_flags, _object_shield_depleted_bit, FALSE);
+			firing_range.dummies[bench].first_hit = NONE;
+			firing_range.dummies[bench].last_hit = NONE;
+		}
+		/* (pushed off its place by a blast or a punch: put back) */
+		range_dummy_place(bench, &place);
+		dx = unit->object.position.x - place.x;
+		dy = unit->object.position.y - place.y;
+		if (dx * dx + dy * dy > RANGE_DUMMY_DRIFT * RANGE_DUMMY_DRIFT)
+		{
+			real_vector3d forward;
+			real_vector3d up;
+
+			place.z = unit->object.position.z;
+			range_vector(&forward, 0.0f, -1.0f, 0.0f);
+			range_vector(&up, 0.0f, 0.0f, 1.0f);
+			object_set_position(*unit_index, &place, &forward, &up);
+		}
+	}
+}
+
+/* the bench whose dummy an object is (NONE: none) */
+static short range_dummy_bench(
+	long object_index)
+{
+	short bench_count = range_bench_count(firing_range.weapon_count);
+	short bench;
+
+	for (bench = 0; object_index != NONE && bench < bench_count; bench++)
+	{
+		if (firing_range.dummies[bench].unit == object_index)
+			return bench;
+	}
+	return NONE;
+}
+
+/* ---------- private code: the arena's clearing */
+
+/* whether a point is the arena's (within its walls, or a little past) */
+static boolean range_in_arena(
+	real_point3d const *point)
+{
+	real margin = RANGE_ARENA_WALL_THICKNESS + RANGE_ARENA_MARGIN;
+
+	return point->x > RANGE_ARENA_X0 - margin && point->x < RANGE_ARENA_X1 + margin &&
+		point->y > RANGE_ARENA_Y0 - margin && point->y < RANGE_ARENA_Y1 + margin;
+}
+
+/* the arena cleared: the bodies in it (and the AI fought's, wherever they
+fell), and the weapons and equipment lying in it */
+static void range_arena_clear(
+	void)
+{
+	long cleared[MAXIMUM_RANGE_CLEARED];
+	short cleared_count = 0;
+	short bodies = 0;
+	short items = 0;
+	struct object_iterator iterator;
+	short index;
+	char text[160];
+
+	object_iterator_new(&iterator, _object_mask_unit | _object_mask_weapon | _object_mask_equipment |
+		_object_mask_garbage, 0);
+	while (cleared_count < MAXIMUM_RANGE_CLEARED && object_iterator_next(&iterator))
+	{
+		struct object_datum *object = object_get(iterator.index);
+		boolean fighter = FALSE;
+
+		if (object->object.parent_object_index != NONE)
+			continue;
+		for (index = 0; index < MAXIMUM_RANGE_FIGHTERS; index++)
+			fighter = fighter || firing_range.fighters[index] == iterator.index;
+		if (TEST_FLAG(_object_mask_unit, object->object.type))
+		{
+			if (!TEST_FLAG(object->object.damage_flags, _object_dead_bit) ||
+				(!fighter && !range_in_arena(&object->object.position)) ||
+				range_dummy_bench(iterator.index) != NONE)
+				continue;
+			bodies++;
+		}
+		else if (range_in_arena(&object->object.position))
+			items++;
+		else
+			continue;
+		cleared[cleared_count++] = iterator.index;
+	}
+	for (index = 0; index < cleared_count; index++)
+	{
+		short fighter;
+
+		for (fighter = 0; fighter < MAXIMUM_RANGE_FIGHTERS; fighter++)
+		{
+			if (firing_range.fighters[fighter] == cleared[index])
+				firing_range.fighters[fighter] = NONE;
+		}
+		object_delete(cleared[index]);
+	}
+	snprintf(text, sizeof(text), "ARENA: cleared of %d bodies and %d weapons and items.", bodies, items);
+	range_hud_say(text);
+	error(_error_silent, "firing range: the arena cleared (%d bodies, %d items)", bodies, items);
 }
 
 /* ---------- public code */
@@ -2196,7 +2508,6 @@ void firing_range_tags_loaded(
 	firing_range.mirror_unit = NONE;
 	firing_range.mirrored_unit = NONE;
 	firing_range.next_check_time = 0;
-	firing_range.before_mirror = FALSE;
 	firing_range.near_ai = NONE;
 	firing_range.action_held = FALSE;
 	firing_range.next_fighter = 0;
@@ -2207,6 +2518,14 @@ void firing_range_tags_loaded(
 			firing_range.fighters[slot] = NONE;
 		for (slot = 0; slot < firing_range.ai_count; slot++)
 			firing_range.ais[slot].unit = NONE;
+		for (slot = 0; slot < MAXIMUM_RANGE_BENCHES; slot++)
+		{
+			firing_range.dummies[slot].unit = NONE;
+			firing_range.dummies[slot].first_hit = NONE;
+			firing_range.dummies[slot].last_hit = NONE;
+			firing_range.dummies[slot].dead_since = NONE;
+		}
+		firing_range.on_clear_pad = FALSE;
 	}
 	{
 		short weapon;
@@ -2259,7 +2578,7 @@ boolean firing_range_structure_bsp_write(
 
 	if (!firing_range.active || !base_address || size <= 0)
 		return FALSE;
-	range_layout_make(&layout, firing_range.weapon_count);
+	range_layout_make(&layout, firing_range.weapon_count, firing_range.ai_count);
 	writer.base = base_address;
 	writer.size = (unsigned long)size;
 	writer.used = 0;
@@ -2321,6 +2640,11 @@ void firing_range_tick(
 	{
 		range_ais_update();
 	}
+	if (firing_range.weapon_count && local_player_get_player_index(0) != NONE &&
+		player_get(local_player_get_player_index(0))->unit_index != NONE)
+	{
+		range_dummies_update(now);
+	}
 	range_mirror_update();
 }
 
@@ -2349,12 +2673,25 @@ void firing_range_player_control(
 		{
 			char text[160];
 
-			snprintf(text, sizeof(text), "%s: press action to fight it in the arena.", firing_range.ais[near].name);
+			snprintf(text, sizeof(text), "Press action to fight %s.", firing_range.ais[near].name);
 			range_hud_say(text);
 		}
 		if (near != NONE && action && !firing_range.action_held)
 			range_ai_fight(near);
 		firing_range.near_ai = near;
+		/* (on the arena's pad: the HUD says what it does, and action
+		clears the arena) */
+		{
+			boolean on_pad = unit->object.parent_object_index == NONE &&
+				fabsf(unit->object.position.x - RANGE_CLEAR_X) < RANGE_CLEAR_HALF_SIZE &&
+				fabsf(unit->object.position.y - RANGE_CLEAR_Y) < RANGE_CLEAR_HALF_SIZE;
+
+			if (on_pad && !firing_range.on_clear_pad)
+				range_hud_say("ARENA: press action to clear away its bodies and dropped weapons.");
+			if (on_pad && action && !firing_range.action_held)
+				range_arena_clear();
+			firing_range.on_clear_pad = on_pad;
+		}
 		firing_range.action_held = action;
 	}
 	if (firing_range.mirror_unit == NONE || unit_index != firing_range.mirrored_unit ||
@@ -2396,11 +2733,31 @@ boolean firing_range_damage_ignored(
 	if (firing_range.mirror_unit != NONE &&
 		(owner_object_index == firing_range.mirror_unit || object_index == firing_range.mirror_unit))
 		return TRUE;
-	/* (the AI standing north: nothing hurts them) */
+	/* (the AI standing east: nothing hurts them) */
 	for (ai = 0; ai < firing_range.ai_count; ai++)
 	{
 		if (object_index != NONE && firing_range.ais[ai].unit == object_index)
 			return TRUE;
 	}
+	/* (a dummy's hurt: when, for the time it takes to kill and its
+	healing) */
+	{
+		short bench = range_dummy_bench(object_index);
+
+		if (bench != NONE && !TEST_FLAG(object_get(object_index)->object.damage_flags, _object_dead_bit))
+		{
+			long now = game_time_get();
+
+			if (firing_range.dummies[bench].first_hit == NONE)
+				firing_range.dummies[bench].first_hit = now;
+			firing_range.dummies[bench].last_hit = now;
+		}
+	}
 	return FALSE;
+}
+
+boolean firing_range_multiplayer_target(
+	long object_index)
+{
+	return firing_range.active && range_dummy_bench(object_index) != NONE;
 }

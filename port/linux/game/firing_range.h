@@ -73,7 +73,8 @@ void firing_range_structure_bsp_unloaded(
 	void);
 
 /* game.c's, each tick of a level: the weapons put back on the benches,
-and the mirror's copy made, given the player's weapons, or let go */
+the AI and the dummies stood, and the mirror's copy made, given the
+player's weapons, or let go */
 void firing_range_tick(
 	void);
 /* players.c's, as a player's controls are given its unit: the mirror's
@@ -83,9 +84,15 @@ void firing_range_player_control(
 	long unit_index,
 	struct unit_control_data const *control);
 /* damage.c's: whether damage is not dealt, the mirror's copy's (it hurts
-no one) or to it (nothing hurts it) */
+no one) or to it (nothing hurts it), nor to the AI standing; a dummy's hurt
+is noted */
 boolean firing_range_damage_ignored(
 	long owner_object_index,
+	long object_index);
+/* damage.c's: whether an object is hurt as a multiplayer game hurts a
+player (a dummy: its health, shield and recharge not the difficulty's, and
+multiplayer headshots) */
+boolean firing_range_multiplayer_target(
 	long object_index);
 
 #endif
