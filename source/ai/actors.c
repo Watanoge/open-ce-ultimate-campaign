@@ -2443,12 +2443,13 @@ void actor_customize_unit(
 		can hold (port/linux/game/randomizer.c). One it cannot take is
 		deleted, as the unit's own refusal is */
 		long attempt;
-		extern long randomizer_enemy_weapon(long, long, long);
+		extern long randomizer_enemy_weapon(long, long, long, long);
 
 		for (attempt = 0; attempt < 8; attempt++)
 		{
 			long chosen = randomizer_enemy_weapon(
-				actor_variant_definition->ranged_combat.reference.index, unit_index, attempt);
+				actor_variant_definition->ranged_combat.reference.index, unit_index, attempt,
+				actor_variant_definition_index);
 			long weapon_index;
 
 			if (chosen == NONE)

@@ -43,7 +43,9 @@ void randomizer_initialize(void);
 void randomizer_initialize_for_new_map(void);
 void randomizer_tick(void);
 long randomizer_weapon_definition(long definition_index, void *scenario_object);
-long randomizer_enemy_weapon(long weapon_definition, long unit_index, long attempt);
+/* the weapon an actor of the variant `variant_index` holds (its own:
+`weapon_definition`), each attempt after one its unit refused */
+long randomizer_enemy_weapon(long weapon_definition, long unit_index, long attempt, long variant_index);
 
 /* by a tag's name: a Covenant weapon of the campaign's, and a grunt's unit
 (the skulls': skulls.c) */

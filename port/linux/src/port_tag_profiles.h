@@ -59,14 +59,16 @@ int port_tag_profiles_tag_set_enabled(long profile, long tag, int enabled);
 name of its own type it is chosen by, "hud", the HUD a weapon is drawn
 with (tag_injector.h's stock HUDs), "replace", "true" when the tag
 takes the place of the campaign's of its path (profile.toml's boolean), and
-"name", the name the menus show it by (its path stays its map's), and
-"failed", why it could not be played in the level last loaded, which turned
+"name", the name the menus show it by (its path stays its map's),
+"pickup", "text" when a weapon's pickup prompt names it in words rather
+than with its HUD's icon, "pickup_text", the words it names it by then,
+and "failed", why it could not be played in the level last loaded, which turned
 it off (tag_injector.c's tag_injector_failure_describe); "" when it is not
 set (the randomizer finds it by the tag's name, its custom type is
 the name it is shown by, a weapon keeps its own HUD, the campaign's tag
-stays, and it is shown by its path's last part). set_ keeps the value's
-letters, digits, spaces, - and _ (lower case but for custom_type's and
-name's), and writes the profile: 0 if it cannot */
+stays, it is shown by its path's last part, and its pickup prompt is as
+its map has it). set_ keeps the value's letters, digits, spaces, - and _
+(lower case but for custom_type's, name's and pickup_text's), and writes the profile: 0 if it cannot */
 const char *port_tag_profiles_tag_option(long profile, long tag, const char *key);
 int port_tag_profiles_tag_set_option(long profile, long tag, const char *key, const char *value);
 /* A tag's edits (the Tag Editor's: port/linux/game/tag_editor.c): values

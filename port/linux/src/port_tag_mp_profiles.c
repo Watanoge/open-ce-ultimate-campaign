@@ -1,14 +1,17 @@
 /*
 PORT_TAG_MP_PROFILES.C
 
-The Tag Injector's multiplayer profiles (port_tag_mp_profiles.h): how a
-multiplayer game on one of the game's own multiplayer maps plays the weapons
-of a profile (port_tag_profiles.c), each a file of the data root's
-tag_injector/.multiplayer folder (a folder no profile scan lists):
+The Tag Injector's multiplayer and campaign profiles (port_tag_mp_profiles.h):
+how a multiplayer game on one of the game's own multiplayer maps, or a
+campaign level played alone, plays the tags of a profile (port_tag_profiles.c),
+each a file of the data root's tag_injector/.multiplayer or
+tag_injector/.campaign folder (folders no profile scan lists):
 
 	tag_injector/
 	  .multiplayer/
 	    Shotgun Madness.toml
+	  .campaign/
+	    Brute Invasion.toml
 
 	name = "Shotgun Madness"
 	profile = "Brutes"
@@ -21,11 +24,30 @@ tag_injector/.multiplayer folder (a folder no profile scan lists):
 	[manual]
 	shotgun = ["original", "cmt\\weapons\\covenant\\carbine\\carbine"]
 
-Its settings (port/linux/game/tag_multiplayer.c says what each does) are
-strings, any of them left out ""; [manual] has, for each of the map's weapons
-by its key (the stock HUDs' names: "shotgun"), the weapons that take its
-place, by their paths in the profile ("original": the map's own). A
-setting's value is kept as it was given, but for its control characters.
+	name = "Brute Invasion"
+	profile = "Brutes"
+	weapon_rotation = "add"
+	weapon_replace = "manual"
+	enemy_rotation = "only"
+	enemy_replace = "random"
+
+	[weapons]
+	plasma_rifle = ["original", "cmt\\weapons\\covenant\\carbine\\carbine"]
+
+	[enemies]
+	elite = ["cmt\\characters\\brute\\brute major"]
+
+	[loadout]
+	"cmt\\characters\\brute\\brute major" = ["original", "stock:needler"]
+
+Their settings (port/linux/game/tag_multiplayer.c and tag_campaign.c say
+what each does) are strings, any of them left out ""; each table (a
+multiplayer profile's [manual], a campaign profile's [weapons], [enemies]
+and [loadout]) has, for each of its keys (one of the stock weapons or
+enemies: "shotgun", "elite"; [loadout]'s an actor variant's path), the tags
+chosen for it, by their paths in the profile ("original": the level's own;
+"stock:" and a stock weapon's key). A setting's value is kept as it was
+given, but for its control characters.
 */
 
 #include "platform.h"
@@ -42,24 +64,22 @@ setting's value is kept as it was given, but for its control characters.
 /* ---------- constants */
 
 #define MAXIMUM_MP_PROFILES 64
-#define MAXIMUM_MANUAL_ENTRIES 256
+#define MAXIMUM_MANUAL_ENTRIES 1024
 #define MAXIMUM_FILE_LENGTH 64
 #define MAXIMUM_NAME_LENGTH 64
-#define MAXIMUM_KEY_LENGTH 32
+#define MAXIMUM_OPTIONS 8
 #define MAXIMUM_VALUE_LENGTH 256
 #define MAXIMUM_PATH_LENGTH 1024
 #define TOML_CHARACTER_LENGTH 6
-#define MP_FOLDER ".multiplayer"
 #define MP_EXTENSION ".toml"
 
 /* ---------- structures */
 
-static const char *const option_keys[] = { "profile", "rotation", "replace", "loadout", "primary", "secondary" };
-#define OPTION_COUNT (sizeof(option_keys) / sizeof(option_keys[0]))
-
 struct manual_entry
 {
-	char key[MAXIMUM_KEY_LENGTH];
+	/* its table (the kind's sections') */
+	short section;
+	char key[MAXIMUM_VALUE_LENGTH];
 	char path[MAXIMUM_VALUE_LENGTH];
 };
 
@@ -68,19 +88,54 @@ struct mp_profile
 	/* its file's name, without .toml */
 	char file[MAXIMUM_FILE_LENGTH];
 	char name[MAXIMUM_NAME_LENGTH];
-	char options[OPTION_COUNT][MAXIMUM_VALUE_LENGTH];
+	char options[MAXIMUM_OPTIONS][MAXIMUM_VALUE_LENGTH];
 	struct manual_entry *manual;
 	long manual_count;
 };
 
-/* ---------- globals */
-
-static struct
+/* a kind of profile: its folder, what the log calls it, its settings (and
+the defaults a new one is made with: key, value, ..., NULL), its tables, and
+the profiles of it last found */
+struct profile_kind
 {
+	char const *folder;
+	char const *what;
+	char const *const *option_keys;
+	size_t option_count;
+	char const *const *defaults;
+	char const *const *sections;
+	size_t section_count;
 	struct mp_profile profiles[MAXIMUM_MP_PROFILES];
 	long count;
 	unsigned long scans;
-} port_tag_mp_profiles;
+};
+
+/* ---------- globals */
+
+static char const *const mp_option_keys[] = { "profile", "rotation", "replace", "loadout", "primary", "secondary" };
+static char const *const mp_defaults[] = { "rotation", "add", "replace", "random", "loadout", "map", NULL };
+static char const *const mp_sections[] = { "manual" };
+static char const *const campaign_option_keys[] =
+	{ "profile", "weapon_rotation", "weapon_replace", "enemy_rotation", "enemy_replace" };
+static char const *const campaign_defaults[] =
+	{ "weapon_rotation", "add", "weapon_replace", "random", "enemy_rotation", "add", "enemy_replace", "random", NULL };
+static char const *const campaign_sections[] = { "weapons", "enemies", "loadout" };
+
+#define NUMBEROF_KEYS(keys) (sizeof(keys) / sizeof((keys)[0]))
+
+static struct profile_kind mp_kind =
+{
+	".multiplayer", "multiplayer", mp_option_keys, NUMBEROF_KEYS(mp_option_keys), mp_defaults, mp_sections,
+	NUMBEROF_KEYS(mp_sections)
+};
+static struct profile_kind campaign_kind =
+{
+	".campaign", "campaign", campaign_option_keys, NUMBEROF_KEYS(campaign_option_keys), campaign_defaults,
+	campaign_sections, NUMBEROF_KEYS(campaign_sections)
+};
+
+typedef char option_count_assert[NUMBEROF_KEYS(mp_option_keys) <= MAXIMUM_OPTIONS &&
+	NUMBEROF_KEYS(campaign_option_keys) <= MAXIMUM_OPTIONS ? 1 : -1];
 
 /* ---------- private code */
 
@@ -97,16 +152,16 @@ static int names_compare(const char *first, const char *second)
 	return (unsigned char)lower(*first) - (unsigned char)lower(*second);
 }
 
-static void folder_path(char *path, size_t size)
+static void folder_path(const struct profile_kind *kind, char *path, size_t size)
 {
-	snprintf(path, size, "%s/tag_injector/%s", platform_data_root(), MP_FOLDER);
+	snprintf(path, size, "%s/tag_injector/%s", platform_data_root(), kind->folder);
 }
 
-static void profile_path(const struct mp_profile *profile, char *path, size_t size)
+static void profile_path(const struct profile_kind *kind, const struct mp_profile *profile, char *path, size_t size)
 {
 	char folder[MAXIMUM_PATH_LENGTH];
 
-	folder_path(folder, sizeof(folder));
+	folder_path(kind, folder, sizeof(folder));
 	snprintf(path, size, "%s/%s%s", folder, profile->file, MP_EXTENSION);
 }
 
@@ -168,30 +223,53 @@ static void toml_string_append(char *text, size_t size, const char *value)
 	text[length] = 0;
 }
 
-static int option_index(const char *key)
+static int option_index(const struct profile_kind *kind, const char *key)
 {
 	size_t index;
 
-	for (index = 0; key && index < OPTION_COUNT; index++)
+	for (index = 0; key && index < kind->option_count; index++)
 	{
-		if (!strcmp(option_keys[index], key))
+		if (!strcmp(kind->option_keys[index], key))
 			return (int)index;
 	}
 	return -1;
 }
 
-/* whether a manual key is one: lowercase letters, digits and _ */
+static int section_index(const struct profile_kind *kind, const char *section)
+{
+	size_t index;
+
+	for (index = 0; section && index < kind->section_count; index++)
+	{
+		if (!strcmp(kind->sections[index], section))
+			return (int)index;
+	}
+	return -1;
+}
+
+/* whether a key is written bare: lowercase letters, digits and _ (else
+quoted, as an actor variant's path is) */
+static int key_bare(const char *key)
+{
+	for (; *key; key++)
+	{
+		if (!((*key >= 'a' && *key <= 'z') || (*key >= '0' && *key <= '9') || *key == '_'))
+			return 0;
+	}
+	return 1;
+}
+
+/* whether a table's key is one: something, without control characters */
 static int key_valid(const char *key)
 {
 	size_t length = key ? strlen(key) : 0;
 	size_t index;
 
-	if (!length || length >= MAXIMUM_KEY_LENGTH)
+	if (!length || length >= MAXIMUM_VALUE_LENGTH)
 		return 0;
 	for (index = 0; index < length; index++)
 	{
-		if (!((key[index] >= 'a' && key[index] <= 'z') || (key[index] >= '0' && key[index] <= '9') ||
-			key[index] == '_'))
+		if ((unsigned char)key[index] < 0x20 || key[index] == 0x7F)
 			return 0;
 	}
 	return 1;
@@ -203,7 +281,7 @@ static void profile_dispose(struct mp_profile *profile)
 	memset(profile, 0, sizeof(*profile));
 }
 
-static int manual_add(struct mp_profile *profile, const char *key, const char *path)
+static int manual_add(struct mp_profile *profile, short section, const char *key, const char *path)
 {
 	struct manual_entry *grown;
 
@@ -214,22 +292,29 @@ static int manual_add(struct mp_profile *profile, const char *key, const char *p
 	if (!grown)
 		return 0;
 	profile->manual = grown;
-	text_copy(grown[profile->manual_count].key, sizeof(grown[0].key), key);
+	grown[profile->manual_count].section = section;
+	value_copy(grown[profile->manual_count].key, sizeof(grown[0].key), key);
 	value_copy(grown[profile->manual_count].path, sizeof(grown[0].path), path);
 	profile->manual_count++;
 	return 1;
 }
 
+static int entry_is(const struct manual_entry *entry, short section, const char *key)
+{
+	return entry->section == section && !names_compare(entry->key, key);
+}
+
 /* reads a profile's file (its name without .toml); 0 when it is not one */
-static int profile_read(struct mp_profile *profile, const char *folder, const char *file)
+static int profile_read(const struct profile_kind *kind, struct mp_profile *profile, const char *folder,
+	const char *file)
 {
 	char path[MAXIMUM_PATH_LENGTH];
 	size_t size = 0;
 	char *text;
 	toml_result_t result;
 	toml_datum_t value;
-	toml_datum_t manual;
 	size_t option;
+	size_t section;
 
 	memset(profile, 0, sizeof(*profile));
 	text_copy(profile->file, sizeof(profile->file), file);
@@ -242,27 +327,29 @@ static int profile_read(struct mp_profile *profile, const char *folder, const ch
 	free(text);
 	if (!result.ok)
 	{
-		platform_log("tag injector: %s: %s; it is not a multiplayer profile", path, result.errmsg);
+		platform_log("tag injector: %s: %s; it is not a %s profile", path, result.errmsg, kind->what);
 		toml_free(result);
 		return 0;
 	}
 	value = toml_get(result.toptab, "name");
 	if (value.type == TOML_STRING && value.u.s[0])
 		value_copy(profile->name, sizeof(profile->name), value.u.s);
-	for (option = 0; option < OPTION_COUNT; option++)
+	for (option = 0; option < kind->option_count; option++)
 	{
-		value = toml_get(result.toptab, option_keys[option]);
+		value = toml_get(result.toptab, kind->option_keys[option]);
 		if (value.type == TOML_STRING)
 			value_copy(profile->options[option], sizeof(profile->options[option]), value.u.s);
 	}
-	manual = toml_get(result.toptab, "manual");
-	if (manual.type == TOML_TABLE)
+	for (section = 0; section < kind->section_count; section++)
 	{
+		toml_datum_t table = toml_get(result.toptab, kind->sections[section]);
 		int key;
 
-		for (key = 0; key < manual.u.tab.size; key++)
+		if (table.type != TOML_TABLE)
+			continue;
+		for (key = 0; key < table.u.tab.size; key++)
 		{
-			toml_datum_t entries = manual.u.tab.value[key];
+			toml_datum_t entries = table.u.tab.value[key];
 			int entry;
 
 			if (entries.type != TOML_ARRAY)
@@ -270,8 +357,8 @@ static int profile_read(struct mp_profile *profile, const char *folder, const ch
 			for (entry = 0; entry < entries.u.arr.size; entry++)
 			{
 				if (entries.u.arr.elem[entry].type == TOML_STRING &&
-					!manual_add(profile, manual.u.tab.key[key], entries.u.arr.elem[entry].u.s))
-					platform_log("tag injector: %s: a weapon of [manual] is left out", path);
+					!manual_add(profile, (short)section, table.u.tab.key[key], entries.u.arr.elem[entry].u.s))
+					platform_log("tag injector: %s: a tag of [%s] is left out", path, kind->sections[section]);
 			}
 		}
 	}
@@ -279,58 +366,77 @@ static int profile_read(struct mp_profile *profile, const char *folder, const ch
 	return 1;
 }
 
-static int profile_write(const struct mp_profile *profile)
+static int profile_write(const struct profile_kind *kind, const struct mp_profile *profile)
 {
-	size_t capacity = 1024 + (OPTION_COUNT + (size_t)profile->manual_count) *
-		(MAXIMUM_KEY_LENGTH + MAXIMUM_VALUE_LENGTH * TOML_CHARACTER_LENGTH + 16);
+	size_t capacity = 1024 + (kind->option_count + (size_t)profile->manual_count * 2) *
+		(MAXIMUM_VALUE_LENGTH * TOML_CHARACTER_LENGTH + 16);
 	char folder[MAXIMUM_PATH_LENGTH];
 	char path[MAXIMUM_PATH_LENGTH];
 	char *text = malloc(capacity);
 	size_t option;
+	size_t section;
 	long index;
 	int written;
 	FILE *stream;
 
 	if (!text)
 		return 0;
-	snprintf(text, capacity, "# a Tag Injector multiplayer profile (Settings > Gameplay > Tag Injector)\nname = \"");
+	snprintf(text, capacity, "# a Tag Injector %s profile (Settings > Gameplay > Tag Injector)\nname = \"", kind->what);
 	toml_string_append(text, capacity, profile->name);
 	snprintf(text + strlen(text), capacity - strlen(text), "\"\n");
-	for (option = 0; option < OPTION_COUNT; option++)
+	for (option = 0; option < kind->option_count; option++)
 	{
-		snprintf(text + strlen(text), capacity - strlen(text), "%s = \"", option_keys[option]);
+		snprintf(text + strlen(text), capacity - strlen(text), "%s = \"", kind->option_keys[option]);
 		toml_string_append(text, capacity, profile->options[option]);
 		snprintf(text + strlen(text), capacity - strlen(text), "\"\n");
 	}
-	if (profile->manual_count)
-		snprintf(text + strlen(text), capacity - strlen(text), "\n[manual]\n");
-	/* (each key once, its weapons in the order they were added) */
-	for (index = 0; index < profile->manual_count; index++)
+	for (section = 0; section < kind->section_count; section++)
 	{
-		long other;
+		int header = 0;
 
-		for (other = 0; other < index && strcmp(profile->manual[other].key, profile->manual[index].key); other++)
+		/* (each key once, its tags in the order they were added) */
+		for (index = 0; index < profile->manual_count; index++)
 		{
-		}
-		if (other < index)
-			continue;
-		snprintf(text + strlen(text), capacity - strlen(text), "%s = [", profile->manual[index].key);
-		for (other = index; other < profile->manual_count; other++)
-		{
-			if (strcmp(profile->manual[other].key, profile->manual[index].key))
+			const struct manual_entry *entry = &profile->manual[index];
+			long other;
+
+			if (entry->section != (short)section)
 				continue;
-			snprintf(text + strlen(text), capacity - strlen(text), "%s\"", other > index ? ", " : "");
-			toml_string_append(text, capacity, profile->manual[other].path);
-			snprintf(text + strlen(text), capacity - strlen(text), "\"");
+			for (other = 0; other < index && !entry_is(&profile->manual[other], entry->section, entry->key); other++)
+			{
+			}
+			if (other < index)
+				continue;
+			if (!header)
+			{
+				snprintf(text + strlen(text), capacity - strlen(text), "\n[%s]\n", kind->sections[section]);
+				header = 1;
+			}
+			if (key_bare(entry->key))
+				snprintf(text + strlen(text), capacity - strlen(text), "%s = [", entry->key);
+			else
+			{
+				snprintf(text + strlen(text), capacity - strlen(text), "\"");
+				toml_string_append(text, capacity, entry->key);
+				snprintf(text + strlen(text), capacity - strlen(text), "\" = [");
+			}
+			for (other = index; other < profile->manual_count; other++)
+			{
+				if (!entry_is(&profile->manual[other], entry->section, entry->key))
+					continue;
+				snprintf(text + strlen(text), capacity - strlen(text), "%s\"", other > index ? ", " : "");
+				toml_string_append(text, capacity, profile->manual[other].path);
+				snprintf(text + strlen(text), capacity - strlen(text), "\"");
+			}
+			snprintf(text + strlen(text), capacity - strlen(text), "]\n");
 		}
-		snprintf(text + strlen(text), capacity - strlen(text), "]\n");
 	}
 	/* (the tag_injector folder first, which a profile may not have made yet) */
 	snprintf(folder, sizeof(folder), "%s/tag_injector", platform_data_root());
 	posix_make_directory(folder);
-	folder_path(folder, sizeof(folder));
+	folder_path(kind, folder, sizeof(folder));
 	posix_make_directory(folder);
-	profile_path(profile, path, sizeof(path));
+	profile_path(kind, profile, path, sizeof(path));
 	{
 		char temporary[MAXIMUM_PATH_LENGTH + 8];
 
@@ -349,25 +455,23 @@ static int profile_write(const struct mp_profile *profile)
 	return written;
 }
 
-static struct mp_profile *profile_get(long profile)
+static struct mp_profile *profile_get(struct profile_kind *kind, long profile)
 {
-	return profile >= 0 && profile < port_tag_mp_profiles.count ? &port_tag_mp_profiles.profiles[profile] : NULL;
+	return profile >= 0 && profile < kind->count ? &kind->profiles[profile] : NULL;
 }
 
-/* ---------- public code */
-
-long port_tag_mp_profiles_scan(void)
+static long kind_scan(struct profile_kind *kind)
 {
 	char folder[MAXIMUM_PATH_LENGTH];
 	char name[256];
 	void *directory;
 	long index;
 
-	for (index = 0; index < port_tag_mp_profiles.count; index++)
-		profile_dispose(&port_tag_mp_profiles.profiles[index]);
-	port_tag_mp_profiles.count = 0;
-	port_tag_mp_profiles.scans++;
-	folder_path(folder, sizeof(folder));
+	for (index = 0; index < kind->count; index++)
+		profile_dispose(&kind->profiles[index]);
+	kind->count = 0;
+	kind->scans++;
+	folder_path(kind, folder, sizeof(folder));
 	directory = posix_directory_open(folder);
 	if (!directory)
 		return 0;
@@ -381,118 +485,113 @@ long port_tag_mp_profiles_scan(void)
 			length - extension >= MAXIMUM_FILE_LENGTH)
 			continue;
 		name[length - extension] = 0;
-		if (port_tag_mp_profiles.count == MAXIMUM_MP_PROFILES)
+		if (kind->count == MAXIMUM_MP_PROFILES)
 		{
-			platform_log("tag injector: more than %d multiplayer profiles in %s: %s and those after it are left out",
-				MAXIMUM_MP_PROFILES, folder, name);
+			platform_log("tag injector: more than %d %s profiles in %s: %s and those after it are left out",
+				MAXIMUM_MP_PROFILES, kind->what, folder, name);
 			break;
 		}
-		if (!profile_read(&profile, folder, name))
+		if (!profile_read(kind, &profile, folder, name))
 			continue;
-		for (index = port_tag_mp_profiles.count;
-			index > 0 && names_compare(port_tag_mp_profiles.profiles[index - 1].name, profile.name) > 0; index--)
-			port_tag_mp_profiles.profiles[index] = port_tag_mp_profiles.profiles[index - 1];
-		port_tag_mp_profiles.profiles[index] = profile;
-		port_tag_mp_profiles.count++;
+		for (index = kind->count; index > 0 && names_compare(kind->profiles[index - 1].name, profile.name) > 0; index--)
+			kind->profiles[index] = kind->profiles[index - 1];
+		kind->profiles[index] = profile;
+		kind->count++;
 	}
 	posix_directory_close(directory);
-	return port_tag_mp_profiles.count;
+	return kind->count;
 }
 
-long port_tag_mp_profiles_count(void)
+static const char *kind_name(struct profile_kind *kind, long profile)
 {
-	return port_tag_mp_profiles.count;
+	return profile_get(kind, profile) ? profile_get(kind, profile)->name : "";
 }
 
-unsigned long port_tag_mp_profiles_scans(void)
+static const char *kind_file(struct profile_kind *kind, long profile)
 {
-	return port_tag_mp_profiles.scans;
+	return profile_get(kind, profile) ? profile_get(kind, profile)->file : "";
 }
 
-const char *port_tag_mp_profiles_name(long profile)
-{
-	return profile_get(profile) ? profile_get(profile)->name : "";
-}
-
-const char *port_tag_mp_profiles_file(long profile)
-{
-	return profile_get(profile) ? profile_get(profile)->file : "";
-}
-
-long port_tag_mp_profiles_find(const char *file)
+static long kind_find(struct profile_kind *kind, const char *file)
 {
 	long index;
 
-	for (index = 0; file && file[0] && index < port_tag_mp_profiles.count; index++)
+	for (index = 0; file && file[0] && index < kind->count; index++)
 	{
-		if (!names_compare(port_tag_mp_profiles.profiles[index].file, file))
+		if (!names_compare(kind->profiles[index].file, file))
 			return index;
 	}
 	return -1;
 }
 
-long port_tag_mp_profiles_create(const char *name, const char *profile)
+/* a file's name for a profile of the name `base` that no file has yet
+(base, base 2, ...): 0 if there is none */
+static int file_choose(struct profile_kind *kind, struct mp_profile *made, const char *base)
 {
-	char folder[MAXIMUM_PATH_LENGTH];
-	char base[MAXIMUM_FILE_LENGTH - 8];
-	struct mp_profile made;
 	int suffix;
 
-	snprintf(base, sizeof(base), "%s", name ? name : "");
-	if (!file_name_clean(base))
-	{
-		platform_log("tag injector: '%s' has no letter or digit to name a multiplayer profile by", name ? name : "");
-		return -1;
-	}
-	memset(&made, 0, sizeof(made));
-	value_copy(made.name, sizeof(made.name), name);
-	value_copy(made.options[option_index("profile")], MAXIMUM_VALUE_LENGTH, profile);
-	text_copy(made.options[option_index("rotation")], MAXIMUM_VALUE_LENGTH, "add");
-	text_copy(made.options[option_index("replace")], MAXIMUM_VALUE_LENGTH, "random");
-	text_copy(made.options[option_index("loadout")], MAXIMUM_VALUE_LENGTH, "map");
-	folder_path(folder, sizeof(folder));
 	for (suffix = 1; suffix < 1000; suffix++)
 	{
 		char path[MAXIMUM_PATH_LENGTH];
 		struct posix_file_information information;
 
 		if (suffix == 1)
-			snprintf(made.file, sizeof(made.file), "%s", base);
+			snprintf(made->file, sizeof(made->file), "%s", base);
 		else
-			snprintf(made.file, sizeof(made.file), "%s %d", base, suffix);
-		profile_path(&made, path, sizeof(path));
+			snprintf(made->file, sizeof(made->file), "%s %d", base, suffix);
+		profile_path(kind, made, path, sizeof(path));
 		if (posix_stat(path, &information) != 0)
-			break;
+			return 1;
 	}
-	if (suffix == 1000 || !profile_write(&made))
-		return -1;
-	port_tag_mp_profiles_scan();
-	platform_log("tag injector: made the multiplayer profile %s (%s), of %s", made.name, made.file,
-		profile ? profile : "");
-	return port_tag_mp_profiles_find(made.file);
+	return 0;
 }
 
-int port_tag_mp_profiles_delete(long profile)
+static long kind_create(struct profile_kind *kind, const char *name, const char *profile)
 {
-	struct mp_profile *found = profile_get(profile);
+	char base[MAXIMUM_FILE_LENGTH - 8];
+	struct mp_profile made;
+	const char *const *defaults;
+
+	snprintf(base, sizeof(base), "%s", name ? name : "");
+	if (!file_name_clean(base))
+	{
+		platform_log("tag injector: '%s' has no letter or digit to name a %s profile by", name ? name : "", kind->what);
+		return -1;
+	}
+	memset(&made, 0, sizeof(made));
+	value_copy(made.name, sizeof(made.name), name);
+	value_copy(made.options[option_index(kind, "profile")], MAXIMUM_VALUE_LENGTH, profile);
+	for (defaults = kind->defaults; defaults[0] && defaults[1]; defaults += 2)
+		text_copy(made.options[option_index(kind, defaults[0])], MAXIMUM_VALUE_LENGTH, defaults[1]);
+	if (!file_choose(kind, &made, base) || !profile_write(kind, &made))
+		return -1;
+	kind_scan(kind);
+	platform_log("tag injector: made the %s profile %s (%s), of %s", kind->what, made.name, made.file,
+		profile ? profile : "");
+	return kind_find(kind, made.file);
+}
+
+static int kind_delete(struct profile_kind *kind, long profile)
+{
+	struct mp_profile *found = profile_get(kind, profile);
 	char path[MAXIMUM_PATH_LENGTH];
 
 	if (!found)
 		return 0;
-	profile_path(found, path, sizeof(path));
+	profile_path(kind, found, path, sizeof(path));
 	if (remove(path) != 0)
 	{
 		platform_log("tag injector: %s cannot be deleted", path);
 		return 0;
 	}
-	platform_log("tag injector: deleted the multiplayer profile %s", found->name);
-	port_tag_mp_profiles_scan();
+	platform_log("tag injector: deleted the %s profile %s", kind->what, found->name);
+	kind_scan(kind);
 	return 1;
 }
 
-int port_tag_mp_profiles_rename(long profile, const char *name)
+static int kind_rename(struct profile_kind *kind, long profile, const char *name)
 {
-	struct mp_profile *found = profile_get(profile);
+	struct mp_profile *found = profile_get(kind, profile);
 	char clean[MAXIMUM_NAME_LENGTH];
 
 	if (!found || !name)
@@ -501,21 +600,21 @@ int port_tag_mp_profiles_rename(long profile, const char *name)
 	if (!file_name_clean(clean))
 		return 0;
 	value_copy(found->name, sizeof(found->name), name);
-	port_tag_mp_profiles.scans++;
-	return profile_write(found);
+	kind->scans++;
+	return profile_write(kind, found);
 }
 
-const char *port_tag_mp_profiles_option(long profile, const char *key)
+static const char *kind_option(struct profile_kind *kind, long profile, const char *key)
 {
-	int option = option_index(key);
+	int option = option_index(kind, key);
 
-	return profile_get(profile) && option >= 0 ? profile_get(profile)->options[option] : "";
+	return profile_get(kind, profile) && option >= 0 ? profile_get(kind, profile)->options[option] : "";
 }
 
-int port_tag_mp_profiles_set_option(long profile, const char *key, const char *value)
+static int kind_set_option(struct profile_kind *kind, long profile, const char *key, const char *value)
 {
-	struct mp_profile *found = profile_get(profile);
-	int option = option_index(key);
+	struct mp_profile *found = profile_get(kind, profile);
+	int option = option_index(kind, key);
 	char kept[MAXIMUM_VALUE_LENGTH];
 
 	if (!found || option < 0 || (value && strlen(value) >= MAXIMUM_VALUE_LENGTH))
@@ -524,30 +623,33 @@ int port_tag_mp_profiles_set_option(long profile, const char *key, const char *v
 	if (!strcmp(found->options[option], kept))
 		return 1;
 	text_copy(found->options[option], sizeof(found->options[option]), kept);
-	port_tag_mp_profiles.scans++;
-	platform_log("tag injector: the multiplayer profile %s: %s = \"%s\"", found->name, key, kept);
-	return profile_write(found);
+	kind->scans++;
+	platform_log("tag injector: the %s profile %s: %s = \"%s\"", kind->what, found->name, key, kept);
+	return profile_write(kind, found);
 }
 
-long port_tag_mp_profiles_manual_count(long profile, const char *key)
+static long kind_list_count(struct profile_kind *kind, long profile, const char *section_name, const char *key)
 {
-	struct mp_profile *found = profile_get(profile);
+	struct mp_profile *found = profile_get(kind, profile);
+	int section = section_index(kind, section_name);
 	long count = 0;
 	long index;
 
-	for (index = 0; found && key && index < found->manual_count; index++)
-		count += !strcmp(found->manual[index].key, key);
+	for (index = 0; found && section >= 0 && key && index < found->manual_count; index++)
+		count += entry_is(&found->manual[index], (short)section, key);
 	return count;
 }
 
-const char *port_tag_mp_profiles_manual(long profile, const char *key, long entry)
+static const char *kind_list(struct profile_kind *kind, long profile, const char *section_name, const char *key,
+	long entry)
 {
-	struct mp_profile *found = profile_get(profile);
+	struct mp_profile *found = profile_get(kind, profile);
+	int section = section_index(kind, section_name);
 	long index;
 
-	for (index = 0; found && key && index < found->manual_count; index++)
+	for (index = 0; found && section >= 0 && key && index < found->manual_count; index++)
 	{
-		if (strcmp(found->manual[index].key, key))
+		if (!entry_is(&found->manual[index], (short)section, key))
 			continue;
 		if (!entry--)
 			return found->manual[index].path;
@@ -555,52 +657,133 @@ const char *port_tag_mp_profiles_manual(long profile, const char *key, long entr
 	return "";
 }
 
-int port_tag_mp_profiles_manual_has(long profile, const char *key, const char *path)
+static int kind_list_has(struct profile_kind *kind, long profile, const char *section_name, const char *key,
+	const char *path)
 {
-	struct mp_profile *found = profile_get(profile);
+	struct mp_profile *found = profile_get(kind, profile);
+	int section = section_index(kind, section_name);
 	long index;
 
-	for (index = 0; found && key && path && index < found->manual_count; index++)
+	for (index = 0; found && section >= 0 && key && path && index < found->manual_count; index++)
 	{
-		if (!strcmp(found->manual[index].key, key) && !names_compare(found->manual[index].path, path))
+		if (entry_is(&found->manual[index], (short)section, key) && !names_compare(found->manual[index].path, path))
 			return 1;
 	}
 	return 0;
 }
 
-int port_tag_mp_profiles_manual_set(long profile, const char *key, const char *path, int on)
+static int kind_list_set(struct profile_kind *kind, long profile, const char *section_name, const char *key,
+	const char *path, int on)
 {
-	struct mp_profile *found = profile_get(profile);
+	struct mp_profile *found = profile_get(kind, profile);
+	int section = section_index(kind, section_name);
 	long index;
 
-	if (!found || !key_valid(key) || !path || !path[0])
+	if (!found || section < 0 || !key_valid(key) || !path || !path[0])
 		return 0;
-	if ((port_tag_mp_profiles_manual_has(profile, key, path) != 0) == (on != 0))
+	if ((kind_list_has(kind, profile, section_name, key, path) != 0) == (on != 0))
 		return 1;
 	if (on)
 	{
-		if (!manual_add(found, key, path))
+		if (!manual_add(found, (short)section, key, path))
 			return 0;
 	}
 	else
 	{
 		for (index = 0; index < found->manual_count; index++)
 		{
-			if (!strcmp(found->manual[index].key, key) && !names_compare(found->manual[index].path, path))
+			if (entry_is(&found->manual[index], (short)section, key) && !names_compare(found->manual[index].path, path))
 				break;
 		}
 		memmove(&found->manual[index], &found->manual[index + 1],
 			(size_t)(found->manual_count - index - 1) * sizeof(found->manual[0]));
 		found->manual_count--;
 	}
-	port_tag_mp_profiles.scans++;
-	return profile_write(found);
+	kind->scans++;
+	return profile_write(kind, found);
+}
+
+/* ---------- public code */
+
+long port_tag_mp_profiles_scan(void)
+{
+	return kind_scan(&mp_kind);
+}
+
+long port_tag_mp_profiles_count(void)
+{
+	return mp_kind.count;
+}
+
+unsigned long port_tag_mp_profiles_scans(void)
+{
+	return mp_kind.scans;
+}
+
+const char *port_tag_mp_profiles_name(long profile)
+{
+	return kind_name(&mp_kind, profile);
+}
+
+const char *port_tag_mp_profiles_file(long profile)
+{
+	return kind_file(&mp_kind, profile);
+}
+
+long port_tag_mp_profiles_find(const char *file)
+{
+	return kind_find(&mp_kind, file);
+}
+
+long port_tag_mp_profiles_create(const char *name, const char *profile)
+{
+	return kind_create(&mp_kind, name, profile);
+}
+
+int port_tag_mp_profiles_delete(long profile)
+{
+	return kind_delete(&mp_kind, profile);
+}
+
+int port_tag_mp_profiles_rename(long profile, const char *name)
+{
+	return kind_rename(&mp_kind, profile, name);
+}
+
+const char *port_tag_mp_profiles_option(long profile, const char *key)
+{
+	return kind_option(&mp_kind, profile, key);
+}
+
+int port_tag_mp_profiles_set_option(long profile, const char *key, const char *value)
+{
+	return kind_set_option(&mp_kind, profile, key, value);
+}
+
+long port_tag_mp_profiles_manual_count(long profile, const char *key)
+{
+	return kind_list_count(&mp_kind, profile, "manual", key);
+}
+
+const char *port_tag_mp_profiles_manual(long profile, const char *key, long entry)
+{
+	return kind_list(&mp_kind, profile, "manual", key, entry);
+}
+
+int port_tag_mp_profiles_manual_has(long profile, const char *key, const char *path)
+{
+	return kind_list_has(&mp_kind, profile, "manual", key, path);
+}
+
+int port_tag_mp_profiles_manual_set(long profile, const char *key, const char *path, int on)
+{
+	return kind_list_set(&mp_kind, profile, "manual", key, path, on);
 }
 
 void port_tag_mp_profiles_path(long profile, char *path, unsigned long size)
 {
-	if (profile_get(profile))
-		profile_path(profile_get(profile), path, (size_t)size);
+	if (profile_get(&mp_kind, profile))
+		profile_path(&mp_kind, profile_get(&mp_kind, profile), path, (size_t)size);
 	else if (size)
 		path[0] = 0;
 }
@@ -614,7 +797,6 @@ long port_tag_mp_profiles_import(const char *path, const char *suffix, const cha
 	size_t length;
 	struct mp_profile read;
 	char name[MAXIMUM_NAME_LENGTH];
-	int suffix_number;
 
 	/* (read as a profile of its folder is: its name without .toml) */
 	if (!slash || (size_t)(slash - path) >= sizeof(folder))
@@ -625,32 +807,18 @@ long port_tag_mp_profiles_import(const char *path, const char *suffix, const cha
 		strcmp(slash + 1 + length - strlen(MP_EXTENSION), MP_EXTENSION))
 		return -1;
 	snprintf(file, sizeof(file), "%.*s", (int)(length - strlen(MP_EXTENSION)), slash + 1);
-	if (!profile_read(&read, folder, file))
+	if (!profile_read(&mp_kind, &read, folder, file))
 		return -1;
 	/* (its name the host's and the suffix, its file a new one, playing the
 	profile given) */
 	snprintf(name, sizeof(name), "%.*s%s", (int)(sizeof(name) - strlen(suffix ? suffix : "") - 1), read.name,
 		suffix ? suffix : "");
 	value_copy(read.name, sizeof(read.name), name);
-	value_copy(read.options[option_index("profile")], MAXIMUM_VALUE_LENGTH, profile);
+	value_copy(read.options[option_index(&mp_kind, "profile")], MAXIMUM_VALUE_LENGTH, profile);
 	snprintf(base, sizeof(base), "%s", name);
 	if (!file_name_clean(base))
 		snprintf(base, sizeof(base), "online");
-	folder_path(folder, sizeof(folder));
-	for (suffix_number = 1; suffix_number < 1000; suffix_number++)
-	{
-		char made[MAXIMUM_PATH_LENGTH];
-		struct posix_file_information information;
-
-		if (suffix_number == 1)
-			snprintf(read.file, sizeof(read.file), "%s", base);
-		else
-			snprintf(read.file, sizeof(read.file), "%s %d", base, suffix_number);
-		profile_path(&read, made, sizeof(made));
-		if (posix_stat(made, &information) != 0)
-			break;
-	}
-	if (suffix_number == 1000 || !profile_write(&read))
+	if (!file_choose(&mp_kind, &read, base) || !profile_write(&mp_kind, &read))
 	{
 		profile_dispose(&read);
 		return -1;
@@ -660,4 +828,79 @@ long port_tag_mp_profiles_import(const char *path, const char *suffix, const cha
 	port_tag_mp_profiles_scan();
 	platform_log("tag injector: copied the multiplayer profile %s, playing %s", name, profile);
 	return port_tag_mp_profiles_find(file);
+}
+
+long port_tag_campaign_profiles_scan(void)
+{
+	return kind_scan(&campaign_kind);
+}
+
+long port_tag_campaign_profiles_count(void)
+{
+	return campaign_kind.count;
+}
+
+unsigned long port_tag_campaign_profiles_scans(void)
+{
+	return campaign_kind.scans;
+}
+
+const char *port_tag_campaign_profiles_name(long profile)
+{
+	return kind_name(&campaign_kind, profile);
+}
+
+const char *port_tag_campaign_profiles_file(long profile)
+{
+	return kind_file(&campaign_kind, profile);
+}
+
+long port_tag_campaign_profiles_find(const char *file)
+{
+	return kind_find(&campaign_kind, file);
+}
+
+long port_tag_campaign_profiles_create(const char *name, const char *profile)
+{
+	return kind_create(&campaign_kind, name, profile);
+}
+
+int port_tag_campaign_profiles_delete(long profile)
+{
+	return kind_delete(&campaign_kind, profile);
+}
+
+int port_tag_campaign_profiles_rename(long profile, const char *name)
+{
+	return kind_rename(&campaign_kind, profile, name);
+}
+
+const char *port_tag_campaign_profiles_option(long profile, const char *key)
+{
+	return kind_option(&campaign_kind, profile, key);
+}
+
+int port_tag_campaign_profiles_set_option(long profile, const char *key, const char *value)
+{
+	return kind_set_option(&campaign_kind, profile, key, value);
+}
+
+long port_tag_campaign_profiles_list_count(long profile, const char *section, const char *key)
+{
+	return kind_list_count(&campaign_kind, profile, section, key);
+}
+
+const char *port_tag_campaign_profiles_list(long profile, const char *section, const char *key, long entry)
+{
+	return kind_list(&campaign_kind, profile, section, key, entry);
+}
+
+int port_tag_campaign_profiles_list_has(long profile, const char *section, const char *key, const char *path)
+{
+	return kind_list_has(&campaign_kind, profile, section, key, path);
+}
+
+int port_tag_campaign_profiles_list_set(long profile, const char *section, const char *key, const char *path, int on)
+{
+	return kind_list_set(&campaign_kind, profile, section, key, path, on);
 }

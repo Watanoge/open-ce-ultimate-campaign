@@ -87,6 +87,7 @@ void platform_log(char const *format, ...);
 #include "tag_schema.h"
 #include "tag_injector.h"
 #include "tag_multiplayer.h"
+#include "tag_campaign.h"
 #include "firing_range.h"
 #include "../src/port_tag_profiles.h"
 
@@ -3946,6 +3947,7 @@ void randomizer_tags_loaded(char const *scenario_name)
 	int skull;
 	int outbreak;
 	int scarab;
+	long campaign_profile = NONE;
 
 	randomizer_tags_unloaded();
 	/* (a multiplayer game's shared weapons, on the game's own multiplayer
@@ -3980,7 +3982,16 @@ void randomizer_tags_loaded(char const *scenario_name)
 		return;
 	if (game && game->variant.game_engine_index != game_engine_none)
 		return;
-	if (network_game_distributed_client())
+	/* (a campaign profile, played alone as the Tag Injector's profiles are:
+	tag_campaign.c swaps the level's weapons and actors in the randomizer's
+	place) */
+	if (!game && !network_game_distributed_client() && !community_challenge_running())
+		campaign_profile = tag_campaign_level_profile();
+	if (campaign_profile != NONE)
+	{
+		memset(&current, 0, sizeof(current));
+	}
+	else if (network_game_distributed_client())
 	{
 		if (remote_on)
 		{
@@ -3998,9 +4009,9 @@ void randomizer_tags_loaded(char const *scenario_name)
 	skull = skulls_carried_wanted();
 	outbreak = skulls_outbreak_wanted();
 	scarab = skulls_scarab_wanted();
-	if (!randomize && !skull && !outbreak && !scarab)
+	if (!randomize && campaign_profile == NONE && !skull && !outbreak && !scarab)
 		return;
-	if (randomize && !network_game_distributed_client() && !placement_roll_ready)
+	if ((randomize || campaign_profile != NONE) && !network_game_distributed_client() && !placement_roll_ready)
 		placement_roll_new(scenario_name);
 	snprintf(map_name_leaf, sizeof(map_name_leaf), "%s", leaf);
 	/* (the Tag Injector's profile: a level played alone only, as only this
@@ -4009,7 +4020,12 @@ void randomizer_tags_loaded(char const *scenario_name)
 	custom_root_count = 0;
 	custom_profile = NONE;
 	stock_hud_count = 0;
-	if (randomize && current.custom_tags && !game && !network_game_distributed_client() &&
+	if (campaign_profile != NONE)
+	{
+		custom_profile = campaign_profile;
+		stock_hud_count = tag_injector_tags_read(custom_profile, stock_huds, STOCK_HUD_MAX);
+	}
+	else if (randomize && current.custom_tags && !game && !network_game_distributed_client() &&
 		!community_challenge_running())
 	{
 		custom_profile = tag_injector_profile_playable();
@@ -4029,6 +4045,12 @@ void randomizer_tags_loaded(char const *scenario_name)
 	/* (its tags, after those) */
 	if (custom_profile != NONE)
 		custom_root_count = tag_injector_tags_load(custom_profile, custom_roots, custom_root_tags, CUSTOM_ROOT_MAX);
+	if (campaign_profile != NONE)
+	{
+		tag_campaign_level_loaded(custom_profile, custom_roots, custom_root_tags, custom_root_count);
+		build_protected();
+		loaded = tag_campaign_level_playing();
+	}
 	if (randomize)
 	{
 		error(_error_silent, "randomizer: gathering actors already in %s", leaf);
@@ -4082,6 +4104,7 @@ void randomizer_tags_unloaded(void)
 		placement_roll_ready = 0;
 	tag_injector_tags_unloaded();
 	tag_multiplayer_level_unloaded();
+	tag_campaign_level_unloaded();
 	custom_root_count = 0;
 	custom_profile = NONE;
 	donors_close();
@@ -4393,11 +4416,17 @@ long randomizer_actor_variant(long original, long encounter_index, long squad_in
 	long encounter_block;
 	long location_index = 0;
 	unsigned long seed;
+	/* (a campaign profile's level: tag_campaign.c chooses, the player's
+	allies too) */
+	int campaign = tag_campaign_level_playing();
+	int ally = 0;
 
 	placement_left_out = 0;
 	if (forced_variant != NONE)
 		return forced_variant;
-	if (!loaded || !current.enemies || original == NONE || variant_count <= 0 || !location)
+	if (!loaded || original == NONE || !location)
+		return original;
+	if (!campaign && (!current.enemies || variant_count <= 0))
 		return original;
 	if (encounter_index == NONE || squad_index == NONE)
 		return original;
@@ -4416,7 +4445,8 @@ long randomizer_actor_variant(long original, long encounter_index, long squad_in
 	{
 		short team = variant_team(original, encounter);
 
-		if (team == _game_team_player || team == _game_team_human)
+		ally = team == _game_team_player || team == _game_team_human;
+		if (ally && !campaign)
 			return original;
 	}
 	squad = tag_block_get_element_with_size(&encounter->squads, squad_index, sizeof(*squad));
@@ -4433,9 +4463,11 @@ long randomizer_actor_variant(long original, long encounter_index, long squad_in
 	}
 	seed = placement_seed(encounter_block, squad_index, location_index, &location->position.x);
 	{
-		long picked = pool_pick(variant_pool, variant_count, seed);
+		long picked = campaign ? tag_campaign_actor_variant(original, (short)variant_type(original), ally, seed) :
+			pool_pick(variant_pool, variant_count, seed);
 
-		if (picked == NONE)
+		/* (a campaign profile's level leaves this one as it is) */
+		if (picked == NONE || (campaign && picked == original))
 			return original;
 		/* an infection form to be swapped for another actor: only the
 		setup's share of a squad's, the rest not placed (actor_place) */
@@ -4704,12 +4736,15 @@ long randomizer_weapon_definition(long definition_index, void *scenario_object)
 	unsigned long seed;
 	long picked;
 
-	if (!loaded || !current.pickups || definition_index == NONE || pickup_choice.count <= 0 || !object)
+	if (!loaded || definition_index == NONE || !object)
+		return definition_index;
+	if (!tag_campaign_level_playing() && (!current.pickups || pickup_choice.count <= 0))
 		return definition_index;
 	if (object->name_index != NONE || !tag_index_is_group(definition_index, WEAPON_DEFINITION_TAG))
 		return definition_index;
 	seed = placement_seed(object->palette_entry_index, object->name_index, 0, &object->position.x);
-	picked = pool_pick(pickup_choice.definitions, pickup_choice.count, seed);
+	picked = tag_campaign_level_playing() ? tag_campaign_pickup(definition_index, seed) :
+		pool_pick(pickup_choice.definitions, pickup_choice.count, seed);
 
 	return picked == NONE ? definition_index : picked;
 }
@@ -4775,15 +4810,26 @@ static long held_weapons(long unit_index, long *weapons, long capacity)
 	return count;
 }
 
-/* the first attempt the pool's choice, the next the actor's own weapon (one
-the unit refused leaves it unarmed otherwise), then none */
-long randomizer_enemy_weapon(long weapon_definition, long unit_index, long attempt)
+/* the first attempt the pool's choice (a campaign profile's level: the
+loadout of the actor variant's, tag_campaign.c), the next the actor's own
+weapon (one the unit refused leaves it unarmed otherwise), then none */
+long randomizer_enemy_weapon(long weapon_definition, long unit_index, long attempt, long variant_index)
 {
 	struct unit_datum *unit;
 	long held[WEAPON_MAX];
 	long held_count;
 	unsigned long seed;
 
+	if (loaded && tag_campaign_level_playing())
+	{
+		if (attempt > 0)
+			return attempt == 1 ? weapon_definition : NONE;
+		unit = unit_try_and_get(unit_index);
+		if (!unit)
+			return weapon_definition;
+		seed = placement_seed(weapon_definition, 0, attempt, &unit->object.position.x);
+		return tag_campaign_enemy_weapon(variant_index, weapon_definition, unit_index, seed);
+	}
 	if (!loaded || !current.weapons || actor_weapon_choice.count <= 0 || attempt > 0)
 		return attempt == 0 || (attempt == 1 && loaded && current.weapons) ? weapon_definition : NONE;
 	unit = unit_try_and_get(unit_index);

@@ -850,6 +850,13 @@ static const struct config_setting config_settings[] =
 		"file's name, without .toml, in the data root's tag_injector/.multiplayer\n"
 		"folder; \"\" none. Its clients download its weapons from the host\n"
 		"(docs/tag_injector.md, \"In multiplayer\")." },
+	{ "game.campaign_tag_profile", _config_string, "\"\"", "HALO_CAMPAIGN_TAG_PROFILE", _environment_value,
+		_platform_all,
+		"The Tag Injector campaign profile a campaign level played alone plays,\n"
+		"in the randomizer's place (the TAG INJECTOR PROFILE screen before the\n"
+		"level): its file's name, without .toml, in the data root's\n"
+		"tag_injector/.campaign folder; \"\" none. With game.tag_injection on\n"
+		"(docs/tag_injector.md, \"Campaign profiles\")." },
 	{ "game.tag_injection_textures", _config_string, "\"auto\"", "HALO_TAG_INJECTION_TEXTURES", _environment_value,
 		_platform_all,
 		"How large the bitmaps of a profile's tags are drawn in a level: \"full\"\n"

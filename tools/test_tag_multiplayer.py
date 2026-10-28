@@ -120,7 +120,7 @@ def test_settings_values():
         read_values = re.findall(r'"([a-z]+)"', game.split(f"static char const *const {read} =", 1)[1]
                                  .split(";", 1)[0])
         assert menu_values == read_values, setting
-        assert f'option_index("{setting}")], MAXIMUM_VALUE_LENGTH, "{read_values[0]}")' in store
+        assert f'"{setting}", "{read_values[0]}"' in store.split("mp_defaults[] =", 1)[1].split(";", 1)[0]
 
 
 def test_stock_weapons():

@@ -26,6 +26,8 @@ the tag bundles of its tags (port/linux/game/tag_bundle.h), one a file:
 	hud = "auto"
 	replace = true
 	name = "Brute Carbine"
+	pickup = "text"
+	pickup_text = "Brute Carbine"
 
 A tag's enabled, and its settings (port_tag_profiles.h's
 port_tag_profiles_tag_option), may be left out: it is on, and its settings
@@ -130,7 +132,7 @@ a share it downloaded is named (after the host's names) */
 
 /* a tag's settings, by their keys in profile.toml (port_tag_profiles.h) */
 static const char *const tag_option_keys[] = { "faction", "type", "class", "custom_type", "hud", "replace", "name",
-	"failed" };
+	"failed", "pickup", "pickup_text" };
 #define TAG_OPTION_COUNT (sizeof(tag_option_keys) / sizeof(tag_option_keys[0]))
 
 /* an edit of a tag's values (the Tag Editor's: tag_editor.c), by its key */
@@ -323,10 +325,11 @@ static int tag_option_index(const char *key)
 
 /* a setting's value as it is kept: its letters, digits, spaces, - and _
 (a custom type's name and a tag's are typed), lower case but for
-custom_type's and name's; 0 if it is too long */
+custom_type's, name's and pickup_text's; 0 if it is too long */
 static int tag_option_clean(int option, const char *value, char *clean)
 {
-	int typed = !strcmp(tag_option_keys[option], "custom_type") || !strcmp(tag_option_keys[option], "name");
+	int typed = !strcmp(tag_option_keys[option], "custom_type") || !strcmp(tag_option_keys[option], "name") ||
+		!strcmp(tag_option_keys[option], "pickup_text");
 	size_t length = 0;
 
 	while (value && *value == ' ')

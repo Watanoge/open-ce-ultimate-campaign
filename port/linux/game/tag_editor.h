@@ -69,6 +69,13 @@ void tag_editor_weapon_loaded(
 /* the level's tags let go (tag_injector_tags_unloaded) */
 void tag_editor_level_unloaded(
 	void);
+/* a weapon's pickup prompt as its tag's Pickup settings have it
+(source/interface/hud.c): `text_wanted` TRUE when it names the weapon in
+words rather than with its HUD's icon, and the words typed (NULL for
+none: its name as the map has it, or not words at all) */
+unsigned short const *tag_editor_pickup_text(
+	long weapon,
+	unsigned char *text_wanted);
 
 /* The overlay's TAG EDITOR: the weapon the first local player holds, its
 values and its HUD, in lists. _open starts at its first list; _title is the

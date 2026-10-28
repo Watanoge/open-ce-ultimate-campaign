@@ -495,6 +495,8 @@ static void hud_show_action_response(
 				weapon->definition_index);
 			long hud_interface_index =
 				weapon_definition->weapon.interface_definition.hud_interface.index;
+			unsigned char pickup_words;
+			unsigned short const *pickup_text;
 
 			if (hud_interface_index != NONE)
 			{
@@ -503,11 +505,23 @@ static void hud_show_action_response(
 				if (icon->sequence_index == NONE)
 					icon = NULL;
 			}
+			/* port: the Tag Editor's Pickup settings (port/linux/game/tag_editor.c):
+			words instead of the icon, and the words typed */
+			pickup_text = tag_editor_pickup_text(weapon->definition_index, &pickup_words);
+			if (pickup_words)
+				icon = NULL;
 
 			hud_set_state_message(
 				render.local_player_index,
 				_hud_message_swap_weapon);
-			if (icon != NULL)
+			if (pickup_text)
+			{
+				hud_port_set_state_message_slot_text(
+					render.local_player_index,
+					0,
+					(wchar_t const *)pickup_text);
+			}
+			else if (icon != NULL)
 			{
 				hud_set_state_message_icon(
 					render.local_player_index,
@@ -538,6 +552,8 @@ static void hud_show_action_response(
 				weapon->definition_index);
 			long hud_interface_index =
 				weapon_definition->weapon.interface_definition.hud_interface.index;
+			unsigned char pickup_words;
+			unsigned short const *pickup_text;
 
 			if (hud_interface_index != NONE)
 			{
@@ -546,11 +562,23 @@ static void hud_show_action_response(
 				if (icon->sequence_index == NONE)
 					icon = NULL;
 			}
+			/* port: the Tag Editor's Pickup settings (port/linux/game/tag_editor.c):
+			words instead of the icon, and the words typed */
+			pickup_text = tag_editor_pickup_text(weapon->definition_index, &pickup_words);
+			if (pickup_words)
+				icon = NULL;
 
 			hud_set_state_message(
 				render.local_player_index,
 				_hud_message_pickup);
-			if (icon != NULL)
+			if (pickup_text)
+			{
+				hud_port_set_state_message_slot_text(
+					render.local_player_index,
+					0,
+					(wchar_t const *)pickup_text);
+			}
+			else if (icon != NULL)
 			{
 				hud_set_state_message_icon(
 					render.local_player_index,
@@ -693,6 +721,8 @@ static void hud_show_action_response(
 							long hud_interface_index = weapon_definition_get(
 								candidate_weapon->definition_index)->weapon.interface_definition.hud_interface.index;
 							struct icon_hud_element_definition const *icon = NULL;
+							unsigned char pickup_words;
+							unsigned short const *pickup_text;
 
 							if (hud_interface_index != NONE)
 							{
@@ -701,8 +731,19 @@ static void hud_show_action_response(
 								if (icon->sequence_index == NONE)
 									icon = NULL;
 							}
+							/* port: the Tag Editor's Pickup settings, as above */
+							pickup_text = tag_editor_pickup_text(candidate_weapon->definition_index, &pickup_words);
+							if (pickup_words)
+								icon = NULL;
 
-							if (icon != NULL)
+							if (pickup_text)
+							{
+								hud_port_set_state_message_slot_text(
+									render.local_player_index,
+									0,
+									(wchar_t const *)pickup_text);
+							}
+							else if (icon != NULL)
 							{
 								hud_set_state_message_icon(
 									render.local_player_index,
