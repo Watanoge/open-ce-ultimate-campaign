@@ -293,11 +293,22 @@ DELETE (pressed twice), EXPORT (Android) and BACK. A recording shorter than
   shoulder button (RB, the Switch's R, the PS5's R1) plays faster (2, 4,
   8 times) and the left one slower (a half, a quarter, then a pause:
   `game_time_set_speed`). Back held shows the scores, the watched
-  player's row as a player's own. B leaves.
+  player's row as a player's own. B hides the lines over the screen
+  and shows them again. Start puts up the pause menu: the game stopped
+  (`game_time_set_speed`), the camera kept where it is, the screen
+  dimmed with PAUSED in its middle; in it B leaves the replay and Start
+  again resumes it at its speed. A playback is a client of the
+  distributed netcode, whose host's rules put a client's game speed back
+  each tick (`cheats_network_client_enforce`); a playback's is its own.
   A line at the top says who is watched, the view and the speed, and a
-  dark bar along the bottom edge shows the buttons, with the controller's
-  own pictures of them (the game's prompts' `%a-button` and so on,
-  `draw_string_and_hack_in_icons`), in the menus' small font.
+  dark bar along the bottom edge shows the buttons, in the menus' small
+  font, each as a picture of the controller's button: Kenney's Input
+  Prompts, the Xbox Series' in common and the Switch's and the PS5's on
+  them (`hud_hires_prompt_draw`; port/assets/buttons/README.md, "Replay
+  prompts"), as the game's own message icons have no d-pad, Back or Start
+  (its d-pad's are the A's). Without a picture, a button's name on the
+  controller is written instead (the Switch's L, R, - and +, the PS5's
+  L1, R1, CREATE and OPTIONS, the Xbox's LB, RB, BACK and START).
 - **The end.** The replay's end, or the game's, returns to the main menu
   four seconds later (`network_game_abort`), unless the d-pad's left
   goes back first.

@@ -336,7 +336,9 @@ their arms and weapon, or from behind their vehicle as they saw it; and a
 free camera moved with the sticks and the triggers; a replay a client
 recorded has only its own player's eyes); the right and left
 shoulder buttons (R and L on the Switch, R1 and L1 on the PS5) play it
-faster or slower, to a pause; Back held shows the scores; B leaves. Its
+faster or slower, to a pause; Back held shows the scores; B hides the
+lines over the screen; Start pauses it, and in the pause menu B leaves and
+Start resumes. Its
 buttons: RECORD turns `network.record_replays` on or off; DELETE deletes
 the one chosen (pressed twice); on Android, EXPORT opens the system's
 folder picker and copies the replays to the folder chosen (those it

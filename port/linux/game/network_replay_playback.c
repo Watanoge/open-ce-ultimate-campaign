@@ -38,9 +38,12 @@ Y goes past that view for the others, whom it saw only as a client sees
 another. A watches the next player, X the one before; the right shoulder
 button (RB, the Switch's R, the PS5's R1) plays faster and the left one
 slower, to a pause (game_time_set_speed); Back held shows the scores (the
-watched's row as a player's own); B leaves. A line at the top says who is
+watched's row as a player's own); B hides the lines over the screen. Start
+puts up the pause menu (the game stopped, the camera kept): B in it leaves,
+Start resumes. A line at the top says who is
 watched, the view and the speed, and a dark bar at the bottom edge the
-buttons, with the controller's pictures of them
+buttons, each as Kenney's picture of the controller's
+(hud_hires_prompt_draw)
 (network_replay_playback_draw). The game's end, or the replay's, returns
 to the main menu a few seconds later.
 
@@ -107,6 +110,7 @@ void game_state_port_used(void **cpu, long *cpu_size, void **gpu, long *gpu_size
 void game_state_port_restore(void (*read)(void *context), void *context);
 void render_interpolation_reset(void);
 void first_person_weapons_initialize_for_new_map(void);
+boolean hud_hires_prompt_draw(char const *name, real x, real y, real size, pixel32 color, boolean draw);
 
 /* the simulation's and the netcode's variables outside the game state, all
 together (port/android/guest/guest.ld's .replay_data and .replay_bss) */
@@ -189,8 +193,22 @@ picture's), the bar's room either side of them and its colour */
 #define REPLAY_HINT_HEIGHT 26
 #define REPLAY_HINT_PADDING 10
 #define REPLAY_HINT_BAR_COLOR 0xA0000000
+/* a button's picture's size, the room after it, and between two hints */
+#define REPLAY_HINT_ICON_SIZE 18
+#define REPLAY_HINT_ICON_GAP 3
+#define REPLAY_HINT_SPACING 12
+/* the screen's dimming under the pause menu */
+#define REPLAY_PAUSE_DIM_COLOR 0x80000000
 /* a stick's or a trigger's dead middle, of its whole */
 #define STICK_DEAD_ZONE 0.15f
+
+/* a hint at the bottom: its button, or two (NONE for none), and what it
+does */
+struct playback_hint
+{
+	short buttons[2];
+	wchar_t const *action;
+};
 
 /* the views Y goes round */
 enum
@@ -234,10 +252,13 @@ static struct
 	/* the buttons held at the last idle (each press counted once) */
 	boolean held[NUMBER_OF_GAMEPAD_BUTTONS];
 	/* the view, the speed (replay_speeds'), and whether the scores are
-	shown (Back held) */
+	shown (Back held); the lines over the screen hidden (B); the pause
+	menu up (Start: the game stopped, the camera kept where it was) */
 	short view;
 	short speed;
 	boolean scores;
+	boolean hidden;
+	boolean paused;
 	/* the camera, made once a frame; whether it is the watched player's own
 	first-person view (their arms and weapon drawn: first_person_weapons.c);
 	behind's turn; the free camera's place and its turns */
@@ -385,6 +406,8 @@ static void playback_free(
 	playback.view = _replay_view_behind;
 	playback.speed = REPLAY_NORMAL_SPEED;
 	playback.scores = FALSE;
+	playback.hidden = FALSE;
+	playback.paused = FALSE;
 	playback.camera_valid = FALSE;
 	playback_keyframes_free();
 	playback.behind_orbiting = FALSE;
@@ -1036,6 +1059,29 @@ boolean network_replay_playback_idle(
 		playback.skip_tick = NONE;
 		game_time_set_speed(replay_speeds[playback.speed]);
 	}
+	/* (the pause menu: Start puts it up, the game stopped, and takes it
+	down again, the game at its speed; B in it leaves the replay. Nothing
+	else while it is up: its end waits too, its seconds again from the
+	resume) */
+	if (playback_pressed(_gamepad_binary_button_start))
+	{
+		playback.paused = !playback.paused;
+		playback.skip_tick = NONE;
+		playback.scores = FALSE;
+		game_time_set_speed(playback.paused ? 0.0f : replay_speeds[playback.speed]);
+		if (!playback.paused && playback.ended)
+			playback.ended = now ? now : 1;
+	}
+	if (playback.paused)
+	{
+		if (playback_pressed(FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_b))
+		{
+			error(_error_log, "replay: left at tick %ld", game_time_get());
+			playback.leaving = TRUE;
+			network_game_abort();
+		}
+		return TRUE;
+	}
 	if (playback_pressed(FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_a))
 		playback.watched = playback_next_player(playback.watched, FALSE);
 	if (playback_pressed(FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_x))
@@ -1083,13 +1129,9 @@ boolean network_replay_playback_idle(
 	}
 	playback_pressed(_gamepad_binary_button_back);
 	playback.scores = playback.held[_gamepad_binary_button_back];
+	/* (B: the lines over the screen hidden, or shown again) */
 	if (playback_pressed(FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_b))
-	{
-		error(_error_log, "replay: left at tick %ld", game_time_get());
-		playback.leaving = TRUE;
-		network_game_abort();
-		return TRUE;
-	}
+		playback.hidden = !playback.hidden;
 	/* (its end: the file's, or the game's) */
 	if (!playback.ended && (playback.next >= playback.size ||
 		network_game_client_port_in_postgame(client)))
@@ -1416,6 +1458,9 @@ void network_replay_playback_frame(
 
 	if (!playback.playing)
 		return;
+	/* (paused: the camera where it was, its sticks let be) */
+	if (playback.paused && playback.camera_valid)
+		return;
 	player = playback.watched != NONE ? player_try_and_get(playback.watched) : NULL;
 	/* (the first player alive, before anyone is watched, or once the one
 	watched has left; one who died is watched again when they spawn, the
@@ -1490,24 +1535,233 @@ edge, on a dark bar, the buttons, with the controller's pictures of them
 (the game's prompts' %a-button and so on: ui_widget.c's
 draw_string_and_hack_in_icons; the Switch's and the PS5's own, swapped as a
 playback's buttons are, hud_hires_tags.c); and with Back held, the scores */
+/* a button in the hints: its picture (hud_hires_prompt_draw: Kenney's of
+the controller), and its name on the controller where there is none (the
+Switch's, the PS5's, else the Xbox's; the Switch's A and B as its menus
+have them, as a replay does: xinput_sdl.c) */
+static char const *playback_button_prompt(
+	short button)
+{
+	switch (button)
+	{
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_a: return "a";
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_b: return "b";
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_x: return "x";
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_y: return "y";
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_black: return "black";
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_white: return "white";
+	case _gamepad_binary_button_dpad_left: return "dpad_horizontal";
+	case _gamepad_binary_button_back: return "back";
+	case _gamepad_binary_button_start: return "start";
+	case _gamepad_binary_button_right_thumb: return "stick_right_press";
+	}
+	return "";
+}
+
+static wchar_t const *playback_button_label(
+	short button)
+{
+#if defined(HALO_SWITCH)
+	boolean swapped = config_boolean("controls.nintendo_menu_buttons") != 0;
+#elif defined(HALO_PS5)
+	boolean xbox = config_boolean("display.xbox_buttons") != 0;
+#endif
+
+	switch (button)
+	{
+	case _gamepad_binary_button_dpad_left: return L"D-PAD";
+#if defined(HALO_SWITCH)
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_a: return swapped ? L"A" : L"B";
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_b: return swapped ? L"B" : L"A";
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_x: return L"Y";
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_y: return L"X";
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_white: return L"L";
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_black: return L"R";
+	case _gamepad_binary_button_back: return L"-";
+	case _gamepad_binary_button_start: return L"+";
+	case _gamepad_binary_button_right_thumb: return L"RS";
+#elif defined(HALO_PS5)
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_a: return xbox ? L"A" : L"CROSS";
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_b: return xbox ? L"B" : L"CIRCLE";
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_x: return xbox ? L"X" : L"SQUARE";
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_y: return xbox ? L"Y" : L"TRIANGLE";
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_white: return xbox ? L"LB" : L"L1";
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_black: return xbox ? L"RB" : L"R1";
+	case _gamepad_binary_button_back: return xbox ? L"BACK" : L"CREATE";
+	case _gamepad_binary_button_start: return xbox ? L"START" : L"OPTIONS";
+	case _gamepad_binary_button_right_thumb: return xbox ? L"RS" : L"R3";
+#else
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_a: return L"A";
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_b: return L"B";
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_x: return L"X";
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_y: return L"Y";
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_white: return L"LB";
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_black: return L"RB";
+	case _gamepad_binary_button_back: return L"BACK";
+	case _gamepad_binary_button_start: return L"START";
+	case _gamepad_binary_button_right_thumb: return L"RS";
+#endif
+	}
+	return L"?";
+}
+
+/* a text of the hints at x, drawn or only measured; where it ends (3 short
+of where the text says: render_state_text) */
+static short playback_draw_hint_text(
+	long font_index,
+	rectangle2d const *line,
+	short x,
+	wchar_t const *text,
+	boolean visible)
+{
+	real_argb_color color = *global_real_argb_white;
+	rectangle2d bounds = *line;
+
+	color.alpha = visible ? 1.0f : 0.0f;
+	draw_string_set_draw_mode(font_index, NONE, 0, 0, &color);
+	bounds.x0 = x;
+	bounds.x1 = (short)(bounds.x0 + 4000);
+	draw_string_and_hack_in_icons(&bounds, NULL, NULL, 0, text, TRUE);
+	return (short)(draw_string_and_hack_in_icons_port_end_x + 3);
+}
+
+/* a button of the hints at x, its picture centred on the text's capitals
+(middle), else its name; where it ends */
+static short playback_draw_hint_button(
+	long font_index,
+	rectangle2d const *line,
+	short x,
+	short middle,
+	short button,
+	boolean visible)
+{
+	char const *prompt = playback_button_prompt(button);
+
+	if (hud_hires_prompt_draw(prompt, 0.0f, 0.0f, 0.0f, 0, FALSE))
+	{
+		if (visible)
+		{
+			hud_hires_prompt_draw(prompt, (real)x, (real)(middle - REPLAY_HINT_ICON_SIZE / 2),
+				(real)REPLAY_HINT_ICON_SIZE, 0xFFFFFFFF, TRUE);
+		}
+		return (short)(x + REPLAY_HINT_ICON_SIZE + REPLAY_HINT_ICON_GAP);
+	}
+	return playback_draw_hint_text(font_index, line, x, playback_button_label(button), visible);
+}
+
+/* the hints along a line from x, drawn or only measured: each a button or
+two (A/X) and what it does; where they end */
+static short playback_draw_hint_line(
+	long font_index,
+	rectangle2d const *line,
+	short x,
+	struct playback_hint const *hints,
+	short count,
+	boolean visible)
+{
+	real_argb_color color = *global_real_argb_white;
+	short middle;
+	short index;
+
+	draw_string_set_draw_mode(font_index, NONE, 0, 0, &color);
+	middle = draw_unicode_string_capital_middle(line, L"");
+	for (index = 0; index < count; index++)
+	{
+		wchar_t action[32];
+
+		if (index)
+			x = (short)(x + REPLAY_HINT_SPACING);
+		x = playback_draw_hint_button(font_index, line, x, middle, hints[index].buttons[0], visible);
+		if (hints[index].buttons[1] != NONE)
+		{
+			x = playback_draw_hint_text(font_index, line, x, L"/", visible);
+			x = playback_draw_hint_button(font_index, line, x, middle, hints[index].buttons[1], visible);
+		}
+		usnprintf(action, NUMBEROF(action) - 1, L": %s", hints[index].action);
+		action[NUMBEROF(action) - 1] = 0;
+		x = playback_draw_hint_text(font_index, line, x, action, visible);
+	}
+	return x;
+}
+
+/* the buttons' hints on a dark bar that fits them at the bottom edge
+(their width from a pass drawn unseen first) */
+static void playback_draw_hints(
+	long font_index,
+	struct playback_hint const *hints,
+	short count)
+{
+	struct font_header *font = font_definition_get(font_index);
+	short height = (short)(font->ascending_height + font->descending_height);
+	rectangle2d window = render.camera.window_bounds;
+	rectangle2d line;
+	rectangle2d bar;
+	short width;
+
+	line = window;
+	line.y0 = (short)(window.y1 - REPLAY_HINT_HEIGHT);
+	width = (short)(playback_draw_hint_line(font_index, &line, window.x0, hints, count, FALSE) - window.x0);
+	bar.x0 = (short)((window.x0 + window.x1 - width) / 2 - REPLAY_HINT_PADDING);
+	bar.x1 = (short)(bar.x0 + width + 2 * REPLAY_HINT_PADDING);
+	bar.y1 = (short)(window.y1 - REPLAY_SCREEN_MARGIN / 2);
+	bar.y0 = (short)(bar.y1 - MAX(height, REPLAY_HINT_HEIGHT) - 6);
+	draw_quad(&bar, REPLAY_HINT_BAR_COLOR);
+	line.y0 = (short)(bar.y0 + 3);
+	line.y1 = bar.y1;
+	playback_draw_hint_line(font_index, &line, (short)(bar.x0 + REPLAY_HINT_PADDING), hints, count, TRUE);
+}
+
+/* the pause menu: the screen dimmed, PAUSED in its middle, and its
+buttons' bar (nothing in it to choose yet) */
+static void playback_draw_pause_menu(
+	long font_index)
+{
+	static struct playback_hint const hints[] = {
+		{ { _gamepad_binary_button_start, NONE }, L"RESUME" },
+		{ { FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_b, NONE }, L"LEAVE" },
+	};
+	struct font_header *font = font_definition_get(font_index);
+	short height = (short)(font->ascending_height + font->descending_height);
+	real_argb_color color = *global_real_argb_white;
+	rectangle2d window = render.camera.window_bounds;
+	rectangle2d bounds;
+
+	draw_quad(&window, REPLAY_PAUSE_DIM_COLOR);
+	bounds = window;
+	bounds.y0 = (short)((window.y0 + window.y1 - height) / 2);
+	bounds.y1 = (short)(bounds.y0 + height + 4);
+	draw_string_set_draw_mode(font_index, NONE, 2, 0, &color);
+	rasterizer_draw_unicode_string(&bounds, NULL, NULL, 0, L"PAUSED");
+	playback_draw_hints(font_index, hints, NUMBEROF(hints));
+}
+
 void network_replay_playback_draw(
 	void)
 {
 	static wchar_t const *const view_names[NUMBER_OF_REPLAY_VIEWS] = { L"BEHIND", L"EYES", L"FREE CAMERA" };
-	static wchar_t const hints[] = L"%a-button/%x-button: PLAYER   %y-button: VIEW   "
-		L"%white-button/%black-button: SPEED   %dpad-left/%dpad-right: SKIP   %back-button: SCORES   %b-button: LEAVE";
-	/* (behind, flown round the player: how to have it turn with them again) */
-	static wchar_t const orbiting_hints[] = L"%a-button/%x-button: PLAYER   %y-button: VIEW   %right-thumb: RESET   "
-		L"%white-button/%black-button: SPEED   %dpad-left/%dpad-right: SKIP   %back-button: SCORES   %b-button: LEAVE";
-	wchar_t const *shown;
+	/* (the third, behind flown round the player: how to have it turn with
+	them again; left out otherwise) */
+	static struct playback_hint const hints[] = {
+		{ { FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_a,
+			FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_x }, L"PLAYER" },
+		{ { FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_y, NONE }, L"VIEW" },
+		{ { _gamepad_binary_button_right_thumb, NONE }, L"RESET" },
+		{ { FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_white,
+			FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_black }, L"SPEED" },
+		{ { _gamepad_binary_button_dpad_left, NONE }, L"SKIP" },
+		{ { _gamepad_binary_button_back, NONE }, L"SCORES" },
+		{ { FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_b, NONE }, L"HIDE" },
+		{ { _gamepad_binary_button_start, NONE }, L"PAUSE" },
+	};
+	struct playback_hint shown[NUMBEROF(hints)];
+	short shown_count = 0;
+	short index;
 	long font_index;
 	struct font_header *font;
 	real_argb_color color;
 	rectangle2d window;
 	rectangle2d bounds;
-	rectangle2d bar;
 	short height;
-	short width;
 	wchar_t text[64];
 	wchar_t speed[16];
 	struct player_datum *player;
@@ -1520,9 +1774,16 @@ void network_replay_playback_draw(
 		game_engine_port_rasterize_scores(playback.watched);
 		return;
 	}
+	if (playback.hidden && !playback.paused)
+		return;
 	font_index = playback_font();
 	if (font_index == NONE)
 		return;
+	if (playback.paused)
+	{
+		playback_draw_pause_menu(font_index);
+		return;
+	}
 	if (playback.skip_tick != NONE)
 		usnprintf(speed, NUMBEROF(speed) - 1, L"SKIPPING");
 	else if (playback.speed == 0)
@@ -1555,27 +1816,10 @@ void network_replay_playback_draw(
 	rasterizer_draw_unicode_string(&bounds, NULL, NULL, 0, text);
 	if (playback.ended)
 		return;
-	shown = playback.view == _replay_view_behind && playback.behind_orbiting ? orbiting_hints : hints;
-
-	/* (the hints' width, drawn unseen first, then a bar that fits them at
-	the bottom edge, and them on it) */
-	color.alpha = 0.0f;
-	draw_string_set_draw_mode(font_index, NONE, 0, 0, &color);
-	bounds = window;
-	bounds.x1 = (short)(bounds.x0 + 4000);
-	bounds.y0 = (short)(window.y1 - REPLAY_HINT_HEIGHT);
-	draw_string_and_hack_in_icons(&bounds, NULL, NULL, 0, shown, TRUE);
-	width = (short)(draw_string_and_hack_in_icons_port_end_x - window.x0);
-	bar.x0 = (short)((window.x0 + window.x1 - width) / 2 - REPLAY_HINT_PADDING);
-	bar.x1 = (short)(bar.x0 + width + 2 * REPLAY_HINT_PADDING);
-	bar.y1 = (short)(window.y1 - REPLAY_SCREEN_MARGIN / 2);
-	bar.y0 = (short)(bar.y1 - MAX(height, REPLAY_HINT_HEIGHT) - 6);
-	draw_quad(&bar, REPLAY_HINT_BAR_COLOR);
-	color.alpha = 1.0f;
-	draw_string_set_draw_mode(font_index, NONE, 0, 0, &color);
-	bounds.x0 = (short)(bar.x0 + REPLAY_HINT_PADDING);
-	bounds.x1 = (short)(bounds.x0 + 4000);
-	bounds.y0 = (short)(bar.y0 + 3);
-	bounds.y1 = bar.y1;
-	draw_string_and_hack_in_icons(&bounds, NULL, NULL, 0, shown, TRUE);
+	for (index = 0; index < (short)NUMBEROF(hints); index++)
+	{
+		if (index != 2 || (playback.view == _replay_view_behind && playback.behind_orbiting))
+			shown[shown_count++] = hints[index];
+	}
+	playback_draw_hints(font_index, shown, shown_count);
 }
