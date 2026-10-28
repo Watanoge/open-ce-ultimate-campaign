@@ -27,6 +27,9 @@ void host_touch_look_read(float *delta);
 void host_touch_rumble(unsigned int low, unsigned int high);
 void host_touch_scene(int scene);
 void host_touch_bindings(const int *controls);
+#ifdef HALO_ANDROID
+int host_touch_menu_fingers(void);
+#endif
 #if defined(HALO_ANDROID) && !defined(HALO_SWITCH)
 void host_touch_gyro_mode(int mode);
 #endif
@@ -110,14 +113,23 @@ static void refresh_zones(int width, int height)
 	menu.settings.height = (float)height;
 }
 
-/* the fingers on the screen: three down together (the third within
+/* the fingers on the screen: three or four down together (the last within
 TOUCH_OVERLAY_TAP_NS of the first, so that a player's thumbs and a finger
 held in play are none) open the overlay menu, or close it
-(halo_overlay_menu.h), as TouchControls.java's three on the touch controls */
+(halo_overlay_menu.h), as they do on TouchControls.java's touch controls */
 static int fingers_down;
 static Uint64 fingers_first_down_ns;
-#define TOUCH_OVERLAY_FINGERS 3
 #define TOUCH_OVERLAY_TAP_NS 250000000ULL
+
+/* how many: the touch controls' General option on Android, three elsewhere */
+static int overlay_fingers(void)
+{
+#ifdef HALO_ANDROID
+	return host_touch_menu_fingers();
+#else
+	return 3;
+#endif
+}
 
 void touch_input_event(unsigned int type, const SDL_TouchFingerEvent *finger)
 {
@@ -137,7 +149,7 @@ void touch_input_event(unsigned int type, const SDL_TouchFingerEvent *finger)
 		/* (by the events' own times, in nanoseconds) */
 		if (++fingers_down == 1)
 			fingers_first_down_ns = finger->timestamp;
-		if (fingers_down == TOUCH_OVERLAY_FINGERS && finger->timestamp - fingers_first_down_ns <= TOUCH_OVERLAY_TAP_NS)
+		if (fingers_down == overlay_fingers() && finger->timestamp - fingers_first_down_ns <= TOUCH_OVERLAY_TAP_NS)
 		{
 			/* (and the fingers, let go, tap nothing) */
 			overlay_menu_toggle_request();
@@ -266,7 +278,7 @@ enum
 	_touch_scene_off = 1 << 3,
 };
 
-/* the bit of three fingers on the touch controls in their buttons
+/* the bit of the menu fingers on the touch controls in their buttons
 (TouchControls.java's MENU_BIT) */
 #define TOUCH_OVERLAY_BUTTON_BIT 15
 
@@ -329,7 +341,7 @@ void touch_input_controls(XINPUT_GAMEPAD *pad, int menus)
 		host_touch_bindings(bindings);
 	}
 	host_touch_read(state);
-	/* (three fingers on the touch controls, bit 15, past SDL's buttons: they
+	/* (the menu fingers on the touch controls, bit 15, past SDL's buttons: they
 	open the overlay menu as they go down) */
 	{
 		static int overlay_button_was;

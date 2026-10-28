@@ -37,7 +37,7 @@ nonzero while it is open, when the game gets none of the controller */
 unsigned char overlay_menu_take_pad(short port, unsigned long buttons);
 /* nonzero while the overlay is open */
 unsigned char overlay_menu_open(void);
-/* opens it, or closes it if it is open (three fingers on Android's
+/* opens it, or closes it if it is open (three or four fingers on Android's
 touchscreen, or on its touch controls); taken at the next frame */
 void overlay_menu_toggle_request(void);
 

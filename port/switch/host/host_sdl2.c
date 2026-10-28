@@ -1495,3 +1495,8 @@ void host_touch_gyro_mode(int mode)
 {
 	(void)mode;
 }
+
+int host_touch_menu_fingers(void)
+{
+	return 3;
+}

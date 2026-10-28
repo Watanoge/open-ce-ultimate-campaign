@@ -500,7 +500,7 @@ static const struct config_setting config_settings[] =
 		"Holding L and R and pressing the d-pad's down opens the game's overlay\n"
 		"menu, and closes it: cheats, the game's speed, the HUD, the camera and\n"
 		"the renderer's switches, in a panel at the left of the screen (on\n"
-		"Android also three fingers on the screen together). While it is open\n"
+		"Android also three or four fingers on the screen together). While it is open\n"
 		"the game gets no input; it is not paused.\n"
 		"false: the buttons do not open it." },
 #if defined(HALO_SWITCH) || defined(HALO_PS5)

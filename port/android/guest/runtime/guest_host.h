@@ -153,6 +153,9 @@ void host_touch_bindings(const int *controls);
 /* the game's Gyro Aim for the overlay, which runs the phone's gyroscope: 0
 off, 1 on, 2 only while zoomed in */
 void host_touch_gyro_mode(int mode);
+/* the fingers that tap together to open the overlay menu (3 or 4), the
+overlay's General option */
+int host_touch_menu_fingers(void);
 
 /* ---------- the server browser's master servers (host_https.c) */
 
