@@ -69,6 +69,7 @@ machine's, and a network game's machines must have the same tag table.
 #include "bitmaps/bitmap_group.h"
 #include "bitmaps/bitmaps.h"
 #include "items/weapon_definitions.h"
+#include "models/model_animation_definitions.h"
 #include "models/model_definitions.h"
 #include "objects/object_definitions.h"
 #include "rasterizer/rasterizer_swizzle.h"
@@ -85,6 +86,7 @@ machine's, and a network game's machines must have the same tag table.
 #include "custom_edition_maps.h"
 #include "tag_schema.h"
 #include "tag_bundle.h"
+#include "tag_editor.h"
 #include "tag_injector.h"
 #include "tag_names.h"
 #include "randomizer.h"
@@ -193,6 +195,32 @@ enum
 	_preview_bitmap_format_dxt1 = 14,
 	_preview_bitmap_format_dxt3 = 15,
 	_preview_bitmap_format_dxt5 = 16,
+};
+
+/* where each animation the usability report looks for is in its list
+(model_animation_definitions.c's): a first-person weapon's, a weapon
+class's (the dives four from dive-front, the evades two from evade-left)
+and a weapon type's */
+enum
+{
+	_first_person_idle = 0,
+	_first_person_reload_empty = 7,
+	_first_person_reload_full = 8,
+	_first_person_ready = 10,
+	_first_person_melee = 13,
+	_first_person_throw_grenade = 16,
+
+	_class_idle = 0,
+	_class_dive_front = 4,
+	_class_move_front = 8,
+	_class_throw_grenade = 20,
+	_class_berserk = 29,
+	_class_evade_left = 30,
+	_class_melee = 39,
+
+	_type_reload = 0,
+	_type_fire = 4,
+	_type_melee = 8,
 };
 
 /* the farthest from its origin a preview's vertex is taken to be (one
@@ -330,6 +358,18 @@ struct preview_actor_variant_change_colors
 	unsigned long unused[2];
 };
 
+/* a first-person animation graph's animations (first_person_weapons.c's
+struct animation_graph_first_person_weapon_animations): an index of the
+graph's animations of each of model_animation_definitions.c's first-person
+list, NONE for none */
+struct preview_first_person_animations
+{
+	long unused[4];
+	struct tag_block animations;
+};
+
+typedef char verify_preview_first_person_animations_size[
+	sizeof(struct preview_first_person_animations) == 0x1C ? 1 : -1];
 typedef char verify_preview_model_shader_size[sizeof(struct preview_model_shader) == 0x20 ? 1 : -1];
 typedef char verify_preview_model_geometry_size[sizeof(struct preview_model_geometry) == 0x30 ? 1 : -1];
 typedef char verify_preview_actor_variant_change_colors_size[
@@ -456,6 +496,14 @@ static struct
 	long replaced_count;
 	short *injected_bundle;
 	boolean bitmaps_added;
+	/* the salt of the tags added, and the copies the Tag Editor's edits
+	made (tag_injector_tag_copy: past the tags added) and what they hold
+	(their names, roots and blocks), let go with the level */
+	long salt;
+	long copied_count;
+	void **allocations;
+	long allocation_count;
+	long allocation_capacity;
 	/* the word of the profile's tags that could not be played, which the
 	HUD shows once the level has played a moment (tag_injector_tick) */
 	char notice[TAG_INJECTOR_NOTICE_LINES][TAG_INJECTOR_NOTICE_WIDTH + 4];
@@ -1198,6 +1246,165 @@ static boolean profile_bundle_add(
 		free(regions);
 
 	return added;
+}
+
+/* ---------- the Tag Editor's (tag_editor.c) */
+
+/* `size` bytes the level holds until its tags are let go (a copy's), or
+NULL */
+static void *level_allocation(
+	unsigned long size)
+{
+	void *bytes;
+
+	if (tag_injector_level.allocation_count == tag_injector_level.allocation_capacity)
+	{
+		long capacity = tag_injector_level.allocation_capacity ? 2 * tag_injector_level.allocation_capacity : 64;
+		void **grown = realloc(tag_injector_level.allocations, (unsigned long)capacity * sizeof(*grown));
+
+		if (!grown)
+			return NULL;
+		tag_injector_level.allocations = grown;
+		tag_injector_level.allocation_capacity = capacity;
+	}
+	bytes = malloc(size ? size : 1);
+	if (bytes)
+		tag_injector_level.allocations[tag_injector_level.allocation_count++] = bytes;
+	return bytes;
+}
+
+/* each block of an element of a copy given its own elements (and theirs),
+so that the copy's can be changed without its original's; FALSE when there
+is no memory for one */
+static boolean copy_blocks(
+	byte *element,
+	struct tag_schema_definition const *definition,
+	short depth)
+{
+	struct tag_schema_field const *field;
+
+	if (depth >= MAXIMUM_WALK_DEPTH || !element || !definition)
+		return TRUE;
+	for (field = definition->fields; field->type != _tag_schema_terminator; field++)
+	{
+		short item;
+
+		for (item = 0; item < field->count; item++)
+		{
+			byte *place = element + field->offset + item * field->size;
+
+			if (field->type == _tag_schema_struct && !copy_blocks(place, field->definition, (short)(depth + 1)))
+				return FALSE;
+			if (field->type == _tag_schema_block)
+			{
+				struct tag_block *block = (struct tag_block *)place;
+				struct tag_schema_definition const *elements = field->definition;
+				byte *copy;
+				long index;
+
+				if (!elements || !block->address || block->count <= 0)
+					continue;
+				copy = level_allocation((unsigned long)block->count * (unsigned long)elements->size);
+				if (!copy)
+					return FALSE;
+				memcpy(copy, block->address, (unsigned long)block->count * (unsigned long)elements->size);
+				block->address = copy;
+				for (index = 0; index < block->count; index++)
+				{
+					if (!copy_blocks(copy + index * elements->size, elements, (short)(depth + 1)))
+						return FALSE;
+				}
+			}
+		}
+	}
+
+	return TRUE;
+}
+
+long tag_injector_tag_copy(
+	long datum,
+	char const *name,
+	boolean blocks)
+{
+	struct injector_tag_instance *instance;
+	struct injector_tag_instance *grown;
+	struct tag_schema_definition const *definition;
+	long count = tag_injector_level.first_injected + tag_injector_level.injected_count +
+		tag_injector_level.copied_count;
+	long absolute = DATUM_INDEX_TO_ABSOLUTE_INDEX(datum);
+	long existing;
+	char *copy_name;
+	byte *root;
+
+	if (!tag_injector_level.grown_instances || datum == NONE || absolute < 0 || absolute >= count || !name)
+		return NONE;
+	instance = &tag_injector_level.grown_instances[absolute];
+	/* (one made already, by a weapon of the same edits) */
+	existing = tag_loaded(instance->group_tag, name);
+	if (existing != NONE)
+		return existing;
+	definition = schema_of((unsigned long)instance->group_tag);
+	if (!definition || !instance->base_address || count >= MAXIMUM_TAG_COUNT)
+		return NONE;
+	copy_name = level_allocation((unsigned long)strlen(name) + 1);
+	root = level_allocation((unsigned long)definition->size);
+	grown = realloc(tag_injector_level.grown_instances, (unsigned long)(count + 1) * sizeof(*grown));
+	if (!copy_name || !root || !grown)
+		return NONE;
+	tag_injector_level.grown_instances = grown;
+	instance = &grown[absolute];
+	strcpy(copy_name, name);
+	memcpy(root, instance->base_address, (unsigned long)definition->size);
+	if (blocks && !copy_blocks(root, definition, 0))
+		return NONE;
+	grown[count] = *instance;
+	grown[count].tag_index = (tag_injector_level.salt << 16) | count;
+	grown[count].name = copy_name;
+	grown[count].base_address = root;
+	tag_injector_level.copied_count++;
+	cache_files_set_tag_instances(grown, count + 1);
+
+	return grown[count].tag_index;
+}
+
+/* The profile's weapons a level has from its bundles (added, or replacing
+the level's) given their edits (tag_editor.c), each once, in the bundles'
+order: the same on every machine of a network game. */
+static void tag_injector_weapons_edit(
+	long profile,
+	long existing)
+{
+	long bundle_index;
+	long *done;
+	long done_count = 0;
+
+	done = malloc((unsigned long)(tag_injector_level.injected_count + tag_injector_level.bundle_count + 1) *
+		sizeof(long));
+	if (!done)
+		return;
+	for (bundle_index = 0; bundle_index < tag_injector_level.bundle_count; bundle_index++)
+	{
+		struct injected_bundle const *bundle = &tag_injector_level.bundles[bundle_index];
+		long tag;
+
+		for (tag = 0; !bundle->refused && tag < bundle->loaded.tag_count; tag++)
+		{
+			long datum = bundle->datums[tag];
+			long index;
+
+			if (bundle_tag_group(&bundle->loaded, tag) != WEAPON_DEFINITION_TAG || datum == NONE ||
+				(DATUM_INDEX_TO_ABSOLUTE_INDEX(datum) < existing && datum != bundle->replaced))
+				continue;
+			for (index = 0; index < done_count && done[index] != datum; index++)
+			{
+			}
+			if (index < done_count)
+				continue;
+			done[done_count++] = datum;
+			tag_editor_weapon_loaded(profile, datum);
+		}
+	}
+	free(done);
 }
 
 /* ---------- public code */
@@ -2240,6 +2447,169 @@ static void preview_object_needs(
 	preview_need(needs, "collision", preview_need_state(source, &object->object.collision_model, collision_needed));
 }
 
+/* which of the first 64 of a block of animation indices are some animation
+(not NONE) */
+static unsigned long long preview_animation_bits(
+	struct tag_block const *block)
+{
+	short const *indices = block->address;
+	unsigned long long bits = 0;
+	long index;
+
+	for (index = 0; indices && index < block->count && index < 64; index++)
+	{
+		if (indices[index] != NONE)
+			bits |= 1ULL << index;
+	}
+	return bits;
+}
+
+/* whether an animation's bit is set */
+#define ANIMATION_BIT(bits, index) (((bits) >> (index) & 1) != 0)
+
+static void usability_add(
+	struct tag_injector_usability *usability,
+	char const *name,
+	boolean present)
+{
+	if (usability->count < TAG_INJECTOR_MAXIMUM_ANIMATIONS)
+	{
+		usability->animations[usability->count].name = name;
+		usability->animations[usability->count++].state = present ? _tag_injector_need_present :
+			_tag_injector_need_missing;
+	}
+}
+
+/* the rounds a weapon's first magazine holds (none: it is a battery's or
+heat's, and is not reloaded) */
+static short weapon_magazine_rounds(
+	struct weapon_definition const *weapon)
+{
+	return weapon->weapon.magazines.count > 0 && weapon->weapon.magazines.address ?
+		((struct weapon_magazine_definition const *)weapon->weapon.magazines.address)->rounds_loaded_maximum : 0;
+}
+
+/* a weapon's: the first-person animations every weapon of the game's has
+(but put-away, which none has, and fire, which the automatic ones show with
+their overlays): idle, ready, reload (a weapon with a magazine of rounds),
+melee and grenade (one that lets them be done); and whether the campaign's
+player is animated holding it, by its label (the player's weapon types'),
+else it is held as another */
+static void preview_weapon_usability(
+	struct preview_source const *source,
+	struct weapon_definition const *weapon,
+	struct tag_injector_usability *usability)
+{
+	unsigned long group_tag = 0;
+	struct animation_graph const *graph = weapon->weapon.interface_definition.first_person_animations.index == NONE ?
+		NULL : (struct animation_graph const *)preview_tag(source,
+		weapon->weapon.interface_definition.first_person_animations.index, &group_tag);
+	unsigned long long bits = 0;
+	unsigned long long animations;
+	unsigned long long overlays;
+	int held;
+
+	if (graph && group_tag == ANIMATION_GRAPH_TAG && graph->first_person_weapon_animations.count > 0 &&
+		graph->first_person_weapon_animations.address)
+	{
+		bits = preview_animation_bits(&((struct preview_first_person_animations const *)
+			graph->first_person_weapon_animations.address)->animations);
+	}
+	usability_add(usability, "idle", ANIMATION_BIT(bits, _first_person_idle));
+	usability_add(usability, "ready", ANIMATION_BIT(bits, _first_person_ready));
+	if (weapon_magazine_rounds(weapon) > 0)
+	{
+		usability_add(usability, "reload", ANIMATION_BIT(bits, _first_person_reload_empty) ||
+			ANIMATION_BIT(bits, _first_person_reload_full));
+	}
+	if (!TEST_FLAG(weapon->weapon.flags, _weapon_prevents_melee_attack_bit))
+		usability_add(usability, "melee", ANIMATION_BIT(bits, _first_person_melee));
+	if (!TEST_FLAG(weapon->weapon.flags, _weapon_prevents_grenade_throwing_bit))
+		usability_add(usability, "grenade", ANIMATION_BIT(bits, _first_person_throw_grenade));
+	snprintf(usability->label, sizeof(usability->label), "%.*s", TAG_STRING_LENGTH, weapon->weapon.label);
+	held = randomizer_stock_player_class(usability->label, &animations, &overlays);
+	usability->third_person = held > 0 ? _tag_injector_need_present : held == 0 ? _tag_injector_need_missing :
+		_tag_injector_need_none;
+}
+
+/* an actor variant's: whether its unit is animated holding its weapon (by
+its label, as the game finds it: a weapon type's of a weapon class of its
+standing seat), and its moves, that weapon class's and type's */
+static void preview_actor_usability(
+	struct preview_source const *source,
+	struct actor_variant_definition const *variant,
+	struct object_definition const *unit,
+	struct tag_injector_usability *usability)
+{
+	unsigned long group_tag = 0;
+	struct weapon_definition const *weapon = variant->ranged_combat.reference.index == NONE ? NULL :
+		(struct weapon_definition const *)preview_tag(source, variant->ranged_combat.reference.index, &group_tag);
+	struct animation_graph const *graph = NULL;
+	struct animation_graph_unit_seat const *seats;
+	struct animation_graph_weapon_class const *found = NULL;
+	struct animation_graph_weapon_type const *found_type = NULL;
+	unsigned long long animations = 0;
+	unsigned long long overlays = 0;
+	long index;
+	long chosen = 0;
+
+	usability->third_person = _tag_injector_need_none;
+	if (!weapon || group_tag != WEAPON_DEFINITION_TAG || !unit || unit->object.animation_graph.index == NONE)
+		return;
+	snprintf(usability->label, sizeof(usability->label), "%.*s", TAG_STRING_LENGTH, weapon->weapon.label);
+	graph = (struct animation_graph const *)preview_tag(source, unit->object.animation_graph.index, &group_tag);
+	if (!graph || group_tag != ANIMATION_GRAPH_TAG || graph->unit_seats.count <= 0 || !graph->unit_seats.address)
+		return;
+	/* (its standing seat, else its first) */
+	seats = graph->unit_seats.address;
+	for (index = 0; index < graph->unit_seats.count; index++)
+	{
+		if (!_strnicmp(seats[index].label, "stand", 5))
+		{
+			chosen = index;
+			break;
+		}
+	}
+	for (index = 0; !found && seats[chosen].weapon_classes.address && index < seats[chosen].weapon_classes.count;
+		index++)
+	{
+		struct animation_graph_weapon_class const *weapon_class = (struct animation_graph_weapon_class const *)
+			seats[chosen].weapon_classes.address + index;
+		long type_index;
+
+		for (type_index = 0; weapon_class->weapon_types.address && type_index < weapon_class->weapon_types.count;
+			type_index++)
+		{
+			struct animation_graph_weapon_type const *weapon_type = (struct animation_graph_weapon_type const *)
+				weapon_class->weapon_types.address + type_index;
+
+			if (!_strnicmp(weapon_type->label, usability->label, TAG_STRING_LENGTH))
+			{
+				found = weapon_class;
+				found_type = weapon_type;
+				break;
+			}
+		}
+	}
+	usability->third_person = found ? _tag_injector_need_present : _tag_injector_need_missing;
+	usability->actor = TRUE;
+	if (!found)
+		return;
+	animations = preview_animation_bits(&found->animations);
+	overlays = preview_animation_bits(&found_type->animations);
+	usability_add(usability, "idle", ANIMATION_BIT(animations, _class_idle));
+	usability_add(usability, "walk", ANIMATION_BIT(animations, _class_move_front));
+	usability_add(usability, "fire", ANIMATION_BIT(overlays, _type_fire));
+	if (weapon_magazine_rounds(weapon) > 0)
+		usability_add(usability, "reload", ANIMATION_BIT(overlays, _type_reload));
+	usability_add(usability, "melee", ANIMATION_BIT(animations, _class_melee) || ANIMATION_BIT(overlays, _type_melee));
+	usability_add(usability, "grenade", ANIMATION_BIT(animations, _class_throw_grenade));
+	usability_add(usability, "evade", ANIMATION_BIT(animations, _class_evade_left) ||
+		ANIMATION_BIT(animations, _class_evade_left + 1));
+	usability_add(usability, "dive", (animations >> _class_dive_front & 0xF) != 0);
+	usability_add(usability, "berserk", ANIMATION_BIT(animations, _class_berserk));
+}
+
 /* what a tag of a preview's source needs to work, by its group
 (tag_injector_needs') */
 static void preview_needs(
@@ -2249,6 +2619,7 @@ static void preview_needs(
 	struct tag_injector_needs *needs)
 {
 	memset(needs, 0, sizeof(*needs));
+	needs->usability.third_person = _tag_injector_need_none;
 	if (group_tag == WEAPON_DEFINITION_TAG)
 	{
 		struct weapon_definition const *weapon = (struct weapon_definition const *)root;
@@ -2276,6 +2647,7 @@ static void preview_needs(
 		}
 		preview_need(needs, "projectile", projectile);
 		preview_need(needs, "HUD", preview_need_state(source, &interface->hud_interface, TRUE));
+		preview_weapon_usability(source, weapon, &needs->usability);
 	}
 	else if (group_tag == ACTOR_VARIANT_GROUP_TAG)
 	{
@@ -2297,6 +2669,8 @@ static void preview_needs(
 			preview_need(needs, "collision", _tag_injector_need_missing);
 		}
 		preview_need(needs, "weapon", preview_need_state(source, &variant->ranged_combat.reference, FALSE));
+		preview_actor_usability(source, variant, unit_group == BIPED_GROUP_TAG || unit_group == VEHICLE_GROUP_TAG ?
+			(struct object_definition const *)unit : NULL, &needs->usability);
 	}
 	else if (group_tag == EQUIPMENT_GROUP_TAG)
 	{
@@ -2820,6 +3194,7 @@ long tag_injector_tags_load(
 			salt = instance_salt;
 	}
 	salt++;
+	tag_injector_level.salt = salt;
 	tag_injector_level.grown_instances = malloc((unsigned long)existing * sizeof(*instances));
 	if (!tag_injector_level.grown_instances)
 	{
@@ -2989,6 +3364,8 @@ long tag_injector_tags_load(
 			root_tags[root_count++] = bundle->profile_tag;
 		}
 	}
+	/* (the profile's weapons given their edits: tag_editor.c) */
+	tag_injector_weapons_edit(profile, existing);
 	/* (the channels of every bitmap Halo PC keeps elsewhere, the bundles'
 	among the level's, as a mod's bitmaps are found: mod_bitmaps.c) */
 	if (tag_injector_level.bitmaps_added && !custom_edition_cache_tags_loaded())
@@ -3004,9 +3381,17 @@ long tag_injector_tags_load(
 	return root_count;
 }
 
+long tag_injector_level_profile(
+	void)
+{
+	return tag_injector_level.bundles_read && tag_injector_level.grown_instances ? tag_injector_level.read_profile :
+		NONE;
+}
+
 void tag_injector_tags_unloaded(
 	void)
 {
+	tag_editor_level_unloaded();
 	if (tag_injector_level.saved_instances)
 		cache_files_set_tag_instances(tag_injector_level.saved_instances, tag_injector_level.saved_count);
 	if (tag_injector_level.grown_instances)
@@ -3019,6 +3404,23 @@ void tag_injector_tags_unloaded(
 		custom_edition_bitmaps_dispose();
 	custom_edition_injected_models_dispose();
 	level_bundles_free();
+	{
+		long index;
+
+		/* (the game's free does not take NULL) */
+		for (index = 0; index < tag_injector_level.allocation_count; index++)
+		{
+			if (tag_injector_level.allocations[index])
+				free(tag_injector_level.allocations[index]);
+		}
+		if (tag_injector_level.allocations)
+			free(tag_injector_level.allocations);
+	}
+	tag_injector_level.allocations = NULL;
+	tag_injector_level.allocation_count = 0;
+	tag_injector_level.allocation_capacity = 0;
+	tag_injector_level.copied_count = 0;
+	tag_injector_level.salt = 0;
 	tag_injector_level.saved_instances = NULL;
 	tag_injector_level.saved_count = 0;
 	tag_injector_level.grown_instances = NULL;
@@ -3106,7 +3508,8 @@ boolean tag_injector_tag_injected(
 boolean tag_injector_tags_loaded(
 	void)
 {
-	return tag_injector_level.injected_count > 0 || tag_injector_level.replaced_count > 0;
+	return tag_injector_level.injected_count > 0 || tag_injector_level.replaced_count > 0 ||
+		tag_injector_level.copied_count > 0;
 }
 
 int tag_injector_read(

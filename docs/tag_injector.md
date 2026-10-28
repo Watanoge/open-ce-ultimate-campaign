@@ -484,6 +484,101 @@ Not built yet: Custom Edition maps and the campaign; a profile's AI or
 equipment. Downloaded shares stay in `tag_injector/.shared`
 until deleted by hand.
 
+## The Tag Editor
+
+The overlay menu's **TAG EDITOR** (L, R and the d-pad's down) changes the
+weapon the first player holds, when it is one of the played profile's. Its
+first list has three:
+
+- **Weapon stats**: the weapon's own values (zoom, heat, autoaim), its
+  triggers, magazines and projectiles (their damage below them), and its
+  melee damage.
+- **HUD**: its HUD and the parent HUDs it draws too (below).
+- **Tag settings**: **Name**, the name the profile shows it by (A types it
+  over the game: the d-pad's up and down change the letter chosen, left and
+  right choose another, Back deletes the one before, A keeps it, B does
+  not), and **Remove from profile** (A twice: the level loaded keeps it
+  until it loads again).
+
+Each change is kept in the weapon's tag of the profile, under
+`[tags.edits]` in `profile.toml`, a number by its key
+(`port/linux/game/tag_editor.c` lists them), and every level that adds the
+weapon gives it its edits; a network game's clients play the host's.
+
+**HUD** lists the weapon's HUD, and below it each **PARENT HUD** the HUD
+draws too (a Custom Edition HUD often keeps its visor, its ammunition
+counter's frame or its grenades in parent HUDs, shared by every weapon of
+the mod): their anchor, and each element with its bitmap's name. A on an
+element moves it over the game (the d-pad; A switches to its scale, Back
+puts it back, B is done); left or right on it hides it, and shows it again.
+A parent HUD's elements are its keys under `hud.parent1.` (its parent),
+`hud.parent2.` (that one's) and so on; a hidden one's `hide` is 1.
+
+A weapon given edits plays a copy of each tag they change (its HUD, and a
+parent HUD changed: every HUD up to it), named for its edits, so that the
+weapons that share them keep theirs; weapons edited alike share one copy.
+While the level plays, a change is made to the tags it plays at once: a
+parent HUD shared with other weapons (**Edits apply to** names them)
+changes for them too until the level loads again.
+
+## The firing range
+
+A profile's list ends with **FIRING RANGE**: A, from the main menu's
+settings, plays a level alone to try the profile's tags in
+(`port/linux/game/firing_range.c`). Its parts, from the start in the
+middle facing north:
+
+Each side faces its other half: the weapons west and the AI east cover the
+same 12 units north to south, and the arena north and the mirror south are
+as wide as each other (16 units), 11 units from the start either way.
+
+- **West**, the weapons: each of the profile's weapons the level could add,
+  once, laid on benches (twelve to a bench, 12 units long, the first 4.5
+  units west of the start, the next 2.5 further each, 96 weapons at most). A
+  weapon taken is laid there again 3 seconds after its place is empty.
+  Past each bench's north end (its first weapon's) stands a dummy: the
+  multiplayer player's biped, unarmed, with a multiplayer player's health
+  and shield (no difficulty or skull scaling, the shield recharging as in
+  multiplayer, and multiplayer headshots), so a weapon's kill time is
+  multiplayer's. As it dies the HUD says how long it took from the first
+  hit; it is stood again 3 seconds later, healed 5 seconds after it was
+  last hurt, and put back when a blast pushes it. The AI leave it be.
+- **East**, the AI: each of the profile's actor variants the level could
+  add, once (32 at most), stands in columns of four from 4.5 units east of
+  the start (the next 2.5 further each), facing you, unarmed, playing every
+  base animation of its graph in turn (each name once), and nothing hurts
+  it. Walking up to one, the HUD says "Press action to fight" it; action
+  puts a live one of it in the arena, holding one of the profile's weapons
+  by chance (its own when the profile has none). Eight fight at once at
+  most: the ninth takes the oldest's place.
+- **North**, the arena: 16 by 14 units, walled 1 high, a door in its south
+  wall. Its AI walk the floor (its only walkable surface, so they do not
+  path round its walls) and have no encounter or firing positions. The pad
+  east of its door outside clears it: standing on it, the HUD says so, and
+  action takes away the bodies in it (and those of the AI fought, wherever
+  they fell) and the weapons and items lying in it.
+- **South**, the mirror: a frame 11 units south, 16 wide and 1.4 high
+  (drawn alone: it does not stop you). Standing up to 5 units before the
+  pane (within the frame across), a copy of you stands
+  where your reflection is, holding your weapons slot for slot (one picked
+  up or swapped is its too, in hand), and moves as you do: it is given your
+  controls each tick, turned about the pane, so it walks, jumps, crouches,
+  aims, fires, reloads, throws and strikes as you do, seen from the front.
+  Stepping back lets it go. Its shots and grenades hurt no one, and nothing
+  hurts it.
+
+The level is Blood Gulch (`maps/bloodgulch.map`), for its sky, sounds and
+shaders, with its ground never read: the game writes a structure bsp of its
+own where the map's would be, a floor walled round 8 units high, reaching
+6 units past the mirror's reflection south, the arena north, the farthest
+bench west and the farthest AI east (no narrower than the arena) (and solid past the walls, up to a ceiling 100 up), with
+the benches its own (their collision and their faces). It
+has no lightmap: the floor is drawn with the renderer's own directional
+light, and objects are lit by the bsp's default lighting. While it plays,
+Blood Gulch's scenery, vehicles, items, netgame flags and decals are taken
+out, and its players start at the middle facing north; the next time the
+map is loaded it is as it was. The pause menu's QUIT leaves the range.
+
 ## The game's log
 
 The game's log says what is taken out and added (`tag injector:`), and why

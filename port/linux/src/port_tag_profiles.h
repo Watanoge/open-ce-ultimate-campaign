@@ -69,6 +69,25 @@ letters, digits, spaces, - and _ (lower case but for custom_type's and
 name's), and writes the profile: 0 if it cannot */
 const char *port_tag_profiles_tag_option(long profile, long tag, const char *key);
 int port_tag_profiles_tag_set_option(long profile, long tag, const char *key, const char *value);
+/* A tag's edits (the Tag Editor's: port/linux/game/tag_editor.c): values
+of its tags changed from its map's, each a number by its key
+("trigger1.rate_of_fire"), which a level gives its tags as it adds them
+([tags.edits] in profile.toml). How many, and of each its key and value;
+_find says whether it has one of a key, and its value; set_ adds one or
+changes it, clear_edits takes out those whose keys begin with prefix (all
+of them: "") and clear_edit the one of a key, each writing the profile: 0 if
+it cannot (a key of other than lower case letters, digits, . and _, or past
+the most a tag has). */
+long port_tag_profiles_tag_edit_count(long profile, long tag);
+const char *port_tag_profiles_tag_edit_key(long profile, long tag, long edit);
+double port_tag_profiles_tag_edit_value(long profile, long tag, long edit);
+int port_tag_profiles_tag_edit_find(long profile, long tag, const char *key, double *value);
+int port_tag_profiles_tag_set_edit(long profile, long tag, const char *key, double value);
+int port_tag_profiles_tag_clear_edits(long profile, long tag, const char *prefix);
+int port_tag_profiles_tag_clear_edit(long profile, long tag, const char *key);
+/* a hash of a tag's settings and edits (what a share of it carries
+besides its bundle), which changes when they do */
+unsigned long port_tag_profiles_tag_signature(long profile, long tag);
 /* the tag of a group and path (any case) of a profile, or -1 */
 long port_tag_profiles_tag_find(long profile, unsigned long group, const char *name);
 /* adds a tag to a profile, with its bundle (`size` bytes), or replaces the

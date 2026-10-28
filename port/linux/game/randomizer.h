@@ -58,6 +58,14 @@ int randomizer_unit_can_carry(char const *tag_name);
 group and path (the Tag Injector's REPLACE ORIGINAL). The maps are read the
 first time it is asked */
 int randomizer_stock_tag_exists(long group_tag, char const *name);
+/* how the campaign's player (a10's characters\cyborg\cyborg, standing) is
+animated holding a weapon of a label (a weapon's: "ar", matched as the game
+matches it, by its weapon types'): 1 with the weapon class's animations
+(bits by model_animation_definitions.c's weapon class list: idle,
+move-front, throw-grenade...) and the weapon type's (reload-1, fire-1,
+melee...), 0 when it has none of that label (it is held as another), -1
+when a10 cannot be read. Read the first time it is asked */
+int randomizer_stock_player_class(char const *label, unsigned long long *animations, unsigned long long *overlays);
 /* the enemies the level's encounters place on this difficulty (and bring
 back) that can carry a skull, by the squads' own actors (the randomizer's
 swaps aside): the skulls' odds (skulls.c) */

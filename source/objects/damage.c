@@ -141,6 +141,7 @@ symbols in this file:
 #include "units/vehicles.h"
 #include "biped_ragdoll.h" /* port: port/linux/game/biped_ragdoll.c */
 #include "campaign_score.h" /* port: port/linux/game/campaign_score.c */
+#include "firing_range.h" /* port: port/linux/game/firing_range.c */
 
 /* network_game_globals.c's */
 boolean network_game_distributed_client(void);
@@ -477,7 +478,9 @@ real object_get_maximum_body_vitality(
 	struct object_datum *object = object_get(object_index);
 	real result = object->object.maximum_body_vitality;
 
-	if (!ignore_difficulty)
+	/* port: the firing range's dummies, hurt as a multiplayer game hurts a
+	player (port/linux/game/firing_range.c) */
+	if (!ignore_difficulty && !firing_range_multiplayer_target(object_index))
 	{
 		result *= game_difficulty_get_team_value(1, object->object.owner_team_index);
 		/* port: skull: Mythic, the enemies' health doubled (port/linux/game/skulls.c) */
@@ -498,7 +501,8 @@ real object_get_maximum_shield_vitality(
 	struct object_datum *object = object_get(object_index);
 	real result = object->object.maximum_shield_vitality;
 
-	if (!ignore_difficulty)
+	/* port: and the dummies' shields */
+	if (!ignore_difficulty && !firing_range_multiplayer_target(object_index))
 	{
 		result *= game_difficulty_get_team_value(2, object->object.owner_team_index);
 		/* port: skull: Mythic, and their shields */
@@ -1372,8 +1376,9 @@ static void object_damage_body(
 						SET_FLAG(*being_damaged_flags, _object_being_damaged_force_hard_ping_bit, TRUE);
 				}
 			}
+			/* port: and a firing range dummy's, as a multiplayer game's */
 			else if (TEST_FLAG(damage_definition->flags, _damage_can_cause_multiplayer_headshots_bit) &&
-				game_engine_running())
+				(game_engine_running() || firing_range_multiplayer_target(object_index)))
 			{
 				actual_damage *= 2.f;
 				if (actual_damage > object->object.body_vitality)
@@ -1571,6 +1576,11 @@ void object_cause_damage(
 	/* port: the gametype's friendly fire (game_engine_friendly_damage) */
 	short friendly_damage;
 
+	/* port: the firing range's mirror's copy of the player hurts no one,
+	and nothing hurts it or the AI standing; a dummy's hurt is noted
+	(port/linux/game/firing_range.c) */
+	if (firing_range_damage_ignored(damage->owner_object_index, object_index))
+		return;
 	/* the distributed netcode (port/linux/NETCODE.md): the host deals
 	damage; a client reports its own players' hits instead, and the host
 	deals those (port/linux/game/network_damage.c) */
@@ -2223,9 +2233,14 @@ void object_damage_update(
 				real shield_recharge =
 					collision_model->resistance.runtime_shield_recharge_velocity;
 
-				shield_recharge *= game_difficulty_get_team_value(
-						_game_difficulty_value_enemy_recharge,
-						object->object.owner_team_index);
+				/* port: a firing range dummy's recharge, a multiplayer
+				player's */
+				if (!firing_range_multiplayer_target(object_index))
+				{
+					shield_recharge *= game_difficulty_get_team_value(
+							_game_difficulty_value_enemy_recharge,
+							object->object.owner_team_index);
+				}
 
 				if (TEST_FLAG(
 					object->object.damage_flags,

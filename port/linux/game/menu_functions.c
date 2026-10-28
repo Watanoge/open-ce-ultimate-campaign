@@ -125,6 +125,7 @@ their handlers open opens.
 #include "custom_edition_cache.h"
 #include "custom_edition_maps.h"
 #include "tag_injector.h"
+#include "firing_range.h"
 #include "tag_multiplayer.h"
 #include "tag_preview.h"
 #include "campaign_score.h"
@@ -5561,6 +5562,12 @@ enum
 	NUMBER_OF_TAGS_TOP_ROWS
 };
 
+/* a profile's list's row past its kinds of tags: FIRING RANGE */
+enum
+{
+	TAGS_FIRING_RANGE_ROW = NUMBER_OF_TAG_INJECTOR_CATEGORIES,
+};
+
 enum
 {
 	_tags_kind_profile,
@@ -6194,7 +6201,8 @@ static short tags_count(void)
 	case _tags_list_profiles:
 		return (short)port_tag_profiles_count();
 	case _tags_list_profile_categories:
-		return NUMBER_OF_TAG_INJECTOR_CATEGORIES;
+		/* (and FIRING RANGE, after them) */
+		return NUMBER_OF_TAG_INJECTOR_CATEGORIES + 1;
 	case _tags_list_profile:
 		return (short)MIN(tags_profile_category_count(tags_screen.profile_category), 0x7FFF);
 	case _tags_list_tag:
@@ -6365,6 +6373,11 @@ static void tags_row_text(short place, char *name, size_t name_size, char *state
 			snprintf(state, state_size, "EMPTY");
 		break;
 	case _tags_list_profile_categories:
+		if (place == TAGS_FIRING_RANGE_ROW)
+		{
+			snprintf(name, name_size, "FIRING RANGE");
+			break;
+		}
 		snprintf(name, name_size, "%s", tag_injector_category_name(place));
 		snprintf(state, state_size, "%ld", tags_profile_category_count(place));
 		break;
@@ -6626,6 +6639,16 @@ static void tags_details_text(short place, char *title, size_t title_size, char 
 	{
 		long count = tags_profile_category_count(place);
 
+		if (place == TAGS_FIRING_RANGE_ROW)
+		{
+			snprintf(title, title_size, "FIRING RANGE");
+			snprintf(text, text_size, "A plays a plane to try %s's weapons and AI on, alone. West: its weapons on "
+				"benches, each back a moment after it is taken. South: a mirror, behind which a copy of you moves "
+				"as you do while you stand before it. North: its AI, each playing its animations; action by one "
+				"puts it in the arena, armed.\n \n"
+				"The pause menu's QUIT leaves it.", profile);
+			break;
+		}
 		snprintf(title, title_size, "%s", profile);
 		snprintf(text, text_size, "%ld %s.\n \n%s", count, tag_injector_category_name(place),
 			count ? "A lists them, to turn them on or off and change their settings." :
@@ -7111,6 +7134,27 @@ static boolean tags_choose(struct widget_instance *widget)
 		tags_list_open(list, _tags_list_profile_categories, 0);
 		break;
 	case _tags_list_profile_categories:
+		/* (the range, played alone from the main menu: firing_range.c) */
+		if (place == TAGS_FIRING_RANGE_ROW)
+		{
+			struct player_profile player;
+			short controller = controller_of(widget);
+
+			if (!main_menu_is_active())
+			{
+				tags_message("The firing range is opened from the main menu's settings.");
+				ui_play_audio_feedback_sound(SOUND_ERROR);
+				break;
+			}
+			if (!campaign_profile(controller, &player))
+			{
+				ui_play_audio_feedback_sound(SOUND_ERROR);
+				break;
+			}
+			firing_range_request(port_tag_profiles_name(tags_screen.profile));
+			campaign_start(firing_range_map_name(), main_get_difficulty(), controller, FALSE);
+			return FALSE;
+		}
 		if (!tags_profile_category_count(place))
 		{
 			ui_play_audio_feedback_sound(SOUND_ERROR);
@@ -7788,7 +7832,37 @@ static void tags_needs_text(short state, struct tag_injector_needs const *needs,
 		snprintf(text + strlen(text), text_size - strlen(text), "%s%s", text[0] ? ", " : "MISSING: ",
 			needs->needs[index].name);
 	}
-	snprintf(text + strlen(text), text_size - strlen(text), "%s", text[0] ? "." : "No data missing.");
+	/* (and what it is seen doing: the usability report, a weapon's and an
+	actor variant's) */
+	{
+		struct tag_injector_usability const *usability = &needs->usability;
+		boolean lacking = FALSE;
+		size_t start;
+
+		if (text[0])
+			snprintf(text + strlen(text), text_size - strlen(text), ".");
+		if (usability->third_person == _tag_injector_need_missing)
+		{
+			snprintf(text + strlen(text), text_size - strlen(text), "%sNo '%s' animations: %s", text[0] ? " " : "",
+				usability->label, usability->actor ? "it holds its weapon wrong." :
+				"the Spartan holds it as another weapon.");
+		}
+		start = strlen(text);
+		for (index = 0; index < usability->count; index++)
+		{
+			char const *heading = usability->actor ? "CANNOT: " : "NO ANIMATION: ";
+
+			if (usability->animations[index].state != _tag_injector_need_missing)
+				continue;
+			snprintf(text + strlen(text), text_size - strlen(text), "%s%s%s", strlen(text) > start ? ", " :
+				text[0] ? " " : "", strlen(text) > start ? "" : heading, usability->animations[index].name);
+			lacking = TRUE;
+		}
+		if (lacking)
+			snprintf(text + strlen(text), text_size - strlen(text), ".");
+		if (!text[0])
+			snprintf(text, text_size, usability->count ? "Fully usable: nothing missing." : "No data missing.");
+	}
 }
 
 /* a text's blank lines (" " between its parts) taken out */

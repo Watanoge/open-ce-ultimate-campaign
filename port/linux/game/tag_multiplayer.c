@@ -86,6 +86,7 @@ unsigned long port_tag_profiles_tag_group(long profile, long tag);
 char const *port_tag_profiles_tag_name(long profile, long tag);
 int port_tag_profiles_tag_enabled(long profile, long tag);
 unsigned long port_tag_profiles_tag_size(long profile, long tag);
+unsigned long port_tag_profiles_tag_signature(long profile, long tag);
 long port_tag_profiles_shared_open(char const *id);
 int port_tag_profiles_shared_present(char const *id);
 int port_tag_profiles_shared_remove(char const *name);
@@ -442,6 +443,11 @@ static unsigned long share_signature(
 		weapons++;
 		for (text = port_tag_profiles_tag_name(*profile, tag); *text; text++)
 			value = (value ^ (unsigned char)*text) * 16777619UL & 0xFFFFFFFFUL;
+		for (byte_index = 0; byte_index < 4; byte_index++)
+			value = (value ^ (size >> (byte_index * 8) & 0xFF)) * 16777619UL & 0xFFFFFFFFUL;
+		/* (and its settings and edits, which its share carries: its HUD
+		moved, its values changed in the Tag Editor) */
+		size = port_tag_profiles_tag_signature(*profile, tag);
 		for (byte_index = 0; byte_index < 4; byte_index++)
 			value = (value ^ (size >> (byte_index * 8) & 0xFF)) * 16777619UL & 0xFFFFFFFFUL;
 	}
