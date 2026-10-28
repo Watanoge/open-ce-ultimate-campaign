@@ -533,15 +533,24 @@ middle facing north:
   start, the next 3 further each, 96 weapons at most). A weapon taken is
   laid there again 3 seconds after its place is empty.
 - **South**, the mirror: a frame 8 units south, 12 wide and 1.4 high (drawn
-  alone: it does not stop you), with a pane of the teleporters' shield in
-  it. Standing up to 6 units before the pane (within the frame across), the
+  alone: it does not stop you). Standing up to 6 units before the pane (within the frame across), the
   HUD says so, and a copy of you stands where your reflection is, holding
   your weapons slot for slot (one picked up or swapped is its too, in
   hand), and moves as you do: it is given your controls each tick, turned
   about the pane, so it walks, jumps, crouches, aims, fires, reloads,
   throws and strikes as you do, seen from the front. Stepping back lets it
   go. Its shots and grenades hurt no one, and nothing hurts it.
-- **North** (the AI) and **east** (their animations) are to come.
+- **North**, the AI: each of the profile's actor variants the level could
+  add, once (32 at most), stands in rows of eight from 9 units north of the
+  start, facing you, unarmed, playing every base animation of its graph in
+  turn (each name once), and nothing hurts it. Walking up to one, the HUD
+  names it; action puts a live one of it in the arena further north (16 by
+  14 units, walled 1 high, a door in its south wall), holding one of the
+  profile's weapons by chance (its own when the profile has none), and the
+  HUD says which. Eight fight at once at most: the ninth takes the oldest's
+  place. The arena's AI walk the floor (its only walkable surface, so they
+  do not path round its walls) and have no encounter or firing positions.
+- **East** (the AI's animations, apart) is to come.
 
 The level is Blood Gulch (`maps/bloodgulch.map`), for its sky, sounds and
 shaders, with its ground never read: the game writes a structure bsp of its

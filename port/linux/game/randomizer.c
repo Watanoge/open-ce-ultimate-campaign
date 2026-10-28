@@ -3915,7 +3915,7 @@ static void multiplayer_tags_loaded(char const *scenario_name, long profile, int
 	if (multiplayer)
 		tag_multiplayer_level_loaded(custom_profile, custom_roots, custom_root_tags, custom_root_count);
 	else
-		firing_range_tags_injected(custom_roots, custom_root_count);
+		firing_range_tags_injected(custom_profile, custom_roots, custom_root_tags, custom_root_count);
 	donor_reads = 0;
 	donor_misses = 0;
 	donor_logged = 0;

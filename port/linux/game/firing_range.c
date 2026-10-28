@@ -18,18 +18,22 @@ for the next level of the map).
 
 Its sides are the range's parts: west the profile's weapons, laid on benches
 (the bsp's own, as many as they need), each put back a moment after it is
-taken; south a mirror, a frame on the floor (drawn alone: no collision) with a
-pane of the teleporters' shield in it, behind which a copy of the player
-(its biped, holding its weapons) waits, and moves as the player does,
-reflected, while the player stands before it: its controls are the
-player's each tick (firing_range_player_control), turned about the pane, so
-that it plays every animation the player does, seen from the front; its
+taken; south a mirror, a frame on the floor (drawn alone: no collision), past
+which a copy of the player (its biped, holding its weapons) moves as the
+player does, reflected, while the player stands before it: its controls are
+the player's each tick (firing_range_player_control), turned about the
+frame, so that it plays every animation the player does, seen from the
+front; its
 shots and grenades hurt no one and nothing hurts it. It is made as the
 player steps up, and let go as the player steps back; its weapons are the
 player's slot for slot (units.c's unit_network_* helpers, as a network
 client's are: unit_delete_all_weapons keeps the one in hand, which left the
-copy holding the weapon it had). North the AI and east their animations are to
-come.
+copy holding the weapon it had). North, the profile's AI: each a unit of
+its actor variant standing still on its place, unarmed, playing every base
+animation of its graph in turn, which nothing hurts; action by one (the HUD
+names it as the player comes near) puts a live actor of it, of no encounter
+(actors.c's actor_port_place_free, as the Outbreak skull's), in the arena
+further north, holding one of the profile's weapons by chance.
 
 The bsp, as the engine reads one:
 
@@ -63,10 +67,13 @@ The bsp, as the engine reads one:
 #include "errors.h"
 #include "cache/cache_files.h"
 #include "game/game.h"
+#include "ai/actor_definitions.h"
+#include "ai/actors.h"
 #include "game/players.h"
 #include "interface/hud_messaging.h"
 #include "items/weapons.h"
 #include "math/integer_math.h"
+#include "models/model_animation_definitions.h"
 #include "objects/objects.h"
 #include "physics/collision_bsp_definitions.h"
 #include "scenario/scenario_definitions.h"
@@ -76,6 +83,7 @@ The bsp, as the engine reads one:
 #include "units/unit_control_data.h"
 #include "units/units.h"
 #include "firing_range.h"
+#include "tag_injector.h"
 
 /* units.c's: a weapon put in a unit's slot, and a slot emptied (its weapon
 about to be deleted), as a network client's units are given the host's */
@@ -84,6 +92,7 @@ void unit_network_forget_weapon(long unit_index, short slot);
 
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 
@@ -93,9 +102,17 @@ enum
 {
 	SCENARIO_GROUP_TAG = 'scnr',
 	SHADER_ENVIRONMENT_GROUP_TAG = 'senv',
-	SHADER_TRANSPARENT_GROUP_TAG = 'sotr',
 	BITMAP_GROUP_TAG = 'bitm',
 	WEAPON_GROUP_TAG = 'weap',
+	ACTOR_VARIANT_GROUP_TAG = 'actv',
+
+	/* the AI stood north (each once), in rows of so many, and the live
+	ones in the arena at once (the oldest let go for another) */
+	MAXIMUM_RANGE_AIS = 32,
+	RANGE_AIS_PER_ROW = 8,
+	MAXIMUM_RANGE_FIGHTERS = 8,
+	/* the longest name kept */
+	RANGE_NAME_LENGTH = 48,
 	STRUCTURE_BSP_HEADER_SIGNATURE = 'sbsp',
 
 	/* the floor's tiles a side, the walls' panels a side, and the
@@ -122,13 +139,18 @@ enum
 	RANGE_WEAPONS_PER_BENCH = 12,
 	MAXIMUM_RANGE_BENCHES = MAXIMUM_RANGE_WEAPONS / RANGE_WEAPONS_PER_BENCH,
 
-	MAXIMUM_RANGE_FACES = NUMBER_OF_ROOM_FACES + MAXIMUM_RANGE_BENCHES * NUMBER_OF_BENCH_FACES,
+	/* the blocks standing on the floor: the benches, then the arena's walls
+	(north, west, east, and the south's either side of its door) */
+	NUMBER_OF_ARENA_WALLS = 5,
+	MAXIMUM_RANGE_BLOCKS = MAXIMUM_RANGE_BENCHES + NUMBER_OF_ARENA_WALLS,
+
+	MAXIMUM_RANGE_FACES = NUMBER_OF_ROOM_FACES + MAXIMUM_RANGE_BLOCKS * NUMBER_OF_BENCH_FACES,
 	/* the bsp3d's planes and nodes: the faces', and those between the
-	benches */
-	MAXIMUM_RANGE_PLANES = MAXIMUM_RANGE_FACES + MAXIMUM_RANGE_BENCHES,
+	blocks */
+	MAXIMUM_RANGE_PLANES = MAXIMUM_RANGE_FACES + MAXIMUM_RANGE_BLOCKS,
 	MAXIMUM_RANGE_NODES = MAXIMUM_RANGE_PLANES,
-	MAXIMUM_RANGE_COLLISION_VERTICES = BOX_CORNERS * (1 + MAXIMUM_RANGE_BENCHES),
-	MAXIMUM_RANGE_EDGES = 12 * (1 + MAXIMUM_RANGE_BENCHES),
+	MAXIMUM_RANGE_COLLISION_VERTICES = BOX_CORNERS * (1 + MAXIMUM_RANGE_BLOCKS),
+	MAXIMUM_RANGE_EDGES = 12 * (1 + MAXIMUM_RANGE_BLOCKS),
 
 	/* the render surfaces: the floor's, the walls', and the details' (each
 	bench's faces, and the mirror's line) */
@@ -139,12 +161,11 @@ enum
 	/* the details: each bench's faces, the mirror's line, and its frame (two
 	posts of five faces, a bar of six) */
 	RANGE_MIRROR_FRAME_QUADS = 2 * 5 + 6,
-	MAXIMUM_RANGE_DETAIL_QUADS = MAXIMUM_RANGE_BENCHES * NUMBER_OF_BENCH_FACES + 1 + RANGE_MIRROR_FRAME_QUADS,
-	/* the materials: the floor's, the walls', the details' (the
-	collision's three) and the mirror's pane */
+	MAXIMUM_RANGE_DETAIL_QUADS = MAXIMUM_RANGE_BLOCKS * NUMBER_OF_BENCH_FACES + 1 + RANGE_MIRROR_FRAME_QUADS,
+	/* the materials: the floor's, the walls' and the details' (the
+	collision's too) */
 	NUMBER_OF_RANGE_COLLISION_MATERIALS = 3,
-	NUMBER_OF_RANGE_MATERIALS = 4,
-	_range_material_pane = 3,
+	NUMBER_OF_RANGE_MATERIALS = 3,
 	RANGE_ROOM_SUBCLUSTERS = RANGE_SUBCLUSTERS * RANGE_SUBCLUSTERS + NUMBER_OF_RANGE_WALLS * RANGE_SUBCLUSTERS,
 
 	/* the map's players' starting locations kept to put back */
@@ -190,6 +211,26 @@ and how far off the copy may be before it is put where it should be */
 #define RANGE_MIRROR_LINE_WIDTH 0.1f
 #define RANGE_MIRROR_LINE_HEIGHT 0.01f
 #define RANGE_MIRROR_DRIFT 0.25f
+/* the arena north of the start, where the AI fought are put: its inside's
+bounds, its walls' height and thickness, its south wall's door's width, and
+the gap left at its walls' ends (the collision bsp parts them by planes
+between them: collision_bsp.c finds no surface on a plane of none, so
+touching walls would be passed through there) */
+#define RANGE_ARENA_X0 -8.0f
+#define RANGE_ARENA_X1 8.0f
+#define RANGE_ARENA_Y0 26.0f
+#define RANGE_ARENA_Y1 40.0f
+#define RANGE_ARENA_WALL_HEIGHT 1.0f
+#define RANGE_ARENA_WALL_THICKNESS 0.3f
+#define RANGE_ARENA_DOOR_WIDTH 2.0f
+#define RANGE_BLOCK_GAP 0.05f
+/* the AI's places: the first row's middle north of the start, the room
+each has, and how near one the player is to fight it; how far off its place
+one may move as it plays before it is put back */
+#define RANGE_AI_FIRST_Y 9.0f
+#define RANGE_AI_SPACING 2.5f
+#define RANGE_AI_NEAR 1.5f
+#define RANGE_AI_DRIFT 0.05f
 /* the frame: its posts' width and height, and its bar's height */
 #define RANGE_MIRROR_POST_WIDTH 0.15f
 #define RANGE_MIRROR_FRAME_HEIGHT 1.4f
@@ -207,7 +248,6 @@ static struct
 	{ SHADER_ENVIRONMENT_GROUP_TAG, "levels\\b30\\shaders\\metal flat generic" },
 	{ SHADER_ENVIRONMENT_GROUP_TAG, "levels\\b30\\shaders\\metal panels generic ext" },
 	{ SHADER_ENVIRONMENT_GROUP_TAG, "levels\\test\\bloodgulch\\shaders\\cap_metal" },
-	{ SHADER_TRANSPARENT_GROUP_TAG, "scenery\\teleporter_shield\\shaders\\teleporter_shield" },
 };
 
 /* ---------- structures */
@@ -325,6 +365,8 @@ struct range_layout
 	real_point3d vertices[MAXIMUM_RANGE_COLLISION_VERTICES];
 	short vertex_count;
 	short bench_count;
+	real_rectangle3d blocks[MAXIMUM_RANGE_BLOCKS];
+	short block_count;
 	real_plane3d planes[MAXIMUM_RANGE_PLANES];
 	short plane_count;
 	struct bsp3d_node nodes[MAXIMUM_RANGE_NODES];
@@ -378,6 +420,27 @@ static struct
 	long mirror_unit;
 	long mirrored_unit;
 	boolean before_mirror;
+
+	/* the weapons' names (as the profile names them) */
+	char weapon_names[MAXIMUM_RANGE_WEAPONS][RANGE_NAME_LENGTH];
+
+	/* the profile's AI: each's actor variant and name, the unit standing
+	for it and the animation it plays; the live ones in the arena, the
+	next place among them, and the AI the player is near (NONE: none) and
+	whether its action was held */
+	struct
+	{
+		long variant;
+		char name[RANGE_NAME_LENGTH];
+		long unit;
+		short animation;
+	} ais[MAXIMUM_RANGE_AIS];
+	short ai_count;
+	long fighters[MAXIMUM_RANGE_FIGHTERS];
+	short next_fighter;
+	short near_ai;
+	boolean action_held;
+	unsigned long random;
 } firing_range;
 
 /* ---------- private code: the bsp's room */
@@ -615,13 +678,34 @@ static void range_layout_make(
 	range_box_face(layout, first, 1, FALSE, TRUE, 1, 0);
 	/* (the ceiling unseen: the collision's alone) */
 	range_box_face(layout, first, 2, TRUE, TRUE, 1, FLAG(1));
+	/* (the benches, then the arena's walls: a gap between each two that
+meet) */
 	layout->bench_count = (short)((weapon_count + RANGE_WEAPONS_PER_BENCH - 1) / RANGE_WEAPONS_PER_BENCH);
 	for (bench = 0; bench < layout->bench_count; bench++)
+		range_bench_bounds(bench, &layout->blocks[layout->block_count++]);
 	{
-		real_rectangle3d bounds;
+		real t = RANGE_ARENA_WALL_THICKNESS;
+		real g = RANGE_BLOCK_GAP;
+		real h = RANGE_ARENA_WALL_HEIGHT;
+		real door = RANGE_ARENA_DOOR_WIDTH * 0.5f;
+		real_rectangle3d walls[NUMBER_OF_ARENA_WALLS] =
+		{
+			{ RANGE_ARENA_X0 - t, RANGE_ARENA_X1 + t, RANGE_ARENA_Y1, RANGE_ARENA_Y1 + t, 0.0f, h },
+			{ RANGE_ARENA_X0 - t, RANGE_ARENA_X0, RANGE_ARENA_Y0 - t, RANGE_ARENA_Y1 - g, 0.0f, h },
+			{ RANGE_ARENA_X1, RANGE_ARENA_X1 + t, RANGE_ARENA_Y0 - t, RANGE_ARENA_Y1 - g, 0.0f, h },
+			{ RANGE_ARENA_X0 + g, -door, RANGE_ARENA_Y0 - t, RANGE_ARENA_Y0, 0.0f, h },
+			{ door, RANGE_ARENA_X1 - g, RANGE_ARENA_Y0 - t, RANGE_ARENA_Y0, 0.0f, h },
+		};
+		short wall;
 
-		range_bench_bounds(bench, &bounds);
-		first = range_box_corners(layout, bounds.x0, bounds.x1, bounds.y0, bounds.y1, bounds.z0, bounds.z1);
+		for (wall = 0; wall < NUMBER_OF_ARENA_WALLS; wall++)
+			layout->blocks[layout->block_count++] = walls[wall];
+	}
+	for (bench = 0; bench < layout->block_count; bench++)
+	{
+		real_rectangle3d const *bounds = &layout->blocks[bench];
+
+		first = range_box_corners(layout, bounds->x0, bounds->x1, bounds->y0, bounds->y1, bounds->z0, bounds->z1);
 		range_box_face(layout, first, 2, TRUE, FALSE, 2, 0);
 		range_box_face(layout, first, 0, TRUE, FALSE, 2, 0);
 		range_box_face(layout, first, 0, FALSE, FALSE, 2, 0);
@@ -648,19 +732,33 @@ static short range_node_add(
 	return node;
 }
 
-/* the benches from `first` to `last`: one's nodes (the leaf in front of
-each, the next behind, solid behind the last), else a plane between the
-halves (the eastern in front) */
-static long range_benches_tree(
+/* a block's bounds on an axis */
+static void range_block_span(
+	real_rectangle3d const *bounds,
+	short axis,
+	real *low,
+	real *high)
+{
+	*low = axis == 0 ? bounds->x0 : axis == 1 ? bounds->y0 : bounds->z0;
+	*high = axis == 0 ? bounds->x1 : axis == 1 ? bounds->y1 : bounds->z1;
+}
+
+/* the blocks listed: one's nodes (the leaf in front of each, the next
+behind, solid behind the last), else a plane parting them in two, on an
+axis where those below it end before those above begin (the first found,
+nearest the middle of the list), the upper part in front; NONE (solid)
+when they cannot be parted (a layout's blocks always can) */
+static long range_blocks_tree(
 	struct range_layout *layout,
-	short first,
-	short last)
+	short const *blocks,
+	short count)
 {
 	long leaf = (long)(0 | LONG_MIN);
+	short axis;
 
-	if (first == last)
+	if (count == 1)
 	{
-		short face = (short)(NUMBER_OF_ROOM_FACES + first * NUMBER_OF_BENCH_FACES);
+		short face = (short)(NUMBER_OF_ROOM_FACES + blocks[0] * NUMBER_OF_BENCH_FACES);
 		short node = layout->node_count;
 		short index;
 
@@ -671,22 +769,69 @@ static long range_benches_tree(
 		}
 		return node;
 	}
+	for (axis = 0; axis < 3; axis++)
 	{
-		short middle = (short)((first + last) / 2);
-		real_rectangle3d east;
-		real_rectangle3d west;
-		short plane = layout->plane_count++;
-		short node;
+		short sorted[MAXIMUM_RANGE_BLOCKS];
+		short best = NONE;
+		real best_plane = 0.0f;
+		short index;
 
-		range_bench_bounds(middle, &east);
-		range_bench_bounds((short)(middle + 1), &west);
-		range_vector(&layout->planes[plane].n, 1.0f, 0.0f, 0.0f);
-		layout->planes[plane].d = (east.x0 + west.x1) * 0.5f;
-		node = range_node_add(layout, plane, NONE, NONE);
-		layout->nodes[node].children[1] = range_benches_tree(layout, first, middle);
-		layout->nodes[node].children[0] = range_benches_tree(layout, (short)(middle + 1), last);
-		return node;
+		/* (sorted by where they begin on the axis) */
+		for (index = 0; index < count; index++)
+		{
+			short place = index;
+			real low;
+			real high;
+			real other_low;
+
+			range_block_span(&layout->blocks[blocks[index]], axis, &low, &high);
+			while (place > 0)
+			{
+				range_block_span(&layout->blocks[sorted[place - 1]], axis, &other_low, &high);
+				if (other_low <= low)
+					break;
+				sorted[place] = sorted[place - 1];
+				place--;
+			}
+			sorted[place] = blocks[index];
+		}
+		for (index = 1; index < count; index++)
+		{
+			real below_high = -1.0e9f;
+			real above_low;
+			real low;
+			real high;
+			short other;
+
+			for (other = 0; other < index; other++)
+			{
+				range_block_span(&layout->blocks[sorted[other]], axis, &low, &high);
+				below_high = MAX(below_high, high);
+			}
+			range_block_span(&layout->blocks[sorted[index]], axis, &above_low, &high);
+			if (below_high < above_low &&
+				(best == NONE || abs(index * 2 - count) < abs(best * 2 - count)))
+			{
+				best = index;
+				best_plane = (below_high + above_low) * 0.5f;
+			}
+		}
+		if (best != NONE)
+		{
+			short plane = layout->plane_count++;
+			short node;
+
+			range_vector(&layout->planes[plane].n, axis == 0 ? 1.0f : 0.0f, axis == 1 ? 1.0f : 0.0f,
+				axis == 2 ? 1.0f : 0.0f);
+			layout->planes[plane].d = best_plane;
+			node = range_node_add(layout, plane, NONE, NONE);
+			layout->nodes[node].children[1] = range_blocks_tree(layout, sorted + best, (short)(count - best));
+			layout->nodes[node].children[0] = range_blocks_tree(layout, sorted, best);
+			return node;
+		}
 	}
+	error(_error_silent, "firing range: %d of the plane's blocks cannot be parted", count);
+	return NONE;
 }
 
 /* the bsp3d: the faces' planes, the room's chain, then the benches' tree */
@@ -708,8 +853,15 @@ static void range_tree_make(
 	}
 	for (face = 0; face < NUMBER_OF_ROOM_FACES; face++)
 		layout->face_nodes[face] = range_node_add(layout, face, NONE, face + 1);
-	layout->nodes[NUMBER_OF_ROOM_FACES - 1].children[1] = layout->bench_count ?
-		range_benches_tree(layout, 0, (short)(layout->bench_count - 1)) : (long)(0 | LONG_MIN);
+	{
+		short blocks[MAXIMUM_RANGE_BLOCKS];
+		short block;
+
+		for (block = 0; block < layout->block_count; block++)
+			blocks[block] = block;
+		layout->nodes[NUMBER_OF_ROOM_FACES - 1].children[1] = layout->block_count ?
+			range_blocks_tree(layout, blocks, layout->block_count) : (long)(0 | LONG_MIN);
+	}
 }
 
 static boolean range_collision_bsp_write(
@@ -1072,26 +1224,6 @@ static void range_details_build(
 	build->surface_count = *surface_index - build->first_surface_index;
 }
 
-/* the mirror's pane, facing the player's side (north) */
-static void range_pane_build(
-	struct range_material_build *build,
-	struct structure_surface *surfaces,
-	long *surface_index)
-{
-	real_point3d points[4];
-	real_vector3d north;
-	real top = RANGE_MIRROR_FRAME_HEIGHT - RANGE_MIRROR_BAR_HEIGHT;
-
-	build->first_surface_index = *surface_index;
-	range_vector(&north, 0.0f, 1.0f, 0.0f);
-	range_point(&points[0], -RANGE_MIRROR_HALF_WIDTH, RANGE_MIRROR_Y, 0.0f);
-	range_point(&points[1], RANGE_MIRROR_HALF_WIDTH, RANGE_MIRROR_Y, 0.0f);
-	range_point(&points[2], RANGE_MIRROR_HALF_WIDTH, RANGE_MIRROR_Y, top);
-	range_point(&points[3], -RANGE_MIRROR_HALF_WIDTH, RANGE_MIRROR_Y, top);
-	range_flat_quad_add(build, surfaces, surface_index, points, &north);
-	build->surface_count = *surface_index - build->first_surface_index;
-}
-
 static void range_bounds_add(
 	real_rectangle3d *bounds,
 	real_point3d const *point,
@@ -1249,12 +1381,8 @@ static boolean range_structure_bsp_build(
 		return FALSE;
 	for (material_index = 0; material_index < NUMBER_OF_RANGE_MATERIALS; material_index++)
 	{
-		if ((shaders[material_index] = range_shader(material_index)) != NONE)
-			continue;
-		/* (no pane without its shader: the frame alone) */
-		if (material_index != _range_material_pane)
+		if ((shaders[material_index] = range_shader(material_index)) == NONE)
 			return FALSE;
-		material_count = _range_material_pane;
 	}
 
 	/* (no lightmap: drawn by the renderer's own light, objects lit by the
@@ -1314,8 +1442,6 @@ static boolean range_structure_bsp_build(
 	range_floor_build(&builds[0], surfaces, &surface_index);
 	range_walls_build(layout, &builds[1], surfaces, &surface_index);
 	range_details_build(layout, &builds[2], surfaces, &surface_index);
-	if (material_count > _range_material_pane)
-		range_pane_build(&builds[_range_material_pane], surfaces, &surface_index);
 	if (surface_index != surface_count)
 		return FALSE;
 	lightmap->bitmap_index = NONE;
@@ -1331,17 +1457,15 @@ static boolean range_structure_bsp_build(
 		material->vertices.count = builds[material_index].vertex_count;
 		material->lightmap_vertices.type = _rasterizer_vertex_type_environment_lightmap_uncompressed;
 		material->lightmap_vertices.count = builds[material_index].vertex_count;
-		range_point(&material->centroid, 0.0f, material_index == _range_material_pane ? RANGE_MIRROR_Y : 0.0f,
-			material_index == 1 ? RANGE_WALL_HEIGHT * 0.5f : material_index == _range_material_pane ?
-			RANGE_MIRROR_FRAME_HEIGHT * 0.5f : 0.0f);
+		range_point(&material->centroid, 0.0f, 0.0f, material_index == 1 ? RANGE_WALL_HEIGHT * 0.5f : 0.0f);
 		material->lighting = bsp->default_lighting;
 	}
 
 	/* (one cluster, which sees itself, its subclusters the floor's blocks
 	of tiles, each wall's quarters and the details) */
 	cluster = range_block(writer, &bsp->clusters, 1, sizeof(*cluster));
-	subclusters = cluster ? range_block(writer, &cluster->subclusters, RANGE_ROOM_SUBCLUSTERS + 1 +
-		(material_count > _range_material_pane), sizeof(*subclusters)) : NULL;
+	subclusters = cluster ? range_block(writer, &cluster->subclusters, RANGE_ROOM_SUBCLUSTERS + 1,
+		sizeof(*subclusters)) : NULL;
 	visibility = range_allocate(writer, sizeof(unsigned long));
 	if (!subclusters || !visibility)
 		return FALSE;
@@ -1398,13 +1522,16 @@ static boolean range_structure_bsp_build(
 			list[count] = builds[2].first_surface_index + count;
 		if (!range_subcluster_write(writer, &subclusters[RANGE_ROOM_SUBCLUSTERS], surfaces, &builds[2], list, count))
 			return FALSE;
-		/* (the pane its own) */
-		for (count = 0; material_count > _range_material_pane && count < builds[_range_material_pane].surface_count;
-			count++)
-			list[count] = builds[_range_material_pane].first_surface_index + count;
-		if (material_count > _range_material_pane && !range_subcluster_write(writer,
-			&subclusters[RANGE_ROOM_SUBCLUSTERS + 1], surfaces, &builds[_range_material_pane], list, count))
+	}
+
+	/* (the AI's paths: a byte of each collision surface, the floor's
+walkable, path.c's _pathfinding_surface_walkable_bit) */
+	{
+		byte *pathfinding = range_block(writer, &bsp->pathfinding_surfaces, layout->face_count, sizeof(byte));
+
+		if (!pathfinding)
 			return FALSE;
+		pathfinding[_range_face_floor] = FLAG(6);
 	}
 
 	/* (one leaf, the collision bsp's, of the cluster, naming every surface
@@ -1761,6 +1888,226 @@ static void range_mirror_update(
 		range_mirror_equip(unit_index);
 }
 
+/* ---------- private code: the AI */
+
+/* an AI's place north (its index of the AI's), facing south */
+static void range_ai_place(
+	short ai,
+	real_point3d *place)
+{
+	range_point(place, ((ai % RANGE_AIS_PER_ROW) - (RANGE_AIS_PER_ROW - 1) * 0.5f) * RANGE_AI_SPACING,
+		RANGE_AI_FIRST_Y + (ai / RANGE_AIS_PER_ROW) * RANGE_AI_SPACING, RANGE_START_HEIGHT);
+}
+
+/* a unit's weapons taken from it, slot for slot */
+static void range_unit_disarm(
+	long unit_index)
+{
+	struct unit_datum *unit = unit_get(unit_index);
+	short slot;
+
+	for (slot = 0; slot < MAXIMUM_WEAPONS_PER_UNIT; slot++)
+	{
+		long weapon = unit->unit.weapon_object_indices[slot];
+
+		if (weapon == NONE)
+			continue;
+		unit_network_forget_weapon(unit_index, slot);
+		object_delete(weapon);
+	}
+}
+
+/* an AI's unit standing for it: its variant's, as its actors are given
+(their colours), with no weapon */
+static long range_ai_stand(
+	short ai)
+{
+	struct actor_variant_definition *variant = actor_variant_definition_get(firing_range.ais[ai].variant);
+	struct object_placement_data placement;
+	long unit_index;
+
+	if (!variant || variant->unit_reference.index == NONE)
+		return NONE;
+	object_placement_data_new(&placement, variant->unit_reference.index, NONE);
+	range_ai_place(ai, &placement.position);
+	range_vector(&placement.forward, 0.0f, -1.0f, 0.0f);
+	range_vector(&placement.up, 0.0f, 0.0f, 1.0f);
+	unit_index = object_new(&placement);
+	if (unit_index == NONE || !object_try_and_get_and_verify_type(unit_index, _object_mask_unit))
+	{
+		error(_error_silent, "firing range: %s could not be stood", firing_range.ais[ai].name);
+		if (unit_index != NONE)
+			object_delete(unit_index);
+		return NONE;
+	}
+	actor_customize_unit(firing_range.ais[ai].variant, unit_index);
+	range_unit_disarm(unit_index);
+	firing_range.ais[ai].animation = NONE;
+	return unit_index;
+}
+
+/* an AI's unit given its next animation when it has played the last: the
+graph's base animations in turn, each name once (its first of the name:
+the others are its permutations) */
+static void range_ai_animate(
+	short ai)
+{
+	struct unit_datum *unit = unit_get(firing_range.ais[ai].unit);
+	long graph_index = unit->object.animation.animation_graph_index;
+	struct animation_graph *graph = graph_index == NONE ? NULL : animation_graph_definition_get(graph_index);
+	short tries;
+
+	if (!graph || graph->animations.count <= 0 || unit_is_playing_custom_animation(firing_range.ais[ai].unit))
+		return;
+	for (tries = 0; tries < graph->animations.count; tries++)
+	{
+		short next = (short)((firing_range.ais[ai].animation + 1 + graph->animations.count) % graph->animations.count);
+		struct animation *animation = TAG_BLOCK_GET_ELEMENT(&graph->animations, next, struct animation);
+
+		firing_range.ais[ai].animation = next;
+		if (animation->type != _animation_base ||
+			animation_graph_get_animation_by_name(graph_index, animation->name) != next)
+			continue;
+		if (unit_start_user_animation(firing_range.ais[ai].unit, graph_index, animation->name, TRUE))
+			return;
+	}
+}
+
+/* each AI stood (once the player is on its feet), playing, on its place */
+static void range_ais_update(
+	void)
+{
+	short ai;
+
+	for (ai = 0; ai < firing_range.ai_count; ai++)
+	{
+		struct unit_datum *unit;
+		real_point3d place;
+		real dx;
+		real dy;
+
+		if (firing_range.ais[ai].unit == NONE ||
+			!object_try_and_get_and_verify_type(firing_range.ais[ai].unit, _object_mask_unit))
+		{
+			firing_range.ais[ai].unit = range_ai_stand(ai);
+			if (firing_range.ais[ai].unit == NONE)
+				continue;
+		}
+		range_ai_animate(ai);
+		/* (an animation that walks stays where it is) */
+		unit = unit_get(firing_range.ais[ai].unit);
+		range_ai_place(ai, &place);
+		dx = unit->object.position.x - place.x;
+		dy = unit->object.position.y - place.y;
+		if (dx * dx + dy * dy > RANGE_AI_DRIFT * RANGE_AI_DRIFT)
+		{
+			real_vector3d forward;
+			real_vector3d up;
+
+			place.z = unit->object.position.z;
+			range_vector(&forward, 0.0f, -1.0f, 0.0f);
+			range_vector(&up, 0.0f, 0.0f, 1.0f);
+			object_set_position(firing_range.ais[ai].unit, &place, &forward, &up);
+		}
+	}
+}
+
+static void range_hud_say(
+	char const *text)
+{
+	wchar_t wide[128];
+	short index;
+
+	for (index = 0; text[index] && index < (short)NUMBEROF(wide) - 1; index++)
+		wide[index] = (wchar_t)(unsigned char)text[index];
+	wide[index] = 0;
+	hud_print_message(0, wide);
+}
+
+/* a live actor of an AI put in the arena, facing its door, holding one of
+the profile's weapons by chance (its own when the profile has none); the
+oldest let go when there are as many as there may be */
+static void range_ai_fight(
+	short ai)
+{
+	real_point3d place;
+	real_vector3d forward;
+	long unit_index;
+	long weapon_definition = NONE;
+	char const *weapon_name = "its own weapon";
+	long previous = firing_range.fighters[firing_range.next_fighter];
+	char text[160];
+
+	if (previous != NONE && object_try_and_get_and_verify_type(previous, _object_mask_unit))
+	{
+		range_unit_disarm(previous);
+		object_delete(previous);
+	}
+	firing_range.fighters[firing_range.next_fighter] = NONE;
+	range_point(&place, 0.0f, (RANGE_ARENA_Y0 + RANGE_ARENA_Y1) * 0.5f, RANGE_START_HEIGHT);
+	range_vector(&forward, 0.0f, -1.0f, 0.0f);
+	unit_index = actor_port_place_free(firing_range.ais[ai].variant, &place, &forward);
+	if (unit_index == NONE)
+	{
+		error(_error_silent, "firing range: %s could not be put in the arena (the AI is not running?)",
+			firing_range.ais[ai].name);
+		range_hud_say("This AI could not be put in the arena.");
+		return;
+	}
+	if (firing_range.weapon_count)
+	{
+		short weapon;
+		struct object_placement_data placement;
+		long weapon_index;
+
+		firing_range.random = firing_range.random * 1103515245UL + 12345UL + (unsigned long)game_time_get();
+		weapon = (short)((firing_range.random >> 16) % (unsigned long)firing_range.weapon_count);
+		weapon_definition = firing_range.weapons[weapon];
+		weapon_name = firing_range.weapon_names[weapon];
+		range_unit_disarm(unit_index);
+		object_placement_data_new(&placement, weapon_definition, NONE);
+		placement.position = place;
+		weapon_index = object_new(&placement);
+		if (weapon_index != NONE)
+		{
+			unit_network_add_weapon(unit_index, weapon_index, 0);
+			unit_get(unit_index)->unit.desired_weapon_index = 0;
+		}
+	}
+	firing_range.fighters[firing_range.next_fighter] = unit_index;
+	firing_range.next_fighter = (short)((firing_range.next_fighter + 1) % MAXIMUM_RANGE_FIGHTERS);
+	snprintf(text, sizeof(text), "%s is in the arena (north) with %s.", firing_range.ais[ai].name, weapon_name);
+	range_hud_say(text);
+	error(_error_silent, "firing range: %s put in the arena with %s", firing_range.ais[ai].name,
+		weapon_definition == NONE ? weapon_name : tag_get_name(weapon_definition));
+}
+
+/* the AI the player stands near (NONE: none) */
+static short range_ai_near(
+	struct unit_datum const *unit)
+{
+	short best = NONE;
+	real best_distance = RANGE_AI_NEAR * RANGE_AI_NEAR;
+	short ai;
+
+	for (ai = 0; ai < firing_range.ai_count; ai++)
+	{
+		real_point3d place;
+		real dx;
+		real dy;
+
+		range_ai_place(ai, &place);
+		dx = unit->object.position.x - place.x;
+		dy = unit->object.position.y - place.y;
+		if (dx * dx + dy * dy < best_distance)
+		{
+			best = ai;
+			best_distance = dx * dx + dy * dy;
+		}
+	}
+	return best;
+}
+
 /* ---------- public code */
 
 char const *firing_range_map_name(
@@ -1797,26 +2144,46 @@ char const *firing_range_level_profile(
 }
 
 void firing_range_tags_injected(
+	long profile,
 	long const *roots,
+	long const *root_tags,
 	long count)
 {
 	long index;
 
 	firing_range.weapon_count = 0;
-	for (index = 0; index < count && firing_range.weapon_count < MAXIMUM_RANGE_WEAPONS; index++)
+	firing_range.ai_count = 0;
+	for (index = 0; index < count; index++)
 	{
+		unsigned long group = roots[index] == NONE ? 0 : tag_get_group_tag(roots[index]);
+		char name[RANGE_NAME_LENGTH];
 		short known;
 
-		if (roots[index] == NONE || tag_get_group_tag(roots[index]) != WEAPON_GROUP_TAG)
+		if (group != WEAPON_GROUP_TAG && group != ACTOR_VARIANT_GROUP_TAG)
 			continue;
-		for (known = 0; known < firing_range.weapon_count && firing_range.weapons[known] != roots[index]; known++)
-			;
-		if (known == firing_range.weapon_count)
+		tag_injector_tag_display_name(profile, root_tags[index], name, sizeof(name));
+		if (group == WEAPON_GROUP_TAG)
+		{
+			for (known = 0; known < firing_range.weapon_count && firing_range.weapons[known] != roots[index]; known++)
+				;
+			if (known < firing_range.weapon_count || firing_range.weapon_count == MAXIMUM_RANGE_WEAPONS)
+				continue;
+			snprintf(firing_range.weapon_names[firing_range.weapon_count], RANGE_NAME_LENGTH, "%s", name);
 			firing_range.weapons[firing_range.weapon_count++] = roots[index];
+			continue;
+		}
+		for (known = 0; known < firing_range.ai_count && firing_range.ais[known].variant != roots[index]; known++)
+			;
+		if (known < firing_range.ai_count || firing_range.ai_count == MAXIMUM_RANGE_AIS)
+			continue;
+		firing_range.ais[firing_range.ai_count].variant = roots[index];
+		snprintf(firing_range.ais[firing_range.ai_count].name, RANGE_NAME_LENGTH, "%s", name);
+		firing_range.ais[firing_range.ai_count].unit = NONE;
+		firing_range.ais[firing_range.ai_count].animation = NONE;
+		firing_range.ai_count++;
 	}
-	if (count > 0 && firing_range.weapon_count == MAXIMUM_RANGE_WEAPONS)
-		error(_error_silent, "firing range: %d of the profile's weapons laid out, the most there is room for",
-			MAXIMUM_RANGE_WEAPONS);
+	error(_error_silent, "firing range: %d weapons laid out and %d AI stood (the most: %d and %d)",
+		firing_range.weapon_count, firing_range.ai_count, MAXIMUM_RANGE_WEAPONS, MAXIMUM_RANGE_AIS);
 }
 
 void firing_range_tags_loaded(
@@ -1830,6 +2197,17 @@ void firing_range_tags_loaded(
 	firing_range.mirrored_unit = NONE;
 	firing_range.next_check_time = 0;
 	firing_range.before_mirror = FALSE;
+	firing_range.near_ai = NONE;
+	firing_range.action_held = FALSE;
+	firing_range.next_fighter = 0;
+	{
+		short slot;
+
+		for (slot = 0; slot < MAXIMUM_RANGE_FIGHTERS; slot++)
+			firing_range.fighters[slot] = NONE;
+		for (slot = 0; slot < firing_range.ai_count; slot++)
+			firing_range.ais[slot].unit = NONE;
+	}
 	{
 		short weapon;
 
@@ -1844,6 +2222,7 @@ void firing_range_tags_loaded(
 	{
 		firing_range.requested = FALSE;
 		firing_range.weapon_count = 0;
+		firing_range.ai_count = 0;
 		return;
 	}
 	scenario = scenario_tag_index == NONE ? NULL : (struct scenario *)tag_get(SCENARIO_GROUP_TAG, scenario_tag_index);
@@ -1864,6 +2243,7 @@ void firing_range_tags_unloaded(
 	range_scenario_restore();
 	firing_range.active = FALSE;
 	firing_range.weapon_count = 0;
+	firing_range.ai_count = 0;
 	firing_range.mirror_unit = NONE;
 	firing_range.mirrored_unit = NONE;
 }
@@ -1936,6 +2316,11 @@ void firing_range_tick(
 		range_weapons_update(now);
 		firing_range.next_check_time = now + RANGE_CHECK_TICKS;
 	}
+	if (firing_range.ai_count && local_player_get_player_index(0) != NONE &&
+		player_get(local_player_get_player_index(0))->unit_index != NONE)
+	{
+		range_ais_update();
+	}
 	range_mirror_update();
 }
 
@@ -1950,10 +2335,31 @@ void firing_range_player_control(
 	real dx;
 	real dy;
 
-	if (!firing_range.active || firing_range.mirror_unit == NONE || unit_index != firing_range.mirrored_unit ||
-		!object_try_and_get_and_verify_type(firing_range.mirror_unit, _object_mask_unit))
+	if (!firing_range.active || local_player_get_player_index(0) == NONE ||
+		player_get(local_player_get_player_index(0))->unit_index != unit_index)
 		return;
 	unit = unit_get(unit_index);
+	/* (near an AI: the HUD names it as the player comes, and action puts it
+	in the arena) */
+	{
+		short near = unit->object.parent_object_index == NONE ? range_ai_near(unit) : NONE;
+		boolean action = TEST_FLAG(control->control_flags, _unit_control_action_bit);
+
+		if (near != NONE && near != firing_range.near_ai)
+		{
+			char text[160];
+
+			snprintf(text, sizeof(text), "%s: press action to fight it in the arena.", firing_range.ais[near].name);
+			range_hud_say(text);
+		}
+		if (near != NONE && action && !firing_range.action_held)
+			range_ai_fight(near);
+		firing_range.near_ai = near;
+		firing_range.action_held = action;
+	}
+	if (firing_range.mirror_unit == NONE || unit_index != firing_range.mirrored_unit ||
+		!object_try_and_get_and_verify_type(firing_range.mirror_unit, _object_mask_unit))
+		return;
 	mirror = unit_get(firing_range.mirror_unit);
 	/* (its controls the player's turned about the pane: the way it faces
 	and aims reflected, its sideways throttle the other way; it picks up
@@ -1983,6 +2389,18 @@ boolean firing_range_damage_ignored(
 	long owner_object_index,
 	long object_index)
 {
-	return firing_range.active && firing_range.mirror_unit != NONE &&
-		(owner_object_index == firing_range.mirror_unit || object_index == firing_range.mirror_unit);
+	short ai;
+
+	if (!firing_range.active)
+		return FALSE;
+	if (firing_range.mirror_unit != NONE &&
+		(owner_object_index == firing_range.mirror_unit || object_index == firing_range.mirror_unit))
+		return TRUE;
+	/* (the AI standing north: nothing hurts them) */
+	for (ai = 0; ai < firing_range.ai_count; ai++)
+	{
+		if (object_index != NONE && firing_range.ais[ai].unit == object_index)
+			return TRUE;
+	}
+	return FALSE;
 }

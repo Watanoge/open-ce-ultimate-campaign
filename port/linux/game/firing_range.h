@@ -36,12 +36,15 @@ char const *firing_range_profile(
 
 /* randomizer.c's, as the range's level loads: the profile it plays (its
 folder's name; NULL when the level is not the range), and the weapons and
-actor variants its tags added (tag_injector_tags_load's roots), of which the
-weapons are laid out, each once, on the benches the bsp is written with */
+actor variants its tags added (tag_injector_tags_load's roots, and their
+tags of the profile, which name them): the weapons laid out, each once, on
+the benches the bsp is written with, and the AI stood north, each once */
 char const *firing_range_level_profile(
 	char const *scenario_name);
 void firing_range_tags_injected(
+	long profile,
 	long const *roots,
+	long const *root_tags,
 	long count);
 
 /* cache_files.c's tags_load and tags_unload: the range's scenario has its

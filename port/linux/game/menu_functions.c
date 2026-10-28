@@ -6644,7 +6644,8 @@ static void tags_details_text(short place, char *title, size_t title_size, char 
 			snprintf(title, title_size, "FIRING RANGE");
 			snprintf(text, text_size, "A plays a plane to try %s's weapons and AI on, alone. West: its weapons on "
 				"benches, each back a moment after it is taken. South: a mirror, behind which a copy of you moves "
-				"as you do while you stand before it. North (the AI) and east (their animations) are to come.\n \n"
+				"as you do while you stand before it. North: its AI, each playing its animations; action by one "
+				"puts it in the arena, armed.\n \n"
 				"The pause menu's QUIT leaves it.", profile);
 			break;
 		}
