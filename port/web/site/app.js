@@ -3,9 +3,10 @@ APP.JS
 
 The launcher page (index.html): it checks that the browser can run the game,
 copies the game data in from the player's disc image (xiso-worker.js) and
-the player's Custom Edition maps (custom-maps-worker.js) and mods
-(mods-worker.js), and starts the game (halo.js and halo.wasm: tools/web_build.py), whose canvas
-then fills the page.
+the player's Custom Edition maps (custom-maps-worker.js), mods
+(mods-worker.js) and tag profiles (tag-profiles-worker.js), exports those
+(as zips: archive.js) and the saved games, and starts the game (halo.js and
+halo.wasm: tools/web_build.py), whose canvas then fills the page.
 
 - The game's threads need SharedArrayBuffer, so a cross-origin isolated
   page: GitHub Pages cannot send the headers for it, the service worker
@@ -339,15 +340,24 @@ async function refreshCustomMaps() {
   }
   $('custom-status').textContent = text;
   $('custom-remove').disabled = !(maps || resources.length);
+  $('custom-export').disabled = !(maps || resources.length);
   await refreshStorage();
+}
+
+// a worker's progress: the bar, and what it is doing to which file
+function showProgress(data) {
+  $('import-bar').style.width = (100 * data.done / (data.total || 1)).toFixed(1) + '%';
+  $('import-text').textContent = `${data.verb || 'Copying'} ${data.file}: ${formatBytes(data.done)} of ${formatBytes(data.total)}`;
 }
 
 function customMapsTask(message) {
   const worker = new Worker('custom-maps-worker.js');
   const busy = (on) => {
-    $('custom-label').classList.toggle('disabled', on);
+    for (const id of ['custom-label', 'custom-files-label']) $(id).classList.toggle('disabled', on);
     $('custom-input').disabled = on;
+    $('custom-files-input').disabled = on;
     $('custom-remove').disabled = on;
+    $('custom-export').disabled = on;
   };
   busy(true);
   $('import-progress').hidden = false;
@@ -356,8 +366,7 @@ function customMapsTask(message) {
   worker.onmessage = async (event) => {
     const data = event.data;
     if (data.type === 'progress') {
-      $('import-bar').style.width = (100 * data.done / data.total).toFixed(1) + '%';
-      $('import-text').textContent = `Copying ${data.file}: ${formatBytes(data.done)} of ${formatBytes(data.total)}`;
+      showProgress(data);
       return;
     }
     worker.terminate();
@@ -367,6 +376,9 @@ function customMapsTask(message) {
       logLine('custom maps: ' + data.message);
     } else if (message.type === 'remove') {
       $('import-text').textContent = 'Removed the Custom Edition maps.';
+    } else if (message.type === 'export') {
+      $('import-text').textContent = `Exported ${data.files} files (${formatBytes(data.bytes)}).`;
+      download('opence-custom-maps.zip', data.blob);
     } else {
       const left = data.skipped.length ? ` Left out ${data.skipped.length}: ` +
         data.skipped.slice(0, 5).map((entry) => `${entry.path} (${entry.why})`).join(', ') +
@@ -387,11 +399,14 @@ function customMapsTask(message) {
   worker.postMessage(message);
 }
 
-$('custom-input').addEventListener('change', (event) => {
-  const files = [...event.target.files];
-  event.target.value = '';
-  if (files.length) customMapsTask({ type: 'add', files });
-});
+for (const id of ['custom-input', 'custom-files-input']) {
+  $(id).addEventListener('change', (event) => {
+    const files = [...event.target.files];
+    event.target.value = '';
+    if (files.length) customMapsTask({ type: 'add', files });
+  });
+}
+$('custom-export').addEventListener('click', () => customMapsTask({ type: 'export' }));
 $('custom-remove').addEventListener('click', () => {
   if (confirm('Remove the Custom Edition maps from this browser (their resource maps too)?')) {
     customMapsTask({ type: 'remove' });
@@ -485,6 +500,137 @@ $('mod-input').addEventListener('change', (event) => {
   if (files.length) modTask({ type: 'add', files });
 });
 
+// ---------- tag profiles (tag-profiles-worker.js): /data/tag_injector, a
+// folder each, and the multiplayer and campaign profiles that play them
+// (port/linux/src/port_tag_profiles.c, port_tag_mp_profiles.c)
+
+// a TOML file's string of that key, as the game writes it
+function tomlString(text, key) {
+  const match = new RegExp(`^\\s*${key}\\s*=\\s*"((?:[^"\\\\\\n]|\\\\.)*)"`, 'm').exec(text);
+  return match ? match[1].replace(/\\(.)/g, '$1') : null;
+}
+
+async function refreshProfiles() {
+  const found = [];
+  // (and an earlier build's folders of them, until the game or an import
+  // moves them)
+  const kinds = { multiplayer: [], campaign: [], '.multiplayer': [], '.campaign': [] };
+  try {
+    const root = await (await navigator.storage.getDirectory()).getDirectoryHandle('tag_injector');
+    for await (const [folder, handle] of root.entries()) {
+      if (handle.kind !== 'directory') continue;
+      if (Object.hasOwn(kinds, folder)) {
+        for await (const [name, file] of handle.entries()) {
+          if (file.kind === 'file' && /\.toml$/i.test(name)) {
+            kinds[folder].push(tomlString(await (await file.getFile()).text(), 'profile') || '');
+          }
+        }
+        continue;
+      }
+      if (folder.startsWith('.') || /^(multiplayer|campaign)$/i.test(folder)) continue;
+      let name = null;
+      let bytes = 0;
+      for await (const [file, fileHandle] of handle.entries()) {
+        if (fileHandle.kind !== 'file') continue;
+        const contents = await fileHandle.getFile();
+        bytes += contents.size;
+        if (file === 'profile.toml') name = tomlString(await contents.text(), 'name') || folder;
+      }
+      if (name !== null) found.push({ folder, name, bytes });
+    }
+  } catch {
+    // no profiles yet
+  }
+  const key = (text) => text.toLowerCase();
+  found.sort((first, second) => (key(first.name) < key(second.name) ? -1 : 1));
+  $('profiles-list').replaceChildren(...found.map(({ folder, name, bytes }) => {
+    const item = document.createElement('li');
+    const label = document.createElement('span');
+    const detail = document.createElement('span');
+    const exporting = document.createElement('button');
+    const playing = Object.values(kinds).flat().filter((profile) => key(profile) === key(folder)).length;
+    label.textContent = name;
+    detail.className = 'detail';
+    detail.textContent = ` ${formatBytes(bytes)}` + (folder !== name ? `, ${folder}` : '') +
+      (playing ? `, ${playing} multiplayer or campaign profile${playing === 1 ? '' : 's'}` : '');
+    label.append(detail);
+    exporting.textContent = 'Export';
+    exporting.addEventListener('click', () => profilesTask({ type: 'export', folder }));
+    item.append(label, exporting);
+    return item;
+  }));
+  const multiplayer = kinds.multiplayer.length + kinds['.multiplayer'].length;
+  const campaign = kinds.campaign.length + kinds['.campaign'].length;
+  $('profiles-status').textContent = found.length ?
+    `${found.length} tag profile${found.length === 1 ? '' : 's'}, ${multiplayer} multiplayer and ${campaign} campaign ` +
+    `profile${campaign === 1 ? '' : 's'} in this browser.` : 'No tag profiles yet.';
+  $('profiles-export').disabled = !found.length;
+  await refreshStorage();
+}
+
+function profilesTask(message) {
+  const worker = new Worker('tag-profiles-worker.js');
+  const controls = ['profiles-zip-input', 'profiles-folder-input', 'profiles-export'];
+  const busy = (on) => {
+    for (const id of ['profiles-zip-label', 'profiles-folder-label']) $(id).classList.toggle('disabled', on);
+    for (const id of controls) $(id).disabled = on;
+    for (const button of $('profiles-list').querySelectorAll('button')) button.disabled = on;
+  };
+  busy(true);
+  $('profiles-status').textContent = message.type === 'export' ? 'Packing…' : 'Reading…';
+  worker.onmessage = async (event) => {
+    const data = event.data;
+    if (data.type === 'progress') {
+      $('profiles-status').textContent = `${data.verb} ${data.file}: ${formatBytes(data.done)} of ${formatBytes(data.total)}`;
+      return;
+    }
+    worker.terminate();
+    busy(false);
+    if (data.type === 'conflicts') {
+      const names = [...data.profiles, ...data.others];
+      await refreshProfiles();
+      if (confirm(`Replace ${names.length === 1 ? 'this' : 'these'}, already in this browser? ` +
+        `${names.slice(0, 8).join(', ')}${names.length > 8 ? ', …' : ''}`)) {
+        profilesTask({ ...message, replace: true });
+      }
+      return;
+    }
+    await refreshProfiles();
+    if (data.type === 'error') {
+      $('profiles-status').textContent = data.message;
+      logLine('tag profiles: ' + data.message);
+    } else if (message.type === 'export') {
+      download(data.name, data.blob);
+    } else {
+      const left = data.skipped.length ? ` Left out ${data.skipped.length}: ` +
+        data.skipped.slice(0, 5).map((entry) => `${entry.path} (${entry.why})`).join(', ') +
+        (data.skipped.length > 5 ? ', …' : '') + '.' : '';
+      $('profiles-status').textContent = `Imported ${data.profiles.length} profile${data.profiles.length === 1 ? '' : 's'}` +
+        (data.others.length ? ` and ${data.others.length} multiplayer or campaign profile${data.others.length === 1 ? '' : 's'}` : '') +
+        ` (${formatBytes(data.bytes)}).${left}`;
+      logLine(`tag profiles: imported ${data.profiles.join(', ')}; ${data.others.join(', ')}; ${data.bytes} bytes`);
+      for (const entry of data.skipped) logLine(`tag profiles: left out ${entry.path}: ${entry.why}`);
+    }
+  };
+  worker.onerror = async (event) => {
+    worker.terminate();
+    busy(false);
+    await refreshProfiles();
+    $('profiles-status').textContent = 'The copy failed: ' + event.message;
+  };
+  if (message.type === 'import' && navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+  worker.postMessage(message);
+}
+
+for (const id of ['profiles-zip-input', 'profiles-folder-input']) {
+  $(id).addEventListener('change', (event) => {
+    const files = [...event.target.files];
+    event.target.value = '';
+    if (files.length) profilesTask({ type: 'import', files });
+  });
+}
+$('profiles-export').addEventListener('click', () => profilesTask({ type: 'export', folder: null }));
+
 $('delete-data').addEventListener('click', async () => {
   if (!confirm('Delete the maps copied into this browser? Saved games stay.')) return;
   const root = await navigator.storage.getDirectory();
@@ -506,63 +652,7 @@ $('persist').addEventListener('click', async () => {
   await refreshStorage();
 });
 
-// ---------- saved games out, as a zip (stored, not compressed)
-
-const crcTable = (() => {
-  const table = new Uint32Array(256);
-  for (let n = 0; n < 256; n++) {
-    let c = n;
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
-    table[n] = c >>> 0;
-  }
-  return table;
-})();
-
-function crc32(bytes) {
-  let crc = 0xFFFFFFFF;
-  for (let i = 0; i < bytes.length; i++) crc = crcTable[(crc ^ bytes[i]) & 0xFF] ^ (crc >>> 8);
-  return (crc ^ 0xFFFFFFFF) >>> 0;
-}
-
-function zip(entries) {
-  const encoder = new TextEncoder();
-  const parts = [];
-  const central = [];
-  let offset = 0;
-  for (const { name, data } of entries) {
-    const nameBytes = encoder.encode(name);
-    const crc = crc32(data);
-    const local = new DataView(new ArrayBuffer(30));
-    local.setUint32(0, 0x04034b50, true);
-    local.setUint16(4, 20, true);
-    local.setUint16(6, 0x0800, true);
-    local.setUint32(14, crc, true);
-    local.setUint32(18, data.length, true);
-    local.setUint32(22, data.length, true);
-    local.setUint16(26, nameBytes.length, true);
-    const header = new DataView(new ArrayBuffer(46));
-    header.setUint32(0, 0x02014b50, true);
-    header.setUint16(4, 20, true);
-    header.setUint16(6, 20, true);
-    header.setUint16(8, 0x0800, true);
-    header.setUint32(16, crc, true);
-    header.setUint32(20, data.length, true);
-    header.setUint32(24, data.length, true);
-    header.setUint16(28, nameBytes.length, true);
-    header.setUint32(42, offset, true);
-    parts.push(local.buffer, nameBytes, data);
-    central.push(header.buffer, nameBytes);
-    offset += 30 + nameBytes.length + data.length;
-  }
-  const centralSize = central.reduce((sum, part) => sum + part.byteLength, 0);
-  const end = new DataView(new ArrayBuffer(22));
-  end.setUint32(0, 0x06054b50, true);
-  end.setUint16(8, entries.length, true);
-  end.setUint16(10, entries.length, true);
-  end.setUint32(12, centralSize, true);
-  end.setUint32(16, offset, true);
-  return new Blob([...parts, ...central, end.buffer], { type: 'application/zip' });
-}
+// ---------- saved games out, as a zip (archive.js)
 
 // the saved games and profiles, not the maps the game keeps a copy of as the
 // Xbox's hard disk did (save/z/cache000.map and on: hundreds of MB the game
@@ -593,7 +683,7 @@ $('export-saves').addEventListener('click', async () => {
     alert('There are no saved games yet.');
     return;
   }
-  download('opence-saves.zip', zip(entries));
+  download('opence-saves.zip', await window.HaloArchive.zip(entries));
 });
 
 $('download-log').addEventListener('click', downloadLog);
@@ -947,6 +1037,7 @@ document.addEventListener('visibilitychange', async () => {
     await refreshData();
     await refreshCustomMaps();
     await refreshMods();
+    await refreshProfiles();
   } else {
     updatePlay();
   }

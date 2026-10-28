@@ -81,6 +81,7 @@ beginning with a dot).
 #include "tomlc17.h"
 
 #include <SDL3/SDL.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -606,7 +607,12 @@ static int profile_read(struct tag_profile *profile, const char *root, const cha
 			{
 				tag->file_size = information.size_high ? 0xFFFFFFFFUL : information.size_low;
 				tag->size = tag->stored ? port_tag_store_bundle_size(bundle_path) : tag->file_size;
+				if (!tag->size)
+					platform_log("tag injector: %s is not a tag file this build reads", bundle_path);
 			}
+			else
+				platform_log("tag injector: %s line %d: %s cannot be found (%s)", path, entry.lineno, bundle_path,
+					strerror(errno));
 			profile->tag_count++;
 		}
 	}
@@ -770,7 +776,8 @@ long port_tag_profiles_scan(void)
 		struct tag_profile profile;
 
 		snprintf(path, sizeof(path), "%s/%s", root, name);
-		if (name[0] == '.' || strlen(name) >= MAXIMUM_FOLDER_LENGTH || posix_stat(path, &information) != 0 ||
+		if (name[0] == '.' || strlen(name) >= MAXIMUM_FOLDER_LENGTH || port_tag_mp_profiles_folder_reserved(name) ||
+			posix_stat(path, &information) != 0 ||
 			!(information.flags & _posix_file_is_directory))
 			continue;
 		if (port_tag_profiles.profile_count == MAXIMUM_TAG_PROFILES)
@@ -853,7 +860,8 @@ long port_tag_profiles_create(const char *name)
 		else
 			snprintf(profile.folder, sizeof(profile.folder), "%s %d", base, suffix);
 		profile_path(&profile, NULL, path, sizeof(path));
-		if (posix_stat(path, &information) == 0)
+		/* (not the multiplayer or campaign profiles' folder either) */
+		if (posix_stat(path, &information) == 0 || port_tag_mp_profiles_folder_reserved(profile.folder))
 			continue;
 		if (posix_make_directory(path) != 0)
 		{
@@ -1433,9 +1441,16 @@ long port_tag_profiles_bundle_open(long profile, long tag, unsigned long *size)
 	if (!found)
 		return -1;
 	profile_path(profile_get(profile), found->file, path, sizeof(path));
-	if (posix_stat(path, &information) != 0 || (information.flags & _posix_file_is_directory) ||
-		information.size_high || information.size_low > 0x7FFFFFFFUL)
+	if (posix_stat(path, &information) != 0)
+	{
+		platform_log("tag injector: %s cannot be found (%s)", path, strerror(errno));
 		return -1;
+	}
+	if ((information.flags & _posix_file_is_directory) || information.size_high || information.size_low > 0x7FFFFFFFUL)
+	{
+		platform_log("tag injector: %s is a folder, or larger than 2 GB", path);
+		return -1;
+	}
 	for (handle = 0; handle < MAXIMUM_OPEN_BUNDLES &&
 		(port_tag_profiles.open_bundles[handle] || port_tag_profiles.stored_bundles[handle]); handle++)
 	{
@@ -1453,13 +1468,19 @@ long port_tag_profiles_bundle_open(long profile, long tag, unsigned long *size)
 		profile_path(profile_get(profile), NULL, folder, sizeof(folder));
 		stored = port_tag_store_open(folder, found->file, size);
 		if (stored < 0)
+		{
+			platform_log("tag injector: %s cannot be opened", path);
 			return -1;
+		}
 		port_tag_profiles.stored_bundles[handle] = stored + 1;
 		return handle;
 	}
 	port_tag_profiles.open_bundles[handle] = fopen(path, "rb");
 	if (!port_tag_profiles.open_bundles[handle])
+	{
+		platform_log("tag injector: %s cannot be opened (%s)", path, strerror(errno));
 		return -1;
+	}
 	*size = information.size_low;
 	return handle;
 }

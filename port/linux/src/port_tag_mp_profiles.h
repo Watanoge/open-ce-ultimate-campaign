@@ -2,11 +2,11 @@
 PORT_TAG_MP_PROFILES.H
 
 The Tag Injector's multiplayer profiles in the data root's
-tag_injector/.multiplayer folder (port_tag_mp_profiles.c): each a name, the
+tag_injector/multiplayer folder (port_tag_mp_profiles.c): each a name, the
 profile whose weapons it plays (port_tag_profiles.h) and how a multiplayer
 game plays them (port/linux/game/tag_multiplayer.c, which declares these
 for itself: keep the two the same). And its campaign profiles, in
-tag_injector/.campaign, kept the same way: each a name, the profile whose
+tag_injector/campaign, kept the same way: each a name, the profile whose
 weapons and AI it plays and how a campaign level played alone plays them
 (port/linux/game/tag_campaign.c, which declares these for itself too).
 */
@@ -14,6 +14,9 @@ weapons and AI it plays and how a campaign level played alone plays them
 #ifndef PORT_TAG_MP_PROFILES_H
 #define PORT_TAG_MP_PROFILES_H
 
+/* whether a folder of tag_injector is the multiplayer or the campaign
+profiles' (any case), which is no profile's */
+int port_tag_mp_profiles_folder_reserved(const char *folder);
 /* finds the multiplayer profiles again: how many there are (every index
 from before is gone); how many the last scan found, and how many times they
 have been found or changed */

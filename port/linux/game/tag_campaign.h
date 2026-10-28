@@ -4,7 +4,7 @@ TAG_CAMPAIGN.H
 The Tag Injector in the campaign (tag_campaign.c, docs/tag_injector.md
 "Campaign profiles"): a campaign level played alone plays the weapons and AI
 of a profile as a campaign profile says (port_tag_mp_profiles.c's
-.campaign), in the randomizer's place: the weapons lying in the level and
+campaign), in the randomizer's place: the weapons lying in the level and
 those its actors carry swapped, its enemies swapped (each kind, and each
 rank of a kind that has ranks, a slot of its own), and the actors of a slot
 given the weapons chosen for it.

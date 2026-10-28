@@ -6,7 +6,7 @@ The Tag Injector in the campaign (tag_campaign.h; docs/tag_injector.md,
 nor a challenge) can play a campaign profile (the TAG INJECTOR PROFILE
 screen before the level: game.campaign_tag_profile), which names a profile
 of the Tag Injector's and how the level plays its weapons and AI
-(port_tag_mp_profiles.c's .campaign). It plays them in the randomizer's
+(port_tag_mp_profiles.c's campaign folder). It plays them in the randomizer's
 place: randomizer.c adds the profile's tags to the level as it would its own
 (tag_injector_tags_load), and asks here what each placement is.
 

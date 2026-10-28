@@ -4,14 +4,19 @@ PORT_TAG_MP_PROFILES.C
 The Tag Injector's multiplayer and campaign profiles (port_tag_mp_profiles.h):
 how a multiplayer game on one of the game's own multiplayer maps, or a
 campaign level played alone, plays the tags of a profile (port_tag_profiles.c),
-each a file of the data root's tag_injector/.multiplayer or
-tag_injector/.campaign folder (folders no profile scan lists):
+each a file of the data root's tag_injector/multiplayer or
+tag_injector/campaign folder (folders no profile scan lists, and no profile
+is made in: port_tag_mp_profiles_folder_reserved):
 
 	tag_injector/
-	  .multiplayer/
+	  multiplayer/
 	    Shotgun Madness.toml
-	  .campaign/
+	  campaign/
 	    Brute Invasion.toml
+
+An earlier build kept them in .multiplayer and .campaign, which a player
+copying the folder took for missing: such a folder is moved to its new name
+when it is read, if that one is not there yet.
 
 	name = "Shotgun Madness"
 	profile = "Brutes"
@@ -93,12 +98,13 @@ struct mp_profile
 	long manual_count;
 };
 
-/* a kind of profile: its folder, what the log calls it, its settings (and
+/* a kind of profile: its folder (and an earlier build's), what the log calls it, its settings (and
 the defaults a new one is made with: key, value, ..., NULL), its tables, and
 the profiles of it last found */
 struct profile_kind
 {
 	char const *folder;
+	char const *old_folder;
 	char const *what;
 	char const *const *option_keys;
 	size_t option_count;
@@ -125,12 +131,12 @@ static char const *const campaign_sections[] = { "weapons", "enemies", "loadout"
 
 static struct profile_kind mp_kind =
 {
-	".multiplayer", "multiplayer", mp_option_keys, NUMBEROF_KEYS(mp_option_keys), mp_defaults, mp_sections,
+	"multiplayer", ".multiplayer", "multiplayer", mp_option_keys, NUMBEROF_KEYS(mp_option_keys), mp_defaults, mp_sections,
 	NUMBEROF_KEYS(mp_sections)
 };
 static struct profile_kind campaign_kind =
 {
-	".campaign", "campaign", campaign_option_keys, NUMBEROF_KEYS(campaign_option_keys), campaign_defaults,
+	"campaign", ".campaign", "campaign", campaign_option_keys, NUMBEROF_KEYS(campaign_option_keys), campaign_defaults,
 	campaign_sections, NUMBEROF_KEYS(campaign_sections)
 };
 
@@ -155,6 +161,54 @@ static int names_compare(const char *first, const char *second)
 static void folder_path(const struct profile_kind *kind, char *path, size_t size)
 {
 	snprintf(path, size, "%s/tag_injector/%s", platform_data_root(), kind->folder);
+}
+
+/* an earlier build's folder of the kind's profiles moved to the folder's
+name, if it is there and the folder is not */
+static void folder_move(const struct profile_kind *kind)
+{
+	char old_path[MAXIMUM_PATH_LENGTH];
+	char path[MAXIMUM_PATH_LENGTH];
+	struct posix_file_information information;
+
+	snprintf(old_path, sizeof(old_path), "%s/tag_injector/%s", platform_data_root(), kind->old_folder);
+	folder_path(kind, path, sizeof(path));
+	if (posix_stat(old_path, &information) != 0 || !(information.flags & _posix_file_is_directory) ||
+		posix_stat(path, &information) == 0)
+		return;
+	/* (a file at a time: the web build's storage moves no folder) */
+	if (posix_make_directory(path) != 0 && posix_stat(path, &information) != 0)
+	{
+		platform_log("tag injector: %s cannot be made: the %s profiles of %s are not read", path, kind->what, old_path);
+		return;
+	}
+	{
+		void *directory = posix_directory_open(old_path);
+		char name[256];
+		long moved = 0;
+		long left = 0;
+
+		while (directory && posix_directory_next(directory, name, sizeof(name)))
+		{
+			char from[MAXIMUM_PATH_LENGTH];
+			char to[MAXIMUM_PATH_LENGTH];
+
+			if (!strcmp(name, ".") || !strcmp(name, ".."))
+				continue;
+			snprintf(from, sizeof(from), "%s/%s", old_path, name);
+			snprintf(to, sizeof(to), "%s/%s", path, name);
+			if (rename(from, to) == 0)
+				moved++;
+			else
+				left++;
+		}
+		if (directory)
+			posix_directory_close(directory);
+		if (!left)
+			rmdir(old_path);
+		platform_log("tag injector: %ld files of the %s profiles moved from %s to %s%s", moved, kind->what, old_path,
+			path, left ? " (some could not be: they stay)" : "");
+	}
 }
 
 static void profile_path(const struct profile_kind *kind, const struct mp_profile *profile, char *path, size_t size)
@@ -434,6 +488,7 @@ static int profile_write(const struct profile_kind *kind, const struct mp_profil
 	/* (the tag_injector folder first, which a profile may not have made yet) */
 	snprintf(folder, sizeof(folder), "%s/tag_injector", platform_data_root());
 	posix_make_directory(folder);
+	folder_move(kind);
 	folder_path(kind, folder, sizeof(folder));
 	posix_make_directory(folder);
 	profile_path(kind, profile, path, sizeof(path));
@@ -471,6 +526,7 @@ static long kind_scan(struct profile_kind *kind)
 		profile_dispose(&kind->profiles[index]);
 	kind->count = 0;
 	kind->scans++;
+	folder_move(kind);
 	folder_path(kind, folder, sizeof(folder));
 	directory = posix_directory_open(folder);
 	if (!directory)
@@ -704,6 +760,11 @@ static int kind_list_set(struct profile_kind *kind, long profile, const char *se
 }
 
 /* ---------- public code */
+
+int port_tag_mp_profiles_folder_reserved(const char *folder)
+{
+	return folder && (!names_compare(folder, mp_kind.folder) || !names_compare(folder, campaign_kind.folder));
+}
 
 long port_tag_mp_profiles_scan(void)
 {

@@ -48,7 +48,32 @@ and in one level of its subfolders, and Custom Edition's `bitmaps.map`,
 `sounds.map` and `loc.map`, which must be in the folder itself. Each map's
 header is checked as the game checks it, and the files are added to those
 already there (`custom-maps-worker.js`); a map the game would not take is
-left out and named. **Remove the Custom Edition maps** deletes them all.
+left out and named. **Add maps or a zip…** takes maps chosen alone (into
+`custom_maps` itself), or zips of them or of a `custom_maps` folder (a
+zip's one folder is `custom_maps` when it is named so, has the resource
+maps or has folders of its own; otherwise it is a category), for a browser
+that cannot choose folders (a phone's). **Export the Custom Edition maps**
+downloads `custom_maps` as a zip (`opence-custom-maps.zip`, its paths
+starting with `custom_maps/`), the maps downloaded from hosts with the
+rest. **Remove the Custom Edition maps** deletes them all.
+
+Tag profiles (`docs/tag_injector.md`): **Tag profiles** lists the Tag
+Injector's profiles in the browser's storage (`tag_injector/`), each with
+**Export**: a zip (`<folder>.zip`, its paths starting with `tag_injector/`)
+of the profile's folder and of the multiplayer and campaign profiles that
+play it. **Export all** zips every profile (not the shares downloaded in
+network games, `.shared`, each of which is a profile "<name> (online)"
+already). **Import a zip…** takes such a zip, a zip of a profile's folder,
+or one of a profile's files alone (named for the zip); **Import a
+folder…** a profile's folder, or the `tag_injector` folder of another
+build's data root. The names are checked as the game makes them (letters,
+digits, spaces, dots, `-` and `_`), and the page asks before it replaces a
+profile of the same folder's name (`tag-profiles-worker.js`).
+
+The zips are made and read by `archive.js`: stored, not compressed (the
+maps and the profiles' packs are compressed already), and zip64 past 4 GB;
+a zip to import may be stored or deflated, each file's CRC checked as it is
+copied.
 
 Mods (`docs/mods.md`): under **Mods**, **Add a mod folder…** copies a mod's
 `mod.toml` and `tags` folder into the browser's storage (`mods/`, which the
@@ -88,9 +113,9 @@ The controls are the desktop builds' (refer to "Controls" in
 
 The game keeps `config.toml`, the saved games and profiles (`save/`) and
 `debug.txt` in the browser's storage beside `maps/`. **Settings and data**
-exports the saved games, the profiles and `config.toml` as a zip (not the
-game's copies of the maps), downloads the log, and deletes the game
-data. The game's own Settings screens have the settings that apply in a
+exports the saved games, the player profiles and `config.toml` as a zip
+(not the game's copies of the maps; the Tag Injector's profiles are under
+**Tag profiles**), downloads the log, and deletes the game data. The game's own Settings screens have the settings that apply in a
 browser.
 
 ### Playing together

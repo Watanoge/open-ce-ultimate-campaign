@@ -329,7 +329,9 @@ randomizer's names: `faction` `"covenant"`, `"flood"`, `"human"` or
 `"needler"`.
 
 A profile holds its bundles, not the maps they came from: it is played
-without them, and can be copied to another machine whole. A folder without
+without them, and can be copied to another machine whole (in a browser, the
+page's **Tag profiles** exports and imports profiles as zips:
+`port/web/README.md`). A folder without
 `profile.toml` is not a profile, nor is one made for a later `format` (a
 profile with tag files is of format 2, which an earlier build does not
 list; one of bundles alone stays 1). A
@@ -338,8 +340,13 @@ where the profile is played, and the game's log says why.
 
 Limits: 64 profiles, 256 tags a profile.
 
-The multiplayer profiles are files of `tag_injector/.multiplayer` (64 at
-most), each its name, the folder of its profile and its settings:
+The multiplayer profiles are files of `tag_injector/multiplayer` (64 at
+most), each its name, the folder of its profile and its settings. No
+profile is made in a folder named `multiplayer` or `campaign` (whatever its
+case), nor is one listed. An earlier build kept these files in
+`.multiplayer` and `.campaign`, which hid them from a player copying the
+folder: the game moves such a folder's files to the new one as it reads
+them, unless that one is there already.
 
 ```toml
 name = "Shotgun Madness"
@@ -354,7 +361,7 @@ secondary = "stock:pistol"
 shotgun = ["original", "cmt\\weapons\\covenant\\carbine\\carbine"]
 ```
 
-The campaign profiles are files of `tag_injector/.campaign` (64 at most),
+The campaign profiles are files of `tag_injector/campaign` (64 at most),
 kept the same way:
 
 ```toml

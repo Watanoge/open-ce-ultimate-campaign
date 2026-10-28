@@ -904,7 +904,11 @@ long port_tag_store_open(const char *folder, const char *file, unsigned long *si
 	{
 	}
 	if (handle == MAXIMUM_STORE_HANDLES)
+	{
+		platform_log("tag injector: more than %d tag files are open: %s/%s is left out", MAXIMUM_STORE_HANDLES, folder,
+			file);
 		return -1;
+	}
 	found = &port_tag_store.handles[handle];
 	memset(found, 0, sizeof(*found));
 	folder_file(folder, file, path, sizeof(path));

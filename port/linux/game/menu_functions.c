@@ -7384,7 +7384,7 @@ static void tags_details_text(short place, char *title, size_t title_size, char 
 		{
 			snprintf(title, title_size, "No multiplayer profiles");
 			snprintf(text, text_size, "NEW PROFILE makes one, playing the weapons of a profile of TAG PROFILES. Each "
-				"is a file of the tag_injector folder's .multiplayer folder.");
+				"is a file of the tag_injector folder's multiplayer folder.");
 			break;
 		}
 		base = port_tag_profiles_find(port_tag_mp_profiles_option(place, "profile"));
@@ -7448,7 +7448,7 @@ static void tags_details_text(short place, char *title, size_t title_size, char 
 		{
 			snprintf(title, title_size, "No campaign profiles");
 			snprintf(text, text_size, "NEW PROFILE makes one, playing the weapons and AI of a profile of TAG "
-				"PROFILES. Each is a file of the tag_injector folder's .campaign folder.");
+				"PROFILES. Each is a file of the tag_injector folder's campaign folder.");
 			break;
 		}
 		base = port_tag_profiles_find(port_tag_campaign_profiles_option(place, "profile"));
