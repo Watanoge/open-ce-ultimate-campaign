@@ -201,8 +201,6 @@ SCREENS = {
              "Shields light their surroundings as they flare.\nOnline: the host's choice.", None),
             ("GLOW INTENSITY:", "display.shield_glow_intensity", [("DEFAULT", "default"), ("LIGHT SHOW", "light_show")],
              "Light Show: three times as far, at full from a\nthird of the flare. Online: the host's choice.", None),
-            ("MATCH TIMER:", "display.match_timer", ON_OFF,
-             "Draw a clock at the bottom right in multiplayer,\ncounting up from the start of the game.", None),
             # (the OpenGL renderer's alone, as texture filtering: the deko3d
             # and Vulkan ones draw the Xbox's range)
             ("HDR:", "display.hdr", ON_OFF,
@@ -353,7 +351,7 @@ SCREENS["gamepad_setup/gyro"] = {
 # pending edits, Defaults, OK and Cancel as the other settings screens.
 _video = SCREENS["video_settings"]
 _graphics = {"display.high_res_hud", "display.hud_button_style", "display.high_res_text", "display.anti_aliasing",
-             "display.anisotropic_filtering", "display.shadow_resolution", "display.per_pixel_lighting", "display.match_timer",
+             "display.anisotropic_filtering", "display.shadow_resolution", "display.per_pixel_lighting",
              "display.model_detail"}
 # (the visual modifiers: a screen of their own, Extra Effects)
 _extra_effects = {"display.shield_glow", "display.shield_glow_intensity",
@@ -446,7 +444,7 @@ _network["categories"] = [
      "Downloading Custom Edition maps you do not have,\nand helping send them to other players.",
      "desktop android ps5"),
     ("MULTIPLAYER HUD:", "network_setup/multiplayer_hud",
-     "Players' names above their heads, the\nscoreboard, and the text chat."),
+     "Players' names above their heads, the\nscoreboard, the text chat and the match clock."),
     ("STREAMER MODE:", "network_setup/streamer_mode",
      "Hide offensive words in names and text from\nother players, maps and mods, as stars."),
     ("SERVER BROWSER:", "network_setup/server_browser",
@@ -526,6 +524,8 @@ SCREENS["network_setup/multiplayer_hud"] = {
          "SHOW the text chat, or HIDE it: no lines, and\nits keys and D-pad Up open nothing.", None),
         ("CHAT TEXT:", "display.chat_style", [("COLORS", "colors"), ("WHITE", "white")],
          "The text chat's colors: COLORS, names in their\nteam's color; WHITE, as Custom Edition.", None),
+        ("MATCH TIMER:", "display.match_timer", ON_OFF,
+         "Draw a clock at the bottom right in multiplayer,\ncounting up from the start of the game.", None),
     ],
 }
 
@@ -566,12 +566,24 @@ CONTROL_ROWS = 7
 WIDE_SETTINGS = {"audio.output_device", "audio.input_device", "streamer.slurs", "streamer.swearing",
                  "streamer.insults", "network.listings", "network.browser_maps", "network.browser_sort"}
 
-# the host's voice chat and vote kicks, on Teamplay Options
-# (_teamplay_options_extras): each row's key, its label, its choices' words
-# (menu_functions.c's gametype_options give their settings' values) and
-# their helps
+# Teamplay Options' rows of the port's (_teamplay_options_extras): the
+# gametype's FORCE TEAM SPAWNS, then the host's voice chat and vote kicks;
+# each row's key, its label, its choices' words (menu_functions.c's
+# gametype_options give their values) and their helps
 TEAMPLAY_EDIT = "main_menu/settings_select/multiplayer_setup/teamplay_options_edit"
 VOICE_QUALITIES = (8, 12, 16, 24, 32, 48, 64)
+# (the rows' step: closer than the PC's 30px, so that all of Server Setup's
+# fit above the help text, which moves down to TEAMPLAY_HELP_TOP)
+TEAMPLAY_STEP = 26
+TEAMPLAY_HELP_TOP = 351
+# (game_engine.c's game_engine_force_team_spawns: the gametype's own, so
+# shown in Edit Gametypes' copy too, and not on Server Setup's VOICE OPTIONS)
+TEAMPLAY_GAMETYPE_ROWS = [
+    ("force_team_spawns", "FORCE TEAM SPAWNS:", ["OFF", "ON"], [
+        "Players will spawn at any spawn point the\\ngametype allows.",
+        "Players will only spawn at their own team's\\nCapture the Flag spawn points.",
+    ]),
+]
 TEAMPLAY_ROWS = [
     ("voice_mode", "VOICE CHAT:", ["OFF", "TEAM NEAR", "ANYONE NEAR", "TEAM", "TEAM, ENEMIES NEAR"], [
         "No voice chat during the game.",
@@ -601,6 +613,8 @@ TEAMPLAY_ROWS = [
         "No text chat in the game.",
     ]),
 ]
+# (Teamplay Options' rows of the port's, in order)
+TEAMPLAY_EXTRA_ROWS = TEAMPLAY_GAMETYPE_ROWS + TEAMPLAY_ROWS
 
 # the profile menu's words for what its items now open
 STRING_OVERRIDES = {
@@ -972,8 +986,8 @@ STRING_INSERTS = {
     f"{PLAYER_EDIT}/cap_player_options": [(28, AIM_ASSIST_HELP + SHIELD_EFFECTS_HELP)],
     # (Teamplay Options' voice chat and vote kick rows, after its own:
     # TEAMPLAY_ROWS)
-    f"{TEAMPLAY_EDIT}/teamplay_options_labels": [(3, [label for _, label, *_ in TEAMPLAY_ROWS])],
-    f"{TEAMPLAY_EDIT}/cap_teamplay_options": [(10, [text for *_, helps in TEAMPLAY_ROWS for text in helps])],
+    f"{TEAMPLAY_EDIT}/teamplay_options_labels": [(3, [label for _, label, *_ in TEAMPLAY_EXTRA_ROWS])],
+    f"{TEAMPLAY_EDIT}/cap_teamplay_options": [(10, [text for *_, helps in TEAMPLAY_EXTRA_ROWS for text in helps])],
     f"{SLAYER_EDIT}/var_kills_to_win": [(5, ["75", "100", "150", "200", "250", "500"])],
     f"{VEHICLE_EDIT}/var_vehicle_set": [(8, ["PC"])],
     f"{VEHICLE_EDIT}/cap_vehicle_options": [(17, [
@@ -1235,8 +1249,10 @@ WIDGET_PATCHES = {
     # Server Setup's only, _teamplay_options_extras)
     f"{TEAMPLAY_EDIT}/teamplay_options_menu": {"insert_before": {
         f"{TEAMPLAY_EDIT}/teamplay_button_bar": [
-            f'<child widget="{TEAMPLAY_EDIT}/op_{key}" x="54" y="{163 + 30 * index}"/>'
-            for index, (key, *_) in enumerate(TEAMPLAY_ROWS)]}},
+            f'<child widget="{TEAMPLAY_EDIT}/op_{key}" x="54" y="{163 + TEAMPLAY_STEP * index}"/>'
+            for index, (key, *_) in enumerate(TEAMPLAY_EXTRA_ROWS)]}},
+    f"{TEAMPLAY_EDIT}/teamplay_options_help": {"set": {"top": TEAMPLAY_HELP_TOP,
+                                                       "height": 414 - TEAMPLAY_HELP_TOP}},
     # (the PC's Vehicles row's Start opened Item Options)
     "main_menu/settings_select/multiplayer_setup/playlist_edit/playlist_edit_vehicles_list_item": {"handlers": [
         '<on event="a" open="main_menu/settings_select/multiplayer_setup/vehicle_options_edit/vehicle_options_screen"/>',
@@ -2083,12 +2099,13 @@ def _opence_options() -> list:
 
 
 def _teamplay_options_extras() -> list:
-    """Teamplay Options' rows of the port's: the host's voice chat
+    """Teamplay Options' rows of the port's: the gametype's FORCE TEAM
+    SPAWNS (game_engine.c), then the host's voice chat
     (port/linux/game/network_voice.c) and vote kicks (network_votekick.c),
     in Server Setup's copy only (menu_functions.c's gametype_options_init),
     kept in config.toml"""
     lines = []
-    for index, (key, label, strings, _) in enumerate(TEAMPLAY_ROWS):
+    for index, (key, label, strings, _) in enumerate(TEAMPLAY_EXTRA_ROWS):
         lines += _widget(f"{TEAMPLAY_EDIT}/op_{key}", [("width", 512), ("height", 28),
                                                        ("flags", "pass_unhandled_to_focused_child"),
                                                        ("bitmap", "bitmaps/option_bkds"), ("color", "#FF2896FF")],
