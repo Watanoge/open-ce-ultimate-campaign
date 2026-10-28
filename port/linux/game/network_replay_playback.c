@@ -1564,7 +1564,7 @@ static wchar_t const *playback_button_label(
 #if defined(HALO_SWITCH)
 	boolean swapped = config_boolean("controls.nintendo_menu_buttons") != 0;
 #elif defined(HALO_PS5)
-	boolean xbox = config_boolean("display.xbox_buttons") != 0;
+	boolean xbox_buttons = config_boolean("display.xbox_buttons") != 0;
 #endif
 
 	switch (button)
@@ -1581,15 +1581,15 @@ static wchar_t const *playback_button_label(
 	case _gamepad_binary_button_start: return L"+";
 	case _gamepad_binary_button_right_thumb: return L"RS";
 #elif defined(HALO_PS5)
-	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_a: return xbox ? L"A" : L"CROSS";
-	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_b: return xbox ? L"B" : L"CIRCLE";
-	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_x: return xbox ? L"X" : L"SQUARE";
-	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_y: return xbox ? L"Y" : L"TRIANGLE";
-	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_white: return xbox ? L"LB" : L"L1";
-	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_black: return xbox ? L"RB" : L"R1";
-	case _gamepad_binary_button_back: return xbox ? L"BACK" : L"CREATE";
-	case _gamepad_binary_button_start: return xbox ? L"START" : L"OPTIONS";
-	case _gamepad_binary_button_right_thumb: return xbox ? L"RS" : L"R3";
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_a: return xbox_buttons ? L"A" : L"CROSS";
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_b: return xbox_buttons ? L"B" : L"CIRCLE";
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_x: return xbox_buttons ? L"X" : L"SQUARE";
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_y: return xbox_buttons ? L"Y" : L"TRIANGLE";
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_white: return xbox_buttons ? L"LB" : L"L1";
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_black: return xbox_buttons ? L"RB" : L"R1";
+	case _gamepad_binary_button_back: return xbox_buttons ? L"BACK" : L"CREATE";
+	case _gamepad_binary_button_start: return xbox_buttons ? L"START" : L"OPTIONS";
+	case _gamepad_binary_button_right_thumb: return xbox_buttons ? L"RS" : L"R3";
 #else
 	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_a: return L"A";
 	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_b: return L"B";
