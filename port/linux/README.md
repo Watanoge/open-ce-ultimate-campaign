@@ -328,19 +328,25 @@ the replays this machine recorded of the network games it played
 first, each with its map, when and its length; A plays the one chosen,
 and the panel says what it is (its game type, server, who recorded it,
 its size). A replay is the game as it was played: A watches the next
-player and X the one before; Y goes round three views (behind them,
-through their eyes, a free camera moved with the sticks and the
-triggers); the d-pad's up and down play it faster or slower, to a pause;
-Back held shows the scores; B leaves. Its buttons: RECORD turns
-`network.record_replays` on or off; DELETE deletes the one chosen (pressed
-twice); on Android, EXPORT opens the system's folder picker and copies the
-replays to the folder chosen (those it already holds, by name, are left
-out), as the app's own folder cannot be opened by other apps. On the
-Switch and the PS5 the Theater shows a QR code and an address instead: a
-page on the local network, while the Theater is open, that downloads the
-replays and uploads others (`network.link_page` turns it off, with Direct
-Link's). The folder keeps the newest `network.replays_kept`, and a
-recording shorter than 5 seconds is deleted as it ends.
+player and X the one before; the d-pad's left and right skip back and on
+10 seconds (to the keyframe before or after); Y goes round three views
+(behind them, which the right stick flies round them, its click turning
+it with them again, and the left stick zooms; through their eyes with
+their arms and weapon, or from behind their vehicle as they saw it; and a
+free camera moved with the sticks and the triggers; a replay a client
+recorded has only its own player's eyes); the right and left
+shoulder buttons (R and L on the Switch, R1 and L1 on the PS5) play it
+faster or slower, to a pause; Back held shows the scores; B leaves. Its
+buttons: RECORD turns `network.record_replays` on or off; DELETE deletes
+the one chosen (pressed twice); on Android, EXPORT opens the system's
+folder picker and copies the replays to the folder chosen (those it
+already holds, by name, are left out), as the app's own folder cannot be
+opened by other apps. On the Switch and the PS5 the Theater shows a QR
+code and an address instead: a page on the local network, while the
+Theater is open, that downloads the replays and uploads others
+(`network.link_page` turns it off, with Direct Link's). The folder keeps
+the newest `network.replays_kept`, and a recording shorter than 5 seconds
+is deleted as it ends.
 
 The menus' text is in the language of the Custom Edition whose `loc.map` is
 in `custom_maps` (French, German, Italian, Spanish and so on), as that

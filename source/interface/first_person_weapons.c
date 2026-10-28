@@ -116,6 +116,7 @@ symbols in this file:
 #include "models/model_definitions.h"
 #include "models/models.h"
 #include "networking/network_connection.h"
+#include "network_replay.h" /* port: port/linux/game/network_replay_playback.c */
 #include "objects/objects.h"
 #include "rasterizer/rasterizer.h" /* port: rasterizer_memory_alloc */
 #include "rasterizer/rasterizer_model_types.h"
@@ -381,6 +382,10 @@ static void model_remap_node_matrices_to_match_animation_graph(
 	short const *node_remapping_table);
 static struct first_person_weapon *first_person_weapon_get(
 	short local_player_index);
+static long first_person_weapon_player_index(
+	short local_player_index);
+static boolean first_person_weapon_first_person(
+	short local_player_index);
 static short first_person_weapon_index_from_weapon_index(
 	long weapon_index);
 static short first_person_weapon_index_from_unit_index(
@@ -484,10 +489,10 @@ void first_person_weapon_draw(
 	{
 		struct first_person_weapon *first_person_weapon= first_person_weapon_get(render.local_player_index);
 
-		if (local_player_get_player_index(render.local_player_index)!=NONE)
+		if (first_person_weapon_player_index(render.local_player_index)!=NONE)
 		{
 			long unit_index= player_get(
-				local_player_get_player_index(render.local_player_index))->unit_index;
+				first_person_weapon_player_index(render.local_player_index))->unit_index;
 
 			if (unit_index!=NONE &&
 				first_person_weapon->visible &&
@@ -635,7 +640,7 @@ short first_person_weapon_get_marker_by_name(
 		short local_player_index= first_person_weapon_index_from_weapon_index(weapon_index);
 
 		if (local_player_index!=NONE &&
-			director_get_perspective(local_player_index)==_director_perspective_first_person)
+			first_person_weapon_first_person(local_player_index))
 		{
 			struct first_person_weapon *first_person_weapon= first_person_weapon_get(local_player_index);
 			struct weapon_definition *weapon_definition= weapon_definition_get(weapon->definition_index);
@@ -672,8 +677,16 @@ void first_person_weapon_render_update(
 		if (first_person_weapon->unit_index!=NONE &&
 			first_person_weapon->weapon_index!=NONE)
 		{
-			boolean visible= director_get_perspective(render.local_player_index)==_director_perspective_first_person &&
+			boolean visible= first_person_weapon_first_person(render.local_player_index) &&
 				player_control_get_zoom_level(render.local_player_index)==NONE;
+
+			/* port: hidden, too, while a replay's watched player looks
+			through a scope, as their own was */
+			if (visible && network_replay_playing() &&
+				unit_get_zoom_level(first_person_weapon->unit_index)!=NONE)
+			{
+				visible= FALSE;
+			}
 
 			first_person_weapon_set_visibility(render.local_player_index, visible);
 			if (first_person_weapon->visible)
@@ -854,12 +867,15 @@ void first_person_weapons_update(
 
 	for (local_player_index=0; local_player_index<MAXIMUM_NUMBER_OF_LOCAL_PLAYERS; local_player_index++)
 	{
-		long player_index= local_player_get_player_index(local_player_index);
+		long player_index= first_person_weapon_player_index(local_player_index);
 
-		if (player_index!=NONE)
+		/* port: a replay's playback lets go of the arms of a player no longer
+		watched through their eyes (window 0's: main.c), as of a dead
+		player's */
+		if (player_index!=NONE || (local_player_index==0 && network_replay_playing()))
 		{
 			struct first_person_weapon *first_person_weapon= first_person_weapon_get(local_player_index);
-			long unit_index= player_get(player_index)->unit_index;
+			long unit_index= player_index!=NONE ? player_get(player_index)->unit_index : NONE;
 
 			if (first_person_weapon->unit_index!=unit_index)
 			{
@@ -1897,7 +1913,7 @@ static void first_person_weapon_update(
 		}
 
 		if (sound_definition_index!=NONE &&
-			director_get_perspective(local_player_index)==_director_perspective_first_person)
+			first_person_weapon_first_person(local_player_index))
 		{
 			first_person_weapon->current_sound_index= object_impulse_sound_new(
 				first_person_weapon->weapon_index,
@@ -2398,7 +2414,7 @@ static short first_person_weapon_index_from_weapon_index(
 
 	for (local_player_index=0; local_player_index<MAXIMUM_NUMBER_OF_LOCAL_PLAYERS; local_player_index++)
 	{
-		long player_index= local_player_get_player_index(local_player_index);
+		long player_index= first_person_weapon_player_index(local_player_index);
 
 		if (player_index!=NONE)
 		{
@@ -2427,7 +2443,7 @@ static short first_person_weapon_index_from_unit_index(
 
 	for (local_player_index=0; local_player_index<MAXIMUM_NUMBER_OF_LOCAL_PLAYERS; local_player_index++)
 	{
-		long player_index= local_player_get_player_index(local_player_index);
+		long player_index= first_person_weapon_player_index(local_player_index);
 
 		if (player_index!=NONE && player_get(player_index)->unit_index==unit_index)
 		{
@@ -2436,4 +2452,35 @@ static short first_person_weapon_index_from_unit_index(
 	}
 
 	return NONE;
+}
+
+/* port: the player whose arms and weapon a local player's view shows: in a
+replay's playback, which has no local player, the one watched through their
+eyes (window 0's, main.c; port/linux/game/network_replay_playback.c), as
+though they were local player 0; else the local player's own */
+static long first_person_weapon_player_index(
+	short local_player_index)
+{
+	if (network_replay_playing())
+	{
+		return local_player_index==0 && network_replay_viewing_eyes() ?
+			network_replay_watched_player() :
+			NONE;
+	}
+
+	return local_player_get_player_index(local_player_index);
+}
+
+/* port: whether that view is first person: in a replay's playback, the
+watched player's eyes (not a seat's third-person view); else the
+director's */
+static boolean first_person_weapon_first_person(
+	short local_player_index)
+{
+	if (network_replay_playing())
+	{
+		return local_player_index==0 && network_replay_viewing_eyes();
+	}
+
+	return director_get_perspective(local_player_index)==_director_perspective_first_person;
 }

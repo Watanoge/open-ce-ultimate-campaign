@@ -22,14 +22,37 @@ The view (network_replay_camera, made once a frame by
 network_replay_playback_frame: main.c's window and the sound's listener)
 is one of three, Y going round them: behind the player watched (or the
 vehicle they ride), drawn where the frame draws them (render
-interpolation), kept on this side of walls; through their eyes, where they
-aim; or a free camera, the left stick moving it, the right one turning it
-and the triggers taking it down and up. A (or the d-pad's right) watches
-the next player, X (or left) the one before; the d-pad's up plays faster
-and down slower, to a pause (game_time_set_speed); Back held shows the
-scores (the watched's row as a player's own); B leaves. A line at the
-bottom says who is watched, the view and the speed. The game's end, or the
-replay's, returns to the main menu a few seconds later.
+interpolation), kept on this side of walls, turning with them until the
+right stick flies it round them (playback_behind_camera; its click turns
+it with them again), the left stick zooming; what they saw, where they aim:
+through their eyes with their arms and weapon (first_person_weapons.c),
+or, in a seat with a third-person camera (a Warthog's, a Ghost's), the
+game's view from behind it (following_camera_unit_view); or a free
+camera, as the game's debug flying camera: the left stick moving it level
+(toward where it looks across the ground, whatever its pitch), the right
+one turning it and the triggers taking it down (left) and up (right),
+following the player as behind does until one of them is touched,
+sliding along walls rather than through them (playback_free_camera_move). A
+client's recording has only its own players' eyes (playback_eyes_allowed):
+Y goes past that view for the others, whom it saw only as a client sees
+another. A watches the next player, X the one before; the right shoulder
+button (RB, the Switch's R, the PS5's R1) plays faster and the left one
+slower, to a pause (game_time_set_speed); Back held shows the scores (the
+watched's row as a player's own); B leaves. A line at the top says who is
+watched, the view and the speed, and a dark bar at the bottom edge the
+buttons, with the controller's pictures of them
+(network_replay_playback_draw). The game's end, or the replay's, returns
+to the main menu a few seconds later.
+
+Keyframes (playback_keyframe_take): every 10 seconds of the game, as the
+playback first reaches them, the game state's parts in use and the
+simulation's and the netcode's variables outside it (gathered by the guest
+image's linker script, guest.ld's .replay_data and .replay_bss), with
+where the file's records were: copied in one go, then compressed in memory
+on a thread of its own (playback_compressor_main) while the game goes on. The d-pad's left puts
+the last one back (the one before it, just after one), as a core is
+loaded (game_state_port_restore), and its right the next, or plays to it
+at the fastest speed when it is not yet taken.
 */
 
 #include "cseries.h"
@@ -38,6 +61,7 @@ replay's, returns to the main menu a few seconds later.
 #include "game/players.h"
 #include "input/input.h"
 #include "interface/hud_messaging.h"
+#include "interface/ui_widget.h"
 #include "networking/network_game_globals.h"
 #include "networking/network_game_manager.h"
 #include "networking/network_client_manager.h"
@@ -49,14 +73,18 @@ replay's, returns to the main menu a few seconds later.
 #include "render/render.h"
 #include "scenario/scenario.h"
 #include "text/draw_string.h"
+#include "tag_files/tag_groups.h"
 #include "text/font_group.h"
 #include "text/unicode.h"
 #include "units/units.h"
+#include "camera/director.h"
+#include "camera/following_camera.h"
 #include "camera/observer.h"
 #include "network_distributed.h"
 #include "network_replay.h"
 
 #include <math.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -73,10 +101,34 @@ void network_game_abort(void);
 void render_interpolation_object_point(long object_index, real_point3d *point);
 real main_get_seconds_elapsed(void);
 void game_engine_port_rasterize_scores(long player_index);
+void draw_quad(rectangle2d *rectangle, pixel32 color);
+unsigned long system_milliseconds(void);
+void game_state_port_used(void **cpu, long *cpu_size, void **gpu, long *gpu_size);
+void game_state_port_restore(void (*read)(void *context), void *context);
+void render_interpolation_reset(void);
+void first_person_weapons_initialize_for_new_map(void);
+
+/* the simulation's and the netcode's variables outside the game state, all
+together (port/android/guest/guest.ld's .replay_data and .replay_bss) */
+extern byte __replay_data_start[], __replay_data_end[];
+extern byte __replay_bss_start[], __replay_bss_end[];
+
+/* a keyframe: the game's tick it was taken at, where the file's records
+were then, and the game state and those variables, compressed */
+struct replay_keyframe
+{
+	long tick;
+	long next;
+	byte *data;
+	unsigned long size;
+};
 
 /* the file (network_replay.c, REPLAY.md's "The file") */
 #define REPLAY_MAGIC "OCREPLAY"
 #define REPLAY_RECORD_HEADER_SIZE 8
+/* (format 4) the header's flags, and a client's recording's */
+#define REPLAY_FLAGS_OFFSET 284
+#define REPLAY_FLAG_CLIENT 1
 /* the oldest format a playback reads: the first with the game's record;
 and the first whose records are one zlib stream after the header */
 #define REPLAY_PLAYABLE_FORMAT 2
@@ -98,11 +150,45 @@ watched's facing it makes a frame */
 #define CAMERA_FIELD_OF_VIEW DEGREES_TO_RADIANS(70.0f)
 /* (how far from a wall the camera stays) */
 #define CAMERA_WALL_MARGIN 0.2f
+/* behind, flown round the player with the right stick: how fast it turns
+and rises (radians a second, the stick all the way), and how high and low
+it goes (a little short of straight down on them, a little below level);
+and the left stick's zoom (how fast, a second, and how near and far, of
+the distance behind) */
+#define CAMERA_ORBIT_TURN 2.5f
+#define CAMERA_ORBIT_HIGHEST -1.5f
+#define CAMERA_ORBIT_LOWEST 0.35f
+#define CAMERA_ZOOM_RATE 1.2f
+#define CAMERA_ZOOM_NEAREST 0.4f
+#define CAMERA_ZOOM_FARTHEST 4.0f
 /* the free camera: how fast it moves (world units a second), turns
 (radians a second, the stick all the way) and how far it pitches */
 #define FREE_CAMERA_SPEED 6.0f
 #define FREE_CAMERA_TURN 2.5f
 #define FREE_CAMERA_MAXIMUM_PITCH 1.5f
+/* what the free camera does not fly through: the level, its scenery and its
+machines (doors, lifts), invisible walls too (the map's edges); how far off
+them it keeps; and how many walls a frame's move slides along */
+#define FREE_CAMERA_COLLISION_FLAGS (FLAG(_collision_test_front_facing_surfaces_bit) | \
+	FLAG(_collision_test_structure_bit) | FLAG(_collision_test_objects_scenery_bit) | \
+	FLAG(_collision_test_objects_machines_bit))
+#define FREE_CAMERA_WALL_MARGIN 0.15f
+#define FREE_CAMERA_SLIDES 3
+/* the keyframes: one every 10 seconds of the game, as the playback first
+reaches it, compressed in memory (zlib's fastest level), up to this much
+memory in all (and this many); and how long after one d-pad left goes to
+the one before it instead */
+#define REPLAY_KEYFRAME_TICKS (10 * TICKS_PER_SECOND)
+#define REPLAY_MAXIMUM_KEYFRAMES 1024
+#define REPLAY_KEYFRAME_MEMORY (256UL * 1024 * 1024)
+#define REPLAY_REWIND_GRACE_TICKS (2 * TICKS_PER_SECOND)
+/* the text on the screen: how far from its top edge the top line is (and
+twice how far from the bottom the hints' bar), the hints' height (a button's
+picture's), the bar's room either side of them and its colour */
+#define REPLAY_SCREEN_MARGIN 12
+#define REPLAY_HINT_HEIGHT 26
+#define REPLAY_HINT_PADDING 10
+#define REPLAY_HINT_BAR_COLOR 0xA0000000
 /* a stick's or a trigger's dead middle, of its whole */
 #define STICK_DEAD_ZONE 0.15f
 
@@ -115,7 +201,7 @@ enum
 	NUMBER_OF_REPLAY_VIEWS
 };
 
-/* the speeds the d-pad's up and down go through (0 a pause), and the
+/* the speeds the shoulder buttons go through (0 a pause), and the
 normal one's */
 static real const replay_speeds[] = { 0.0f, 0.25f, 0.5f, 1.0f, 2.0f, 4.0f, 8.0f };
 #define REPLAY_NORMAL_SPEED 3
@@ -141,6 +227,10 @@ static struct
 	boolean synchronized;
 	/* the player watched (a datum index), NONE before one is */
 	long watched;
+	/* a client's recording, and its own players (by absolute index): only
+	theirs is a view through the eyes, the others' it never had */
+	boolean client;
+	boolean recorders[HALO_PORT_MAXIMUM_NETWORK_PLAYERS];
 	/* the buttons held at the last idle (each press counted once) */
 	boolean held[NUMBER_OF_GAMEPAD_BUTTONS];
 	/* the view, the speed (replay_speeds'), and whether the scores are
@@ -148,14 +238,39 @@ static struct
 	short view;
 	short speed;
 	boolean scores;
-	/* the camera, made once a frame; behind's turn; the free camera's
-	place and its turns */
+	/* the camera, made once a frame; whether it is the watched player's own
+	first-person view (their arms and weapon drawn: first_person_weapons.c);
+	behind's turn; the free camera's place and its turns */
 	boolean camera_valid;
+	boolean first_person;
+	/* the free camera follows the player as behind does until a stick or a
+	trigger is touched */
+	boolean free_following;
+	/* behind: flown round the player (the right stick touched since the
+	view was chosen), its pitch then, and the left stick's zoom (a scale of
+	the distance behind) */
+	boolean behind_orbiting;
+	real behind_pitch;
+	real behind_zoom;
 	real yaw;
 	real_point3d free_position;
 	real free_yaw;
 	real free_pitch;
 	struct observer_result camera;
+	/* the keyframes, by their ticks; the memory they take; where a
+	keyframe is compressed (as large as the largest it can be); and the
+	tick d-pad right plays to, fast, for the next keyframe (NONE when not
+	skipping) */
+	struct replay_keyframe keyframes[REPLAY_MAXIMUM_KEYFRAMES];
+	long keyframe_count;
+	unsigned long keyframe_memory;
+	byte *keyframe_scratch;
+	unsigned long keyframe_scratch_size;
+	boolean keyframes_full;
+	/* the newest keyframe's tick, taken (or being compressed), NONE before
+	the first */
+	long keyframe_frontier;
+	long skip_tick;
 	/* a record's bytes, aligned as the handlers read them */
 	word message[0x10000 / sizeof(word)];
 } playback = { NULL, 0, 0, 0, FALSE, FALSE, FALSE, 0, FALSE, FALSE, NONE };
@@ -230,6 +345,26 @@ static boolean playback_inflate(
 	return TRUE;
 }
 
+static boolean playback_keyframe_collect(boolean wait);
+
+/* every keyframe let go */
+static void playback_keyframes_free(
+	void)
+{
+	long index;
+
+	/* (one being compressed done with first, and dropped; the buffers kept
+	for the next replay. The game's free takes no NULL: debug_memory.c) */
+	playback_keyframe_collect(TRUE);
+	for (index = 0; index < playback.keyframe_count; index++)
+		free(playback.keyframes[index].data);
+	playback.keyframe_count = 0;
+	playback.keyframe_memory = 0;
+	playback.keyframe_frontier = NONE;
+	playback.keyframes_full = FALSE;
+	playback.skip_tick = NONE;
+}
+
 static void playback_free(
 	void)
 {
@@ -245,10 +380,61 @@ static void playback_free(
 	playback.leaving = FALSE;
 	playback.synchronized = FALSE;
 	playback.watched = NONE;
+	playback.client = FALSE;
+	csmemset(playback.recorders, 0, sizeof(playback.recorders));
 	playback.view = _replay_view_behind;
 	playback.speed = REPLAY_NORMAL_SPEED;
 	playback.scores = FALSE;
 	playback.camera_valid = FALSE;
+	playback_keyframes_free();
+	playback.behind_orbiting = FALSE;
+	playback.behind_zoom = 1.0f;
+}
+
+/* whether the replay is a client's, and its own players: the flag in the
+header (format 4), and the players of its own input's records (an older
+client's recording has those alone) */
+static void playback_find_recorders(
+	unsigned long format,
+	unsigned long header_size)
+{
+	long next = playback.next;
+
+	playback.client = format >= 4 && header_size >= REPLAY_FLAGS_OFFSET + 4 &&
+		(replay_get_long(playback.data + REPLAY_FLAGS_OFFSET) & REPLAY_FLAG_CLIENT) != 0;
+	csmemset(playback.recorders, 0, sizeof(playback.recorders));
+	while (next + REPLAY_RECORD_HEADER_SIZE <= playback.size)
+	{
+		byte const *record = playback.data + next;
+		word size = (word)(record[2] | record[3] << 8);
+
+		if (next + REPLAY_RECORD_HEADER_SIZE + size > playback.size)
+			break;
+		if (record[0] == _network_replay_own_actions)
+		{
+			short player_index = network_distributed_own_actions_player(record + REPLAY_RECORD_HEADER_SIZE, size);
+
+			if (player_index >= 0 && player_index < HALO_PORT_MAXIMUM_NETWORK_PLAYERS)
+			{
+				playback.client = TRUE;
+				playback.recorders[player_index] = TRUE;
+			}
+		}
+		next += REPLAY_RECORD_HEADER_SIZE + size;
+	}
+}
+
+/* whether the player (a datum index) can be watched through their eyes:
+any of a host's recording, which saw them all as they were; only its own
+of a client's */
+static boolean playback_eyes_allowed(
+	long player_index)
+{
+	if (!playback.client)
+		return TRUE;
+	return player_index != NONE &&
+		DATUM_INDEX_TO_ABSOLUTE_INDEX(player_index) < HALO_PORT_MAXIMUM_NETWORK_PLAYERS &&
+		playback.recorders[DATUM_INDEX_TO_ABSOLUTE_INDEX(player_index)];
 }
 
 boolean network_replay_watch(
@@ -321,6 +507,7 @@ boolean network_replay_watch(
 	csmemcpy(&game, playback.data + header_size + REPLAY_RECORD_HEADER_SIZE, sizeof(game));
 	playback.start_tick = (long)replay_get_long(playback.data + 24);
 	playback.next = (long)(header_size + REPLAY_RECORD_HEADER_SIZE + sizeof(game));
+	playback_find_recorders(format, header_size);
 	/* (as a client joins a game: none of this machine's own network game is
 	left, benchmark.c's way) */
 	playback.setting_up = TRUE;
@@ -480,6 +667,343 @@ static void playback_feed(
 	network_connection_port_set_last_read_unreliable(FALSE);
 }
 
+/* ---------- keyframes */
+
+/* what a keyframe holds, in order: the game state's parts in use, then the
+simulation's and the netcode's variables beside it */
+static short playback_keyframe_regions(
+	byte **regions,
+	unsigned long *sizes)
+{
+	void *cpu, *gpu;
+	long cpu_size, gpu_size;
+
+	game_state_port_used(&cpu, &cpu_size, &gpu, &gpu_size);
+	regions[0] = (byte *)cpu;
+	sizes[0] = (unsigned long)cpu_size;
+	regions[1] = (byte *)gpu;
+	sizes[1] = (unsigned long)gpu_size;
+	regions[2] = __replay_data_start;
+	sizes[2] = (unsigned long)(__replay_data_end - __replay_data_start);
+	regions[3] = __replay_bss_start;
+	sizes[3] = (unsigned long)(__replay_bss_end - __replay_bss_start);
+	return 4;
+}
+
+/* the keyframes' compressor: a thread of its own, so that the game goes on
+while a keyframe is compressed. The game is copied for it in one go, in
+the game's thread (staging, at the keyframe's tick), and its stream made
+there (zlib allocates only as a stream is made and ended: the game's
+memory is the game's thread's); the compressor only deflates the copy, into
+scratch, and the game's thread keeps the result at its next idle
+(playback_keyframe_collect) */
+static struct
+{
+	boolean started;
+	pthread_t thread;
+	pthread_mutex_t lock;
+	pthread_cond_t wake;
+	pthread_cond_t done;
+	/* the copy is the compressor's (from when it is woken to when it is
+	done), and what it made of it */
+	boolean busy;
+	boolean finished;
+	boolean failed;
+	unsigned long milliseconds;
+	z_stream stream;
+	byte *staging;
+	unsigned long staging_size;
+	unsigned long staged;
+	/* the keyframe's tick and the file's place then */
+	long tick;
+	long next;
+} compressor;
+
+static void *playback_compressor_main(
+	void *unused)
+{
+	(void)unused;
+	pthread_mutex_lock(&compressor.lock);
+	for (;;)
+	{
+		unsigned long started;
+		int status;
+
+		while (!compressor.busy || compressor.finished)
+			pthread_cond_wait(&compressor.wake, &compressor.lock);
+		pthread_mutex_unlock(&compressor.lock);
+		started = system_milliseconds();
+		compressor.stream.next_in = compressor.staging;
+		compressor.stream.avail_in = (uInt)compressor.staged;
+		compressor.stream.next_out = playback.keyframe_scratch;
+		compressor.stream.avail_out = (uInt)playback.keyframe_scratch_size;
+		status = deflate(&compressor.stream, Z_FINISH);
+		pthread_mutex_lock(&compressor.lock);
+		compressor.failed = status != Z_STREAM_END;
+		compressor.milliseconds = system_milliseconds() - started;
+		compressor.finished = TRUE;
+		pthread_cond_broadcast(&compressor.done);
+	}
+	return NULL;
+}
+
+/* the keyframe the compressor finished kept, if it has (waiting for it if
+wait); FALSE while it is still at it */
+static boolean playback_keyframe_collect(
+	boolean wait)
+{
+	struct replay_keyframe *keyframe;
+	boolean failed;
+
+	if (!compressor.started)
+		return TRUE;
+	pthread_mutex_lock(&compressor.lock);
+	if (!compressor.busy)
+	{
+		pthread_mutex_unlock(&compressor.lock);
+		return TRUE;
+	}
+	while (wait && !compressor.finished)
+		pthread_cond_wait(&compressor.done, &compressor.lock);
+	if (!compressor.finished)
+	{
+		pthread_mutex_unlock(&compressor.lock);
+		return FALSE;
+	}
+	failed = compressor.failed;
+	pthread_mutex_unlock(&compressor.lock);
+	keyframe = &playback.keyframes[playback.keyframe_count];
+	keyframe->size = (unsigned long)compressor.stream.total_out;
+	deflateEnd(&compressor.stream);
+	if (failed || !(keyframe->data = (byte *)malloc(keyframe->size)))
+	{
+		error(_error_log, "replay: the keyframe at tick %ld cannot be kept", compressor.tick);
+		playback.keyframes_full = TRUE;
+	}
+	else
+	{
+		csmemcpy(keyframe->data, playback.keyframe_scratch, keyframe->size);
+		keyframe->tick = compressor.tick;
+		keyframe->next = compressor.next;
+		playback.keyframe_count++;
+		playback.keyframe_memory += keyframe->size;
+		error(_error_log, "replay: keyframe %ld at tick %ld, %lu KB of %lu KB, compressed in %lu ms",
+			playback.keyframe_count - 1, keyframe->tick, keyframe->size / 1024, compressor.staged / 1024,
+			compressor.milliseconds);
+	}
+	pthread_mutex_lock(&compressor.lock);
+	compressor.busy = FALSE;
+	compressor.finished = FALSE;
+	pthread_mutex_unlock(&compressor.lock);
+	return TRUE;
+}
+
+/* a keyframe of now, after the last: copied, and handed to the compressor
+(FALSE, said once, when there is no more room for one) */
+static boolean playback_keyframe_take(
+	void)
+{
+	byte *regions[4];
+	unsigned long sizes[4];
+	unsigned long total = 0;
+	unsigned long started = system_milliseconds();
+	short count = playback_keyframe_regions(regions, sizes);
+	short index;
+
+	if (playback.keyframe_count >= REPLAY_MAXIMUM_KEYFRAMES || playback.keyframe_memory >= REPLAY_KEYFRAME_MEMORY)
+	{
+		if (!playback.keyframes_full)
+			error(_error_log, "replay: no room for more keyframes (%ld, %lu KB)", playback.keyframe_count,
+				playback.keyframe_memory / 1024);
+		playback.keyframes_full = TRUE;
+		return FALSE;
+	}
+	for (index = 0; index < count; index++)
+		total += sizes[index];
+	if (!compressor.started)
+	{
+		pthread_attr_t attributes;
+		boolean made;
+
+		pthread_mutex_init(&compressor.lock, NULL);
+		pthread_cond_init(&compressor.wake, NULL);
+		pthread_cond_init(&compressor.done, NULL);
+		pthread_attr_init(&attributes);
+		pthread_attr_setstacksize(&attributes, 64 * 1024);
+		made = pthread_create(&compressor.thread, &attributes, playback_compressor_main, NULL) == 0;
+		pthread_attr_destroy(&attributes);
+		if (!made)
+		{
+			error(_error_log, "replay: no thread for keyframes");
+			playback.keyframes_full = TRUE;
+			return FALSE;
+		}
+		pthread_detach(compressor.thread);
+		compressor.started = TRUE;
+	}
+	/* (the buffers, kept from one replay to the next while the game state
+	is no larger: a map's is the same throughout) */
+	if (compressor.staging_size < total)
+	{
+		if (compressor.staging)
+			free(compressor.staging);
+		if (playback.keyframe_scratch)
+			free(playback.keyframe_scratch);
+		compressor.staging_size = total;
+		compressor.staging = (byte *)malloc(total);
+		/* (the most deflate can make of it: zlib 1.1.3's, which has no
+		compressBound, is a thousandth more and 12 bytes) */
+		playback.keyframe_scratch_size = total + total / 1000 + 12 + 1024;
+		playback.keyframe_scratch = (byte *)malloc(playback.keyframe_scratch_size);
+		if (!compressor.staging || !playback.keyframe_scratch)
+		{
+			if (compressor.staging)
+				free(compressor.staging);
+			if (playback.keyframe_scratch)
+				free(playback.keyframe_scratch);
+			compressor.staging = NULL;
+			compressor.staging_size = 0;
+			playback.keyframe_scratch = NULL;
+			playback.keyframe_scratch_size = 0;
+			playback.keyframes_full = TRUE;
+			error(_error_log, "replay: no memory for keyframes");
+			return FALSE;
+		}
+	}
+	compressor.staged = 0;
+	for (index = 0; index < count; index++)
+	{
+		csmemcpy(compressor.staging + compressor.staged, regions[index], sizes[index]);
+		compressor.staged += sizes[index];
+	}
+	csmemset(&compressor.stream, 0, sizeof(compressor.stream));
+	if (deflateInit(&compressor.stream, 1) != Z_OK)
+		return FALSE;
+	compressor.tick = game_time_get();
+	compressor.next = playback.next;
+	playback.keyframe_frontier = compressor.tick;
+	pthread_mutex_lock(&compressor.lock);
+	compressor.busy = TRUE;
+	compressor.finished = FALSE;
+	pthread_cond_signal(&compressor.wake);
+	pthread_mutex_unlock(&compressor.lock);
+	if (playback.keyframe_count < 2)
+		error(_error_log, "replay: keyframe at tick %ld copied in %lu ms", compressor.tick, system_milliseconds() - started);
+	return TRUE;
+}
+
+/* a keyframe being put back: its stream, and whether it has gone wrong */
+struct playback_keyframe_reading
+{
+	z_stream stream;
+	byte *regions[4];
+	unsigned long sizes[4];
+	boolean failed;
+};
+
+/* the next region of a keyframe, inflated in place */
+static void playback_keyframe_read_region(
+	struct playback_keyframe_reading *reading,
+	short index)
+{
+	int status;
+
+	if (reading->failed)
+		return;
+	reading->stream.next_out = reading->regions[index];
+	reading->stream.avail_out = (uInt)reading->sizes[index];
+	status = inflate(&reading->stream, Z_SYNC_FLUSH);
+	if ((status != Z_OK && status != Z_STREAM_END) || reading->stream.avail_out)
+		reading->failed = TRUE;
+}
+
+/* (the game state's, between the procedures of a core's load) */
+static void playback_keyframe_read_game_state(
+	void *context)
+{
+	struct playback_keyframe_reading *reading = (struct playback_keyframe_reading *)context;
+
+	playback_keyframe_read_region(reading, 0);
+	playback_keyframe_read_region(reading, 1);
+}
+
+/* the game as it was at a keyframe: the game state (as a core is loaded),
+then the variables beside it (after the load's procedures, which reset
+some of them), the file where it was then, and what is kept of this
+machine rather than of the game made right again: the clock's times, the
+frame's interpolation, the first-person weapon; the playback's speed */
+static void playback_keyframe_restore(
+	long keyframe_index)
+{
+	struct replay_keyframe const *keyframe = &playback.keyframes[keyframe_index];
+	struct playback_keyframe_reading reading;
+
+	csmemset(&reading, 0, sizeof(reading));
+	playback_keyframe_regions(reading.regions, reading.sizes);
+	if (inflateInit(&reading.stream) != Z_OK)
+		return;
+	reading.stream.next_in = keyframe->data;
+	reading.stream.avail_in = (uInt)keyframe->size;
+	game_state_port_restore(playback_keyframe_read_game_state, &reading);
+	playback_keyframe_read_region(&reading, 2);
+	playback_keyframe_read_region(&reading, 3);
+	inflateEnd(&reading.stream);
+	if (reading.failed)
+	{
+		/* (half a game: there is no going on from it) */
+		error(_error_log, "replay: keyframe %ld cannot be read back; leaving", keyframe_index);
+		playback.leaving = TRUE;
+		network_game_abort();
+		return;
+	}
+	playback.next = keyframe->next;
+	playback.ended = 0;
+	playback.skip_tick = NONE;
+	network_distributed_replay_restored();
+	render_interpolation_reset();
+	first_person_weapons_initialize_for_new_map();
+	game_time_set_speed(replay_speeds[playback.speed]);
+	error(_error_log, "replay: back to keyframe %ld, tick %ld", keyframe_index, keyframe->tick);
+}
+
+/* d-pad left: back to the last keyframe (the one before it, just after
+one); d-pad right: on to the next, put back if it was taken already, else
+played to, fast */
+static void playback_skip(
+	boolean forward)
+{
+	long now = game_time_get();
+	long index;
+
+	/* (one still being compressed waited for: it may be the one wanted) */
+	playback_keyframe_collect(TRUE);
+	if (!playback.keyframe_count)
+		return;
+	if (!forward)
+	{
+		for (index = playback.keyframe_count - 1; index > 0; index--)
+		{
+			if (playback.keyframes[index].tick <= now - REPLAY_REWIND_GRACE_TICKS)
+				break;
+		}
+		playback_keyframe_restore(index);
+		return;
+	}
+	for (index = 0; index < playback.keyframe_count; index++)
+	{
+		if (playback.keyframes[index].tick > now)
+		{
+			playback_keyframe_restore(index);
+			return;
+		}
+	}
+	if (playback.ended || playback.keyframes_full)
+		return;
+	playback.skip_tick = playback.keyframes[playback.keyframe_count - 1].tick + REPLAY_KEYFRAME_TICKS;
+	/* (the keyframe is taken there: playback_keyframe_take, as it is reached) */
+	game_time_set_speed(replay_speeds[NUMBEROF(replay_speeds) - 1]);
+}
+
 boolean network_replay_playback_idle(
 	struct network_game_client *client)
 {
@@ -496,33 +1020,67 @@ boolean network_replay_playback_idle(
 		playback.synchronized = TRUE;
 		network_objects_handle_synchronized();
 	}
-	if (playback_pressed(FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_a) |
-		playback_pressed(_gamepad_binary_button_dpad_right))
-	{
-		playback.watched = playback_next_player(playback.watched, FALSE);
-	}
-	if (playback_pressed(FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_x) |
-		playback_pressed(_gamepad_binary_button_dpad_left))
-	{
-		playback.watched = playback_next_player(playback.watched, TRUE);
-	}
 	if (playback.leaving)
 		return TRUE;
+	/* (a keyframe each 10 seconds, the first at the start: the game as the
+	records fed so far have made it, at a tick's end; and a skip ahead
+	ending at the one it played to, taken just now) */
+	if (playback_keyframe_collect(FALSE) && !playback.ended && !playback.keyframes_full &&
+		(playback.keyframe_frontier == NONE || game_time_get() >= playback.keyframe_frontier + REPLAY_KEYFRAME_TICKS))
+	{
+		playback_keyframe_take();
+	}
+	if (playback.skip_tick != NONE && (game_time_get() >= playback.skip_tick || playback.ended ||
+		playback.keyframes_full))
+	{
+		playback.skip_tick = NONE;
+		game_time_set_speed(replay_speeds[playback.speed]);
+	}
+	if (playback_pressed(FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_a))
+		playback.watched = playback_next_player(playback.watched, FALSE);
+	if (playback_pressed(FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_x))
+		playback.watched = playback_next_player(playback.watched, TRUE);
+	if (playback_pressed(_gamepad_binary_button_dpad_left))
+	{
+		playback_skip(FALSE);
+		if (playback.leaving)
+			return TRUE;
+	}
+	if (playback_pressed(_gamepad_binary_button_dpad_right))
+		playback_skip(TRUE);
 	if (playback_pressed(FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_y))
 	{
 		playback.view = (short)((playback.view + 1) % NUMBER_OF_REPLAY_VIEWS);
-		/* (the free camera starts where the view was) */
-		if (playback.view == _replay_view_free && playback.camera_valid)
+		/* (a client's recording's other players have no eyes to see through) */
+		if (playback.view == _replay_view_eyes && !playback_eyes_allowed(playback.watched))
+			playback.view = _replay_view_free;
+		/* (the free camera follows the player until it is flown; behind
+		turns with them until it is, at its distance) */
+		if (playback.view == _replay_view_free)
+			playback.free_following = TRUE;
+		if (playback.view == _replay_view_behind)
 		{
-			playback.free_position = playback.camera.position;
-			playback.free_yaw = (real)atan2(playback.camera.forward.j, playback.camera.forward.i);
-			playback.free_pitch = (real)asin(PIN(playback.camera.forward.k, -1.0f, 1.0f));
+			playback.behind_orbiting = FALSE;
+			playback.behind_zoom = 1.0f;
 		}
 	}
-	if (playback_pressed(_gamepad_binary_button_dpad_up) && playback.speed < (short)NUMBEROF(replay_speeds) - 1)
+	/* (the right stick's click: behind turns with the player again, at its
+	zoom) */
+	if (playback_pressed(_gamepad_binary_button_right_thumb) && playback.view == _replay_view_behind)
+		playback.behind_orbiting = FALSE;
+	/* (the right shoulder faster, the left slower: the Xbox's black and
+	white, xinput_sdl.c) */
+	if (playback_pressed(FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_black) &&
+		playback.speed < (short)NUMBEROF(replay_speeds) - 1)
+	{
+		playback.skip_tick = NONE;
 		game_time_set_speed(replay_speeds[++playback.speed]);
-	if (playback_pressed(_gamepad_binary_button_dpad_down) && playback.speed > 0)
+	}
+	if (playback_pressed(FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_white) && playback.speed > 0)
+	{
+		playback.skip_tick = NONE;
 		game_time_set_speed(replay_speeds[--playback.speed]);
+	}
 	playback_pressed(_gamepad_binary_button_back);
 	playback.scores = playback.held[_gamepad_binary_button_back];
 	if (playback_pressed(FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_b))
@@ -601,27 +1159,92 @@ static real playback_axis(
 		(value + STICK_DEAD_ZONE) / (1.0f - STICK_DEAD_ZONE);
 }
 
-/* the free camera, moved by the first controller whose sticks are off
-their middle */
-static void playback_free_camera(
-	real seconds)
+/* every controller's sticks (the left's, the right's) and triggers (the
+right's less the left's), each 0 in its dead middle, added together */
+static void playback_sticks(
+	real *move_x,
+	real *move_y,
+	real *turn_x,
+	real *turn_y,
+	real *rise)
 {
-	real move_x = 0.0f, move_y = 0.0f, turn_x = 0.0f, turn_y = 0.0f, rise = 0.0f;
-	real_vector3d forward;
 	short controller;
 
+	*move_x = *move_y = *turn_x = *turn_y = *rise = 0.0f;
 	for (controller = 0; controller < MAXIMUM_GAMEPADS; controller++)
 	{
 		struct gamepad_state const *gamepad = input_get_gamepad_state(controller);
 
 		if (!gamepad)
 			continue;
-		move_x += playback_axis(gamepad->sticks[_gamepad_stick_left].x / 32767.0f);
-		move_y += playback_axis(gamepad->sticks[_gamepad_stick_left].y / 32767.0f);
-		turn_x += playback_axis(gamepad->sticks[_gamepad_stick_right].x / 32767.0f);
-		turn_y += playback_axis(gamepad->sticks[_gamepad_stick_right].y / 32767.0f);
-		rise += playback_axis(gamepad->analog_buttons[_gamepad_analog_button_right_trigger] / 255.0f) -
+		*move_x += playback_axis(gamepad->sticks[_gamepad_stick_left].x / 32767.0f);
+		*move_y += playback_axis(gamepad->sticks[_gamepad_stick_left].y / 32767.0f);
+		*turn_x += playback_axis(gamepad->sticks[_gamepad_stick_right].x / 32767.0f);
+		*turn_y += playback_axis(gamepad->sticks[_gamepad_stick_right].y / 32767.0f);
+		*rise += playback_axis(gamepad->analog_buttons[_gamepad_analog_button_right_trigger] / 255.0f) -
 			playback_axis(gamepad->analog_buttons[_gamepad_analog_button_left_trigger] / 255.0f);
+	}
+}
+
+/* the free camera moved by move, but not into a wall: up to it (kept
+FREE_CAMERA_WALL_MARGIN off it), then along it with what is left of the
+move, as far as the next. Only the walls facing it stop it, so one that
+starts inside something can still leave it */
+static void playback_free_camera_move(
+	real_vector3d const *move)
+{
+	real_vector3d left = *move;
+	short slide;
+
+	for (slide = 0; slide < FREE_CAMERA_SLIDES; slide++)
+	{
+		struct collision_result collision;
+		real_vector3d const *normal;
+		real across;
+
+		if (left.i * left.i + left.j * left.j + left.k * left.k < 1.0e-8f)
+			return;
+		if (!collision_test_vector(FREE_CAMERA_COLLISION_FLAGS, &playback.free_position, &left, NONE, &collision))
+		{
+			playback.free_position.x += left.i;
+			playback.free_position.y += left.j;
+			playback.free_position.z += left.k;
+			return;
+		}
+		normal = &collision.plane.n;
+		playback.free_position.x += left.i * collision.t + normal->i * FREE_CAMERA_WALL_MARGIN;
+		playback.free_position.y += left.j * collision.t + normal->j * FREE_CAMERA_WALL_MARGIN;
+		playback.free_position.z += left.k * collision.t + normal->k * FREE_CAMERA_WALL_MARGIN;
+		/* (what is left of the move, along the wall) */
+		left.i *= 1.0f - collision.t;
+		left.j *= 1.0f - collision.t;
+		left.k *= 1.0f - collision.t;
+		across = left.i * normal->i + left.j * normal->j + left.k * normal->k;
+		left.i -= normal->i * across;
+		left.j -= normal->j * across;
+		left.k -= normal->k * across;
+	}
+}
+
+/* the free camera, moved by the controllers' sticks and triggers; FALSE,
+the camera left alone, while it still follows the player (none touched yet
+since it was chosen), from where it then is once one is */
+static boolean playback_free_camera(
+	real seconds)
+{
+	real move_x, move_y, turn_x, turn_y, rise;
+	real_vector3d forward;
+	real_vector3d move;
+
+	playback_sticks(&move_x, &move_y, &turn_x, &turn_y, &rise);
+	if (playback.free_following)
+	{
+		if (move_x == 0.0f && move_y == 0.0f && turn_x == 0.0f && turn_y == 0.0f && rise == 0.0f)
+			return FALSE;
+		playback.free_following = FALSE;
+		playback.free_position = playback.camera.position;
+		playback.free_yaw = (real)atan2(playback.camera.forward.j, playback.camera.forward.i);
+		playback.free_pitch = (real)asin(PIN(playback.camera.forward.k, -1.0f, 1.0f));
 	}
 	playback.free_yaw -= turn_x * FREE_CAMERA_TURN * seconds;
 	playback.free_pitch = PIN(playback.free_pitch + turn_y * FREE_CAMERA_TURN * seconds,
@@ -629,11 +1252,15 @@ static void playback_free_camera(
 	forward.i = (real)(cos(playback.free_yaw) * cos(playback.free_pitch));
 	forward.j = (real)(sin(playback.free_yaw) * cos(playback.free_pitch));
 	forward.k = (real)sin(playback.free_pitch);
-	/* (forward and back along where it looks, sideways level) */
-	playback.free_position.x += (forward.i * move_y + (real)sin(playback.free_yaw) * move_x) * FREE_CAMERA_SPEED * seconds;
-	playback.free_position.y += (forward.j * move_y - (real)cos(playback.free_yaw) * move_x) * FREE_CAMERA_SPEED * seconds;
-	playback.free_position.z += (forward.k * move_y + rise) * FREE_CAMERA_SPEED * seconds;
+	/* (as the game's debug flying camera, flying_camera.c: the stick moves it
+	level, forward and back toward where it looks across the ground whatever
+	its pitch, and only the triggers change its height) */
+	move.i = ((real)cos(playback.free_yaw) * move_y + (real)sin(playback.free_yaw) * move_x) * FREE_CAMERA_SPEED * seconds;
+	move.j = ((real)sin(playback.free_yaw) * move_y - (real)cos(playback.free_yaw) * move_x) * FREE_CAMERA_SPEED * seconds;
+	move.k = rise * FREE_CAMERA_SPEED * seconds;
+	playback_free_camera_move(&move);
 	playback_camera_set(&playback.free_position, &forward);
+	return TRUE;
 }
 
 /* through the eyes of the unit, where it aims; FALSE when it has none */
@@ -656,9 +1283,56 @@ static void playback_eyes_camera(
 	playback_camera_set(&eyes, &unit->unit.aiming_vector);
 }
 
-/* behind what the unit is (on foot, or the vehicle it rides) */
-static void playback_behind_camera(
+/* the view the unit's player has in a seat with a third-person camera:
+the game's own (following_camera_unit_view), moved as the frame draws the
+vehicle and kept on this side of walls */
+static void playback_seat_camera(
 	long unit_index)
+{
+	long vehicle_index = object_get(unit_index)->object.parent_object_index;
+	real_point3d focus;
+	real_point3d origin;
+	real_point3d drawn;
+	real_point3d position;
+	real_vector3d forward;
+	real_vector3d back;
+	real distance;
+	struct collision_result collision;
+
+	following_camera_unit_view(unit_index, &focus, &forward, &distance);
+	object_get_origin(vehicle_index, &origin);
+	drawn = origin;
+	render_interpolation_object_point(vehicle_index, &drawn);
+	focus.x += drawn.x - origin.x;
+	focus.y += drawn.y - origin.y;
+	focus.z += drawn.z - origin.z;
+	back.i = -forward.i * distance;
+	back.j = -forward.j * distance;
+	back.k = -forward.k * distance;
+	if (collision_test_vector(FLAG(_collision_test_structure_bit) | FLAG(_collision_test_front_facing_surfaces_bit),
+		&focus, &back, NONE, &collision))
+	{
+		real kept = collision.t * distance > CAMERA_WALL_MARGIN ?
+			(collision.t * distance - CAMERA_WALL_MARGIN) / distance : 0.0f;
+
+		back.i *= kept;
+		back.j *= kept;
+		back.k *= kept;
+	}
+	position.x = focus.x + back.i;
+	position.y = focus.y + back.j;
+	position.z = focus.z + back.k;
+	playback_camera_set(&position, &forward);
+}
+
+/* behind what the unit is (on foot, or the vehicle it rides): turned
+with it, or, in the behind view once its right stick is touched, flown
+round it (across with the stick's sideways, up to above it and down with
+its up and down), at the left stick's zoom (its up nearer, down further).
+The free camera, following, is this, the sticks its own */
+static void playback_behind_camera(
+	long unit_index,
+	real seconds)
 {
 	struct object_datum *object = object_get(unit_index);
 	long followed = object->object.parent_object_index != NONE ? object->object.parent_object_index : unit_index;
@@ -670,24 +1344,50 @@ static void playback_behind_camera(
 	real_vector3d forward;
 	struct collision_result collision;
 	real yaw, turn;
+	real pitch = CAMERA_PITCH;
+
+	if (playback.view == _replay_view_behind)
+	{
+		real move_x, move_y, turn_x, turn_y, rise;
+
+		playback_sticks(&move_x, &move_y, &turn_x, &turn_y, &rise);
+		if (!playback.behind_orbiting && playback.camera_valid && (turn_x != 0.0f || turn_y != 0.0f))
+		{
+			playback.behind_orbiting = TRUE;
+			playback.behind_pitch = CAMERA_PITCH;
+		}
+		if (playback.behind_orbiting)
+		{
+			playback.yaw -= turn_x * CAMERA_ORBIT_TURN * seconds;
+			playback.behind_pitch = PIN(playback.behind_pitch - turn_y * CAMERA_ORBIT_TURN * seconds,
+				CAMERA_ORBIT_HIGHEST, CAMERA_ORBIT_LOWEST);
+			pitch = playback.behind_pitch;
+		}
+		playback.behind_zoom = PIN(playback.behind_zoom * (real)exp(-move_y * CAMERA_ZOOM_RATE * seconds),
+			CAMERA_ZOOM_NEAREST, CAMERA_ZOOM_FARTHEST);
+		distance *= playback.behind_zoom;
+	}
 
 	object = object_get(followed);
 	object_get_origin(followed, &focus);
 	render_interpolation_object_point(followed, &focus);
 	focus.z += height;
-	/* (eased round behind it) */
+	/* (eased round behind it, unless flown) */
 	yaw = (real)atan2(object->object.forward.j, object->object.forward.i);
 	if (!playback.camera_valid)
 		playback.yaw = yaw;
-	turn = yaw - playback.yaw;
-	while (turn > _pi)
-		turn -= 2.0f * _pi;
-	while (turn < -_pi)
-		turn += 2.0f * _pi;
-	playback.yaw += turn * CAMERA_TURN;
-	forward.i = (real)(cos(playback.yaw) * cos(CAMERA_PITCH));
-	forward.j = (real)(sin(playback.yaw) * cos(CAMERA_PITCH));
-	forward.k = (real)sin(CAMERA_PITCH);
+	if (!playback.behind_orbiting || playback.view != _replay_view_behind)
+	{
+		turn = yaw - playback.yaw;
+		while (turn > _pi)
+			turn -= 2.0f * _pi;
+		while (turn < -_pi)
+			turn += 2.0f * _pi;
+		playback.yaw += turn * CAMERA_TURN;
+	}
+	forward.i = (real)(cos(playback.yaw) * cos(pitch));
+	forward.j = (real)(sin(playback.yaw) * cos(pitch));
+	forward.k = (real)sin(pitch);
 	back.i = -forward.i * distance;
 	back.j = -forward.j * distance;
 	back.k = -forward.k * distance;
@@ -726,14 +1426,35 @@ void network_replay_playback_frame(
 		player = playback.watched != NONE ? player_try_and_get(playback.watched) : NULL;
 	}
 	unit_index = player ? player->unit_index : NONE;
-	if (playback.view == _replay_view_free && playback.camera_valid)
-		playback_free_camera(main_get_seconds_elapsed());
+	playback.first_person = FALSE;
+	/* (a client's recording: watching another of its players, from behind) */
+	if (playback.view == _replay_view_eyes && !playback_eyes_allowed(playback.watched))
+		playback.view = _replay_view_behind;
+	/* (the free camera, until it is flown, is behind's) */
+	if (playback.view == _replay_view_free && playback.camera_valid && playback_free_camera(main_get_seconds_elapsed()))
+		;
 	else if (unit_index == NONE)
 		return;
 	else if (playback.view == _replay_view_eyes)
-		playback_eyes_camera(unit_index);
+	{
+		director_perspective perspective;
+
+		/* (what the player saw: a seat with a third-person camera's view, a
+		Warthog's or a Ghost's, else their own eyes with their arms and
+		weapon, as the director chooses for a player: director.c) */
+		if (director_desired_perspective(unit_index, &perspective) &&
+			object_get(unit_index)->object.parent_object_index != NONE)
+		{
+			playback_seat_camera(unit_index);
+		}
+		else
+		{
+			playback_eyes_camera(unit_index);
+			playback.first_person = TRUE;
+		}
+	}
 	else
-		playback_behind_camera(unit_index);
+		playback_behind_camera(unit_index, main_get_seconds_elapsed());
 }
 
 long network_replay_watched_player(
@@ -745,7 +1466,7 @@ long network_replay_watched_player(
 boolean network_replay_viewing_eyes(
 	void)
 {
-	return playback.playing && playback.view == _replay_view_eyes;
+	return playback.playing && playback.view == _replay_view_eyes && playback.first_person;
 }
 
 struct observer_result const *network_replay_camera(
@@ -754,61 +1475,40 @@ struct observer_result const *network_replay_camera(
 	return playback.playing && playback.camera_valid ? &playback.camera : NULL;
 }
 
-/* a button's name as the controller in hand has it printed: the Switch's
-(its A and B the engine's swapped, as in its menus: xinput_sdl.c's
-menu_buttons_swapped, which a playback is one of; its X and Y where the
-Xbox's Y and X are), the PS5's (or the Xbox's, display.xbox_buttons), else
-the Xbox's */
-static wchar_t const *playback_button_name(
-	short button)
+/* the hints' and the top line's font: the menus' small one (as the overlay's
+small text), else the HUD's */
+static long playback_font(
+	void)
 {
-#if defined(HALO_SWITCH)
-	boolean swapped = config_boolean("controls.nintendo_menu_buttons") != 0;
+	long font_index = tag_loaded(FONT_GROUP_TAG, "ui\\small_ui");
 
-	switch (button)
-	{
-	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_a: return swapped ? L"A" : L"B";
-	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_b: return swapped ? L"B" : L"A";
-	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_x: return L"Y";
-	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_y: return L"X";
-	case _gamepad_binary_button_back: return L"-";
-	}
-#elif defined(HALO_PS5)
-	if (!config_boolean("display.xbox_buttons"))
-	{
-		switch (button)
-		{
-		case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_a: return L"CROSS";
-		case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_b: return L"CIRCLE";
-		case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_x: return L"SQUARE";
-		case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_y: return L"TRIANGLE";
-		case _gamepad_binary_button_back: return L"CREATE";
-		}
-	}
-#endif
-	switch (button)
-	{
-	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_a: return L"A";
-	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_b: return L"B";
-	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_x: return L"X";
-	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_y: return L"Y";
-	case _gamepad_binary_button_back: return L"BACK";
-	}
-	return L"?";
+	return font_index != NONE ? font_index : hud_get_font_index();
 }
 
-/* the line at the bottom: who is watched, the view, the speed and the
-buttons; and with Back held, the scores */
+/* at the top, who is watched, the view and the speed; along the bottom
+edge, on a dark bar, the buttons, with the controller's pictures of them
+(the game's prompts' %a-button and so on: ui_widget.c's
+draw_string_and_hack_in_icons; the Switch's and the PS5's own, swapped as a
+playback's buttons are, hud_hires_tags.c); and with Back held, the scores */
 void network_replay_playback_draw(
 	void)
 {
 	static wchar_t const *const view_names[NUMBER_OF_REPLAY_VIEWS] = { L"BEHIND", L"EYES", L"FREE CAMERA" };
+	static wchar_t const hints[] = L"%a-button/%x-button: PLAYER   %y-button: VIEW   "
+		L"%white-button/%black-button: SPEED   %dpad-left/%dpad-right: SKIP   %back-button: SCORES   %b-button: LEAVE";
+	/* (behind, flown round the player: how to have it turn with them again) */
+	static wchar_t const orbiting_hints[] = L"%a-button/%x-button: PLAYER   %y-button: VIEW   %right-thumb: RESET   "
+		L"%white-button/%black-button: SPEED   %dpad-left/%dpad-right: SKIP   %back-button: SCORES   %b-button: LEAVE";
+	wchar_t const *shown;
 	long font_index;
 	struct font_header *font;
 	real_argb_color color;
+	rectangle2d window;
 	rectangle2d bounds;
+	rectangle2d bar;
 	short height;
-	wchar_t text[192];
+	short width;
+	wchar_t text[64];
 	wchar_t speed[16];
 	struct player_datum *player;
 
@@ -820,10 +1520,12 @@ void network_replay_playback_draw(
 		game_engine_port_rasterize_scores(playback.watched);
 		return;
 	}
-	font_index = hud_get_font_index();
+	font_index = playback_font();
 	if (font_index == NONE)
 		return;
-	if (playback.speed == 0)
+	if (playback.skip_tick != NONE)
+		usnprintf(speed, NUMBEROF(speed) - 1, L"SKIPPING");
+	else if (playback.speed == 0)
 		usnprintf(speed, NUMBEROF(speed) - 1, L"PAUSED");
 	else if (playback.speed == REPLAY_NORMAL_SPEED)
 		speed[0] = 0;
@@ -836,23 +1538,44 @@ void network_replay_playback_draw(
 		usnprintf(text, NUMBEROF(text) - 1, L"REPLAY OVER");
 	else
 	{
-		usnprintf(text, NUMBEROF(text) - 1,
-			L"%.12s   %s   %s\r\n%s/%s: PLAYER   %s: VIEW   UP/DOWN: SPEED   %s: SCORES   %s: LEAVE",
-			playback.view == _replay_view_free || !player ? L"REPLAY" : player->name, view_names[playback.view], speed,
-			playback_button_name(FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_a),
-			playback_button_name(FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_x),
-			playback_button_name(FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_y),
-			playback_button_name(_gamepad_binary_button_back),
-			playback_button_name(FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_b));
+		usnprintf(text, NUMBEROF(text) - 1, L"%.12s   %s   %s",
+			playback.view == _replay_view_free || !player ? L"REPLAY" : player->name, view_names[playback.view], speed);
 	}
 	text[NUMBEROF(text) - 1] = 0;
 	font = font_definition_get(font_index);
 	height = (short)(font->ascending_height + font->descending_height);
 	color = *global_real_argb_white;
-	bounds = render.camera.window_bounds;
-	bounds.y0 = (short)(bounds.y1 - 3 * height - 24);
-	bounds.y1 = (short)(bounds.y1 - 24);
-	/* (draw mode 2: centred) */
+	window = render.camera.window_bounds;
+
+	/* (the top line, centred: draw mode 2) */
+	bounds = window;
+	bounds.y0 = (short)(window.y0 + REPLAY_SCREEN_MARGIN);
+	bounds.y1 = (short)(bounds.y0 + height + 4);
 	draw_string_set_draw_mode(font_index, NONE, 2, 0, &color);
 	rasterizer_draw_unicode_string(&bounds, NULL, NULL, 0, text);
+	if (playback.ended)
+		return;
+	shown = playback.view == _replay_view_behind && playback.behind_orbiting ? orbiting_hints : hints;
+
+	/* (the hints' width, drawn unseen first, then a bar that fits them at
+	the bottom edge, and them on it) */
+	color.alpha = 0.0f;
+	draw_string_set_draw_mode(font_index, NONE, 0, 0, &color);
+	bounds = window;
+	bounds.x1 = (short)(bounds.x0 + 4000);
+	bounds.y0 = (short)(window.y1 - REPLAY_HINT_HEIGHT);
+	draw_string_and_hack_in_icons(&bounds, NULL, NULL, 0, shown, TRUE);
+	width = (short)(draw_string_and_hack_in_icons_port_end_x - window.x0);
+	bar.x0 = (short)((window.x0 + window.x1 - width) / 2 - REPLAY_HINT_PADDING);
+	bar.x1 = (short)(bar.x0 + width + 2 * REPLAY_HINT_PADDING);
+	bar.y1 = (short)(window.y1 - REPLAY_SCREEN_MARGIN / 2);
+	bar.y0 = (short)(bar.y1 - MAX(height, REPLAY_HINT_HEIGHT) - 6);
+	draw_quad(&bar, REPLAY_HINT_BAR_COLOR);
+	color.alpha = 1.0f;
+	draw_string_set_draw_mode(font_index, NONE, 0, 0, &color);
+	bounds.x0 = (short)(bar.x0 + REPLAY_HINT_PADDING);
+	bounds.x1 = (short)(bounds.x0 + 4000);
+	bounds.y0 = (short)(bar.y0 + 3);
+	bounds.y1 = bar.y1;
+	draw_string_and_hack_in_icons(&bounds, NULL, NULL, 0, shown, TRUE);
 }

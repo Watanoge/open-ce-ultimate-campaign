@@ -268,17 +268,60 @@ DELETE (pressed twice), EXPORT (Android) and BACK. A recording shorter than
   listens from too (`sound_manager.c`); no HUD is drawn
   (`interface_draw_screen`). Y goes round three views: behind the player
   watched (or the vehicle they ride), where the frame draws them (render
-  interpolation), turning round behind them, kept this side of walls;
-  through their eyes, where they aim; and a free camera (the left stick
-  moves it, the right one turns it, the triggers take it down and up).
-- **The controls.** A (or the d-pad's right) watches the next player
-  alive, X (or left) the one before; one who dies is watched again when
-  they spawn. The d-pad's up plays faster (2, 4, 8 times) and down slower
-  (a half, a quarter, then a pause: `game_time_set_speed`). Back held
-  shows the scores, the watched player's row as a player's own. B leaves.
-  A line at the bottom says who is watched, the view and the speed.
+  interpolation), turning round behind them, kept this side of walls,
+  until the right stick flies it round them (across, and up to straight
+  above them; the right stick's click turns it with them again), the left
+  stick's up and down taking it nearer and further;
+  what they saw, where they aim: through their eyes with their arms and
+  weapon (`first_person_weapons.c` drawing them as local player 0's), or,
+  in a seat with a third-person camera (a Warthog's, a Ghost's), the
+  game's view from behind it (`following_camera_unit_view`); and a free
+  camera that flies as the game's debug camera does (the left stick moves
+  it level, toward where it looks across the ground, the right one turns
+  it, the left trigger takes it down and the right one up; it follows
+  the player as the view behind them does until one of those is touched,
+  and flies from there; it slides
+  along the level's walls, its scenery and its doors rather than flying
+  through them, `playback_free_camera_move`). A client's
+  recording has only its own players' eyes (those of its own input's
+  records, `_network_replay_own_actions`): Y goes past that view for the
+  others, whom it saw only as a client sees another.
+- **The controls.** A watches the next player alive, X the one before;
+  one who dies is watched again when they spawn. The d-pad's left goes
+  back to the last keyframe (the one before it, within two seconds of
+  one) and its right on to the next (see "Keyframes"). The right
+  shoulder button (RB, the Switch's R, the PS5's R1) plays faster (2, 4,
+  8 times) and the left one slower (a half, a quarter, then a pause:
+  `game_time_set_speed`). Back held shows the scores, the watched
+  player's row as a player's own. B leaves.
+  A line at the top says who is watched, the view and the speed, and a
+  dark bar along the bottom edge shows the buttons, with the controller's
+  own pictures of them (the game's prompts' `%a-button` and so on,
+  `draw_string_and_hack_in_icons`), in the menus' small font.
 - **The end.** The replay's end, or the game's, returns to the main menu
-  four seconds later (`network_game_abort`).
+  four seconds later (`network_game_abort`), unless the d-pad's left
+  goes back first.
+- **Keyframes.** Every 10 seconds of the game, as the playback first
+  reaches them (the first at its start), `playback_keyframe_take` keeps
+  the game as it is in memory, copied in one go and compressed on a
+  thread of its own with zlib's fastest level (the game goes on; the
+  copy and the room it is compressed into, each the size of what is
+  kept, stay for the next replay): the
+  game state's parts in use (`game_state_port_used`) and the variables of
+  the simulation and of the netcode's client that are not in it, which
+  the guest image's linker script gathers into one block
+  (`port/android/guest/guest.ld`'s `.replay_data` and `.replay_bss`: the
+  object files of `source/game`, `objects`, `units`, `items`, `effects`,
+  `physics` and `devices`, the client's in `source/networking`, and the
+  port's network, ragdoll and game mode modules), with where the file's
+  records were. Going back puts one back as a core is loaded
+  (`game_state_port_restore`, its procedures before and after), then the
+  block, then sets right what is this machine's rather than the game's
+  (the host's last message's time, the frame's interpolation, the
+  first-person weapon, the playback's speed). Going on to a keyframe not
+  yet taken plays to it at 8 times (SKIPPING), where it is taken. They
+  take up to 256 MB (a log line says each one's size and how long its
+  compression took); past that, none more are taken.
 
 - **The announcer** speaks to the player watched as to a local player
   (kills, sprees, the respawn countdown: `game_engine.c`'s

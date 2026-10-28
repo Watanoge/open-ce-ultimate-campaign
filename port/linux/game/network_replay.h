@@ -142,11 +142,14 @@ replay plays: the announcer speaks to them (game_engine.c), and the view
 through their eyes draws them as a player's own (render_objects.c) */
 long network_replay_watched_player(void);
 
-/* whether the view is through the watched player's eyes */
+/* whether the view is through the watched player's eyes, first person (not
+a seat's third-person view): their body hidden (render_objects.c), and
+their arms and weapon drawn as local player 0's (first_person_weapons.c,
+render_particles.c) */
 boolean network_replay_viewing_eyes(void);
 
-/* the line at the bottom of the screen: who is watched, and the buttons
-(interface.c) */
+/* the line at the top of the screen (who is watched, the view, the speed)
+and the buttons' bar at the bottom (interface.c) */
 void network_replay_playback_draw(void);
 
 #endif

@@ -356,6 +356,35 @@ void game_state_port_restamp_revert_time(
 	game_state_globals.revert_time = game_time_get();
 }
 
+/* port: the parts of the game state in use, for a replay's keyframes
+(port/linux/game/network_replay_playback.c): its CPU allocations, from its
+start, and its GPU ones, at its end */
+void game_state_port_used(
+	void **cpu,
+	long *cpu_size,
+	void **gpu,
+	long *gpu_size)
+{
+	*cpu = game_state_globals.base_address;
+	*cpu_size = game_state_globals.cpu_allocation_size;
+	*gpu = (byte *)game_state_globals.base_address + GAME_STATE_SIZE - game_state_globals.gpu_allocation_size;
+	*gpu_size = game_state_globals.gpu_allocation_size;
+}
+
+/* port: a keyframe's game state put back, as a core is loaded
+(game_state_load_core): the procedures before, read (which writes the
+parts game_state_port_used gave, and what else it keeps), and the
+procedures after */
+void game_state_port_restore(
+	void (*read)(void *context),
+	void *context)
+{
+	game_state_note_event("replay keyframe");
+	game_state_call_before_load_procs();
+	read(context);
+	game_state_call_after_load_procs();
+}
+
 void game_state_revert(
 	void)
 {

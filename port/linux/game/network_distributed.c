@@ -2909,6 +2909,28 @@ void network_distributed_own_actions(
 		DISTRIBUTED_INPUT_HISTORY);
 }
 
+void network_distributed_replay_restored(
+	void)
+{
+	if (distributed_host_time != NONE)
+		distributed_host_time_received = system_milliseconds();
+	distributed_host_silent_since = 0;
+}
+
+short network_distributed_own_actions_player(
+	byte const *data,
+	long size)
+{
+	struct distributed_relayed_action relayed;
+
+	if (size < (long)sizeof(long) ||
+		!distributed_relayed_action_read(data + sizeof(long), data + size, &relayed))
+	{
+		return NONE;
+	}
+	return (short)relayed.player_index;
+}
+
 static void distributed_client_send_inputs(
 	void)
 {

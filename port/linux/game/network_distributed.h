@@ -276,6 +276,13 @@ boolean distributed_full_detail_to_clients(void);
 (network_replay.h's _network_replay_own_actions), given its player as the
 host's relayed input is */
 void network_distributed_own_actions(byte const *data, long size);
+/* (a replay's playback) the player (an absolute index) whose input such a
+record is, NONE if it cannot be read */
+short network_distributed_own_actions_player(byte const *data, long size);
+/* (a replay's playback) a keyframe put back: the times kept by this
+machine's clock (the host's last message's) are now's again, not the
+keyframe's */
+void network_distributed_replay_restored(void);
 /* (the host) how long a message takes that client and its answer back, in
 ticks (and its jitter), as its players' input messages tell */
 real distributed_machine_round_trip_ticks(long machine_index);

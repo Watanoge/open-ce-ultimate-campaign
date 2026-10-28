@@ -79,6 +79,7 @@ void hud_hires_tags_loaded(long scenario_index);
 void hud_hires_tags_unloaded(void);
 long hud_hires_asset_at(unsigned long address, long width, long height);
 struct bitmap_data const *hud_hires_sprite_bitmap(struct bitmap_data const *bitmap, short sequence_index);
+boolean network_replay_playing(void);
 
 #include "custom_edition_hud_buttons.h"
 
@@ -316,9 +317,10 @@ struct bitmap_data const *hud_hires_sprite_bitmap(
 	struct bitmap_data const *bitmap,
 	short sequence_index)
 {
-	/* (the message icons by where they are drawn: a game's text by its buttons' places, the menus' and the carnage
-	report's as the menus' buttons are: game_engine_showing_postgame; xinput_sdl.c swaps them there too) */
-	boolean gameplay = !hud_hires_main_menu_loaded && !game_engine_showing_postgame();
+	/* (the message icons by where they are drawn: a game's text by its buttons' places, the menus', the carnage
+	report's and a replay's as the menus' buttons are: game_engine_showing_postgame, network_replay_playing;
+	xinput_sdl.c swaps them there too) */
+	boolean gameplay = !hud_hires_main_menu_loaded && !game_engine_showing_postgame() && !network_replay_playing();
 	long index;
 
 	for (index = 0; index < hires_sprite_bitmap_count; index++)
