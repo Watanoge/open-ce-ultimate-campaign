@@ -548,6 +548,12 @@ or swapped once out), or NONE */
 static long forced_variant = NONE;
 /* the last actor_place left out an infection form (randomizer_actor_variant) */
 static int placement_left_out;
+/* a campaign profile's level: the actor variant randomizer_actor_variant
+swapped one for last, and the slot (its type and rank) it was swapped in,
+whose loadout it is given (randomizer_enemy_weapon) until it is placed */
+static long campaign_swapped_variant = NONE;
+static int campaign_swapped_type;
+static int campaign_swapped_rank;
 /* the level's infection forms so far, for the log: swapped for other
 actors, left out, and placed as infection forms (the pool's choice) */
 static long pods_swapped;
@@ -4105,6 +4111,7 @@ void randomizer_tags_unloaded(void)
 	tag_injector_tags_unloaded();
 	tag_multiplayer_level_unloaded();
 	tag_campaign_level_unloaded();
+	campaign_swapped_variant = NONE;
 	custom_root_count = 0;
 	custom_profile = NONE;
 	donors_close();
@@ -4463,7 +4470,9 @@ long randomizer_actor_variant(long original, long encounter_index, long squad_in
 	}
 	seed = placement_seed(encounter_block, squad_index, location_index, &location->position.x);
 	{
-		long picked = campaign ? tag_campaign_actor_variant(original, (short)variant_type(original), ally, seed) :
+		int type = variant_type(original);
+		int rank = variant_rank(type, tag_get_name(original));
+		long picked = campaign ? tag_campaign_actor_variant(original, (short)type, (short)rank, ally, seed) :
 			pool_pick(variant_pool, variant_count, seed);
 
 		/* (a campaign profile's level leaves this one as it is) */
@@ -4483,6 +4492,12 @@ long randomizer_actor_variant(long original, long encounter_index, long squad_in
 			}
 			else
 				pods_swapped++;
+		}
+		if (campaign)
+		{
+			campaign_swapped_variant = picked;
+			campaign_swapped_type = type;
+			campaign_swapped_rank = rank;
 		}
 
 		return picked;
@@ -4534,6 +4549,7 @@ void randomizer_actor_placed(long actor_index, long requested)
 {
 	struct actor_datum *actor;
 
+	campaign_swapped_variant = NONE;
 	if (!state || !loaded || actor_index == NONE)
 		return;
 	actor = actor_get(actor_index);
@@ -4822,13 +4838,27 @@ long randomizer_enemy_weapon(long weapon_definition, long unit_index, long attem
 
 	if (loaded && tag_campaign_level_playing())
 	{
+		int type;
+		int rank;
+
 		if (attempt > 0)
 			return attempt == 1 ? weapon_definition : NONE;
 		unit = unit_try_and_get(unit_index);
 		if (!unit)
 			return weapon_definition;
+		/* (the slot it was swapped in, else its own) */
+		if (variant_index != NONE && variant_index == campaign_swapped_variant)
+		{
+			type = campaign_swapped_type;
+			rank = campaign_swapped_rank;
+		}
+		else
+		{
+			type = variant_type(variant_index);
+			rank = variant_index != NONE ? variant_rank(type, tag_get_name(variant_index)) : RANK_ANY;
+		}
 		seed = placement_seed(weapon_definition, 0, attempt, &unit->object.position.x);
-		return tag_campaign_enemy_weapon(variant_index, weapon_definition, unit_index, seed);
+		return tag_campaign_enemy_weapon((short)type, (short)rank, weapon_definition, unit_index, seed);
 	}
 	if (!loaded || !current.weapons || actor_weapon_choice.count <= 0 || attempt > 0)
 		return attempt == 0 || (attempt == 1 && loaded && current.weapons) ? weapon_definition : NONE;

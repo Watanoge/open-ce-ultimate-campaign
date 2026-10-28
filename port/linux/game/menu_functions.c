@@ -5614,9 +5614,9 @@ profile's weapons on and ORIGINAL each turned on or off), made with NEW
 PROFILE and deleted with DELETE PROFILE, twice. CAMPAIGN PROFILES lists the
 campaign profiles (port_tag_mp_profiles.c's, tag_campaign.c) the same way:
 each a profile whose weapons and AI a campaign level plays, its WEAPONS'
-and ENEMIES' lists how (ROTATION, REPLACEMENT, and MANUAL's choices for each
-of the campaign's weapons or enemies), and ENEMY LOADOUT the weapons each of
-the profile's AI may hold. */
+and ENEMIES' lists how (ROTATION, REPLACEMENT, MANUAL's choices for each of
+the campaign's weapons, and each of its enemies: its ranks, if it has any,
+each with its REPLACEMENT and, if it holds weapons, its LOADOUT). */
 
 #define TAG_ROWS MOD_ROWS
 #define TAG_PROFILE_NAME 24
@@ -5647,13 +5647,15 @@ enum
 	_tags_list_mp_profile,
 	_tags_list_mp_manual,
 	/* CAMPAIGN PROFILES, one's settings, its WEAPONS and ENEMIES, MANUAL's
-	choices for one of the campaign's, ENEMY LOADOUT's AI and one's weapons */
+	choices for one of the campaign's weapons or enemy slots, an enemy's
+	ranks, a slot's REPLACEMENT and LOADOUT, and LOADOUT's weapons */
 	_tags_list_campaign_profiles,
 	_tags_list_campaign_profile,
 	_tags_list_campaign_weapons,
 	_tags_list_campaign_enemies,
 	_tags_list_campaign_manual,
-	_tags_list_campaign_loadouts,
+	_tags_list_campaign_ranks,
+	_tags_list_campaign_slot,
 	_tags_list_campaign_loadout,
 	NUMBER_OF_TAGS_LISTS
 };
@@ -5717,8 +5719,7 @@ enum
 };
 
 /* a campaign profile's rows, and its WEAPONS' and ENEMIES' (tags_campaign_row_of:
-MANUAL's a row each of the campaign's weapons or enemies, ENEMIES' ENEMY
-LOADOUT last) */
+a row each of the campaign's weapons, with MANUAL, or of its enemies) */
 enum
 {
 	_tags_campaign_name,
@@ -5732,8 +5733,7 @@ enum
 {
 	_tags_campaign_row_rotation,
 	_tags_campaign_row_replace,
-	_tags_campaign_row_stock,
-	_tags_campaign_row_loadout
+	_tags_campaign_row_stock
 };
 
 /* a multiplayer profile's settings' rows (tags_mp_setting_of: MANUAL's
@@ -5841,16 +5841,16 @@ static struct
 	short mp_weapon;
 	long mp_deleting;
 	/* the campaign profile shown; whether its ENEMIES are shown (else its
-	WEAPONS); the campaign's weapon or enemy MANUAL's list is of; the
-	profile's AI (its tag) ENEMY LOADOUT's weapons are of; and DELETE
-	PROFILE pressed once for that profile (NONE) */
+	WEAPONS); the campaign's weapon or enemy shown, and the enemy's rank (0:
+	one without ranks); and DELETE PROFILE pressed once for that profile
+	(NONE) */
 	long campaign_profile;
 	boolean campaign_enemies;
 	short campaign_stock;
-	long campaign_ai;
+	short campaign_rank;
 	long campaign_deleting;
 } tags_screen = { 0, NONE, NONE, NONE, FALSE, FALSE, "", NONE, NONE, { 0 }, { 0 }, _tags_naming_none, { 0 }, NONE, NONE,
-	NONE, "", 0, "", { { 0 } }, "", { FALSE }, NONE, 0, NONE, NONE, FALSE, 0, NONE, NONE };
+	NONE, "", 0, "", { { 0 } }, "", { FALSE }, NONE, 0, NONE, NONE, FALSE, 0, 0, NONE };
 
 static void tags_message(char const *text)
 {
@@ -6366,7 +6366,7 @@ static long tags_campaign_tag(unsigned long group, long index)
 }
 
 /* the WEAPONS' or ENEMIES' shown: its settings' keys, its table's, and how
-many of the campaign's it has a row for with MANUAL */
+many of the campaign's weapons or enemies it has a row for */
 static char const *tags_campaign_key(boolean replace)
 {
 	if (tags_screen.campaign_enemies)
@@ -6379,50 +6379,59 @@ static char const *tags_campaign_section(void)
 	return tags_screen.campaign_enemies ? "enemies" : "weapons";
 }
 
-static short tags_campaign_stock_count(void)
-{
-	return tags_screen.campaign_enemies ? TAG_CAMPAIGN_STOCK_ENEMIES : TAG_CAMPAIGN_PICKUP_WEAPONS;
-}
-
-static char const *tags_campaign_stock_key(short stock)
-{
-	return tags_screen.campaign_enemies ? tag_campaign_enemy_key(stock) : tag_campaign_weapon_key(stock);
-}
-
-static char const *tags_campaign_stock_name(short stock)
-{
-	return tags_screen.campaign_enemies ? tag_campaign_enemy_name(stock) : tag_campaign_weapon_name(stock);
-}
-
 static boolean tags_campaign_manual(void)
 {
 	return !strcmp(port_tag_campaign_profiles_option(tags_screen.campaign_profile, tags_campaign_key(TRUE)), "manual");
 }
 
-/* the WEAPONS' or ENEMIES' rows: ROTATION, REPLACEMENT, MANUAL's one for
-each of the campaign's, and ENEMIES' ENEMY LOADOUT: how many, and of a row
-its kind and (of MANUAL's) the campaign's weapon or enemy */
+/* (the weapons' rows with MANUAL alone; the enemies' always, for their
+loadouts) */
+static short tags_campaign_stock_count(void)
+{
+	if (tags_screen.campaign_enemies)
+		return TAG_CAMPAIGN_STOCK_ENEMIES;
+	return tags_campaign_manual() ? TAG_CAMPAIGN_STOCK_WEAPONS : 0;
+}
+
+/* the key and name of what MANUAL's list is of: the campaign's weapon, or
+the enemy's slot (its rank's) */
+static char const *tags_campaign_stock_key(void)
+{
+	static char key[64];
+
+	if (!tags_screen.campaign_enemies)
+		return tag_campaign_weapon_key(tags_screen.campaign_stock);
+	tag_campaign_slot_key(tags_screen.campaign_stock, tags_screen.campaign_rank, key, sizeof(key));
+	return key;
+}
+
+static char const *tags_campaign_stock_name(void)
+{
+	static char name[64];
+
+	if (!tags_screen.campaign_enemies)
+		return tag_campaign_weapon_name(tags_screen.campaign_stock);
+	tag_campaign_slot_name(tags_screen.campaign_stock, tags_screen.campaign_rank, name, sizeof(name));
+	return name;
+}
+
+/* the WEAPONS' or ENEMIES' rows: ROTATION, REPLACEMENT, and one for each of
+the campaign's weapons (with MANUAL) or enemies: how many, and of a row its
+kind and (of the campaign's) which */
 static short tags_campaign_row_count(void)
 {
-	return (short)(2 + (tags_campaign_manual() ? tags_campaign_stock_count() : 0) +
-		(tags_screen.campaign_enemies ? 1 : 0));
+	return (short)(2 + tags_campaign_stock_count());
 }
 
 static short tags_campaign_row_of(short place, short *stock)
 {
-	short stocks = tags_campaign_manual() ? tags_campaign_stock_count() : 0;
-
 	*stock = NONE;
 	if (place == 0)
 		return _tags_campaign_row_rotation;
 	if (place == 1)
 		return _tags_campaign_row_replace;
-	if (place - 2 < stocks)
-	{
-		*stock = (short)(place - 2);
-		return _tags_campaign_row_stock;
-	}
-	return _tags_campaign_row_loadout;
+	*stock = (short)(place - 2);
+	return _tags_campaign_row_stock;
 }
 
 /* a ROTATION's or REPLACEMENT's choice */
@@ -6475,6 +6484,50 @@ static void tags_campaign_value_step(boolean replace, short step)
 		tags_campaign_key(replace), choices[(tags_campaign_value(replace) + step + count) % count].value));
 }
 
+/* the slots' list of an enemy with ranks (each a rank), and a slot's rows
+(REPLACEMENT, LOADOUT) */
+enum
+{
+	_tags_campaign_slot_replace,
+	_tags_campaign_slot_loadout,
+	NUMBER_OF_TAGS_CAMPAIGN_SLOT_ROWS
+};
+
+/* how many of a slot's tables' tags are chosen for it */
+static long tags_campaign_slot_chosen(short enemy, short rank, char const *section)
+{
+	char key[64];
+
+	tag_campaign_slot_key(enemy, rank, key, sizeof(key));
+	return port_tag_campaign_profiles_list_count(tags_screen.campaign_profile, section, key);
+}
+
+/* what a slot's row says: its REPLACEMENT's and LOADOUT's choices (an
+enemy's: its ranks', all of them) */
+static void tags_campaign_slot_state(short enemy, short rank, char *state, size_t state_size)
+{
+	long replaced = 0;
+	long armed = 0;
+	short count = tag_campaign_enemy_rank_count(enemy);
+	short index;
+
+	for (index = 0; index < MAX(1, count); index++)
+	{
+		short each = count ? tag_campaign_enemy_rank(enemy, index) : 0;
+
+		if (rank != NONE && each != rank && count)
+			continue;
+		replaced += tags_campaign_slot_chosen(enemy, each, "enemies");
+		armed += tags_campaign_slot_chosen(enemy, each, "loadout");
+	}
+	if (!replaced && !armed)
+		snprintf(state, state_size, "AS IT IS");
+	else if (!tag_campaign_enemy_armed(enemy) || !armed)
+		snprintf(state, state_size, "%ld AI", replaced);
+	else
+		snprintf(state, state_size, "%ld AI, %ld WEAPONS", replaced, armed);
+}
+
 /* MANUAL's list's row: ORIGINAL (0), or the profile's weapon's or AI's path
 and the name it is shown by */
 static char const *tags_campaign_manual_path(short place, char *shown, size_t shown_size)
@@ -6483,7 +6536,7 @@ static char const *tags_campaign_manual_path(short place, char *shown, size_t sh
 
 	if (place == 0)
 	{
-		snprintf(shown, shown_size, "ORIGINAL (LEVEL'S %s)", tags_campaign_stock_name(tags_screen.campaign_stock));
+		snprintf(shown, shown_size, "ORIGINAL (LEVEL'S %s)", tags_campaign_stock_name());
 		return "original";
 	}
 	tag = tags_campaign_tag(tags_screen.campaign_enemies ? 'actv' : 'weap', place - 1);
@@ -6500,7 +6553,7 @@ static void tags_campaign_manual_toggle(short place)
 {
 	char shown[ROW_TEXT_LENGTH];
 	char const *path = tags_campaign_manual_path(place, shown, sizeof(shown));
-	char const *key = tags_campaign_stock_key(tags_screen.campaign_stock);
+	char const *key = tags_campaign_stock_key();
 
 	if (!path)
 		return;
@@ -6509,13 +6562,7 @@ static void tags_campaign_manual_toggle(short place)
 		path)));
 }
 
-/* the AI ENEMY LOADOUT's weapons are of: its path (its loadout's key) */
-static char const *tags_campaign_ai_path(void)
-{
-	return port_tag_profiles_tag_name(tags_campaign_base(), tags_screen.campaign_ai);
-}
-
-/* ENEMY LOADOUT's weapons of an AI: ORIGINAL (its own), the profile's
+/* LOADOUT's weapons of the slot shown: ORIGINAL (its own), the profile's
 weapons on, then the campaign's (stock:<key>): how many, and of one its
 value and the name it is shown by */
 static long tags_campaign_loadout_count(void)
@@ -6562,9 +6609,9 @@ static void tags_campaign_loadout_toggle(short place)
 {
 	char value[256];
 	char shown[ROW_TEXT_LENGTH];
-	char const *key = tags_campaign_ai_path();
+	char const *key = tags_campaign_stock_key();
 
-	if (!tags_campaign_loadout_choice(place, value, sizeof(value), shown, sizeof(shown)) || !key[0])
+	if (!tags_campaign_loadout_choice(place, value, sizeof(value), shown, sizeof(shown)))
 		return;
 	tags_campaign_written(port_tag_campaign_profiles_list_set(tags_screen.campaign_profile, "loadout", key, value,
 		!port_tag_campaign_profiles_list_has(tags_screen.campaign_profile, "loadout", key, value)));
@@ -6615,8 +6662,10 @@ static short tags_count(void)
 		return tags_campaign_row_count();
 	case _tags_list_campaign_manual:
 		return (short)MIN(1 + tags_campaign_tag_count(tags_screen.campaign_enemies ? 'actv' : 'weap'), 0x7FFF);
-	case _tags_list_campaign_loadouts:
-		return (short)MIN(tags_campaign_tag_count('actv'), 0x7FFF);
+	case _tags_list_campaign_ranks:
+		return tag_campaign_enemy_rank_count(tags_screen.campaign_stock);
+	case _tags_list_campaign_slot:
+		return NUMBER_OF_TAGS_CAMPAIGN_SLOT_ROWS;
 	case _tags_list_campaign_loadout:
 		return (short)MIN(tags_campaign_loadout_count(), 0x7FFF);
 	default:
@@ -6979,21 +7028,23 @@ static void tags_row_text(short place, char *name, size_t name_size, char *state
 			snprintf(name, name_size, "REPLACEMENT");
 			snprintf(state, state_size, "%s", tags_campaign_replaces[tags_campaign_value(TRUE)].shown);
 			break;
-		case _tags_campaign_row_stock:
-		{
-			long chosen = port_tag_campaign_profiles_list_count(tags_screen.campaign_profile, tags_campaign_section(),
-				tags_campaign_stock_key(stock));
-
-			snprintf(name, name_size, "  %s", tags_campaign_stock_name(stock));
-			if (chosen)
-				snprintf(state, state_size, "%ld CHOSEN", chosen);
-			else
-				snprintf(state, state_size, "AS IT IS");
-			break;
-		}
 		default:
-			snprintf(name, name_size, "ENEMY LOADOUT");
-			snprintf(state, state_size, "%ld AI", tags_campaign_tag_count('actv'));
+			if (tags_screen.campaign_enemies)
+			{
+				snprintf(name, name_size, "  %s", tag_campaign_enemy_name(stock));
+				tags_campaign_slot_state(stock, NONE, state, state_size);
+			}
+			else
+			{
+				long chosen = port_tag_campaign_profiles_list_count(tags_screen.campaign_profile, "weapons",
+					tag_campaign_weapon_key(stock));
+
+				snprintf(name, name_size, "  %s", tag_campaign_weapon_name(stock));
+				if (chosen)
+					snprintf(state, state_size, "%ld CHOSEN", chosen);
+				else
+					snprintf(state, state_size, "AS IT IS");
+			}
 			break;
 		}
 		break;
@@ -7005,21 +7056,32 @@ static void tags_row_text(short place, char *name, size_t name_size, char *state
 
 		upper_copy(name, name_size, shown);
 		snprintf(state, state_size, "%s", path && port_tag_campaign_profiles_list_has(tags_screen.campaign_profile,
-			tags_campaign_section(), tags_campaign_stock_key(tags_screen.campaign_stock), path) ? "ON" : "OFF");
+			tags_campaign_section(), tags_campaign_stock_key(), path) ? "ON" : "OFF");
 		break;
 	}
-	case _tags_list_campaign_loadouts:
+	case _tags_list_campaign_ranks:
 	{
-		long tag = tags_campaign_tag('actv', place);
-		long chosen = tag == NONE ? 0 : port_tag_campaign_profiles_list_count(tags_screen.campaign_profile, "loadout",
-			port_tag_profiles_tag_name(tags_campaign_base(), tag));
+		short rank = tag_campaign_enemy_rank(tags_screen.campaign_stock, place);
 
-		if (tag != NONE)
-			upper_copy(name, name_size, tags_tag_shown(tags_campaign_base(), tag));
-		if (chosen)
+		snprintf(name, name_size, "%s", tag_campaign_rank_name(rank));
+		tags_campaign_slot_state(tags_screen.campaign_stock, rank, state, state_size);
+		break;
+	}
+	case _tags_list_campaign_slot:
+	{
+		boolean replace = place == _tags_campaign_slot_replace;
+		long chosen = tags_campaign_slot_chosen(tags_screen.campaign_stock, tags_screen.campaign_rank,
+			replace ? "enemies" : "loadout");
+
+		snprintf(name, name_size, "%s", replace ? "REPLACEMENT" : "LOADOUT");
+		if (replace && !tags_campaign_manual())
+			snprintf(state, state_size, "RANDOM");
+		else if (!replace && !tag_campaign_enemy_armed(tags_screen.campaign_stock))
+			snprintf(state, state_size, "NO WEAPONS");
+		else if (chosen)
 			snprintf(state, state_size, "%ld CHOSEN", chosen);
 		else
-			snprintf(state, state_size, "ITS OWN");
+			snprintf(state, state_size, replace ? "AS IT IS" : "ITS OWN");
 		break;
 	}
 	case _tags_list_campaign_loadout:
@@ -7031,7 +7093,7 @@ static void tags_row_text(short place, char *name, size_t name_size, char *state
 			break;
 		snprintf(name, name_size, "%s", shown);
 		snprintf(state, state_size, "%s", port_tag_campaign_profiles_list_has(tags_screen.campaign_profile, "loadout",
-			tags_campaign_ai_path(), value) ? "ON" : "OFF");
+			tags_campaign_stock_key(), value) ? "ON" : "OFF");
 		break;
 	}
 	default:
@@ -7417,7 +7479,7 @@ static void tags_details_text(short place, char *title, size_t title_size, char 
 			break;
 		default:
 			snprintf(text, text_size, "How the level's enemies are swapped for the profile's AI, and the weapons "
-				"those AI hold (ENEMY LOADOUT).\n \nA opens them.");
+				"each kind and rank of them holds (its LOADOUT).\n \nA opens them.");
 			break;
 		}
 		break;
@@ -7438,19 +7500,24 @@ static void tags_details_text(short place, char *title, size_t title_size, char 
 		case _tags_campaign_row_replace:
 			if (enemies)
 				snprintf(text, text_size, "How the level's enemies are swapped:\nRANDOM: any of the profile's AI, each "
-					"placed (your allies stay as they are).\nMANUAL: the AI chosen for each kind of enemy.\n \nLeft and "
-					"right choose.");
+					"placed (your allies stay as they are).\nMANUAL: the AI chosen for each enemy (and rank) below.\n \n"
+					"Left and right choose.");
 			else
-				snprintf(text, text_size, "How the level's weapons are swapped:\nRANDOM: any of the profile's weapons, "
-					"each placed.\nMANUAL: the weapons chosen for each of the campaign's.\n \nLeft and right choose.");
-			break;
-		case _tags_campaign_row_stock:
-			snprintf(text, text_size, "The %s that take the place of the level's %s, one at random each placed. None "
-				"chosen: it stays as it is.\n \nA lists them.", enemies ? "AI" : "weapons", tags_campaign_stock_name(stock));
+				snprintf(text, text_size, "How the level's weapons, lying in it or held by its AI, are swapped:\nRANDOM: "
+					"any of the profile's weapons, each placed.\nMANUAL: the weapons chosen for each of the campaign's."
+					"\n \nLeft and right choose.");
 			break;
 		default:
-			snprintf(text, text_size, "The weapons each of the profile's AI may hold: one of those chosen for it that "
-				"it can hold, at random. None chosen: its own.\n \nA lists the AI.");
+			if (!enemies)
+				snprintf(text, text_size, "The weapons that take the place of the level's %s, lying in it or held by "
+					"its AI (who keep it when they cannot hold them), one at random each placed. None chosen: it stays "
+					"as it is.\n \nA lists them.", tag_campaign_weapon_name(stock));
+			else if (tag_campaign_enemy_rank_count(stock))
+				snprintf(text, text_size, "The level's %ss, each rank its own: the AI that take its place, and the "
+					"weapons it holds.\n \nA lists its ranks.", tag_campaign_enemy_name(stock));
+			else
+				snprintf(text, text_size, "The AI that take the place of the level's %ss%s.\n \nA opens them.",
+					tag_campaign_enemy_name(stock), tag_campaign_enemy_armed(stock) ? ", and the weapons it holds" : "");
 			break;
 		}
 		break;
@@ -7459,34 +7526,42 @@ static void tags_details_text(short place, char *title, size_t title_size, char 
 	{
 		char shown[ROW_TEXT_LENGTH];
 
-		snprintf(title, title_size, "%s", tags_campaign_stock_name(tags_screen.campaign_stock));
+		snprintf(title, title_size, "%s", tags_campaign_stock_name());
 		tags_campaign_manual_path(place, shown, sizeof(shown));
 		snprintf(text, text_size, "On: %s may take the place of the level's %s, one of those on at random each "
 			"placed.\n \nA, left or right turns it on or off.", place == 0 ? "the level's own" : shown,
-			tags_campaign_stock_name(tags_screen.campaign_stock));
+			tags_campaign_stock_name());
 		break;
 	}
-	case _tags_list_campaign_loadouts:
+	case _tags_list_campaign_ranks:
 	{
-		long tag = tags_campaign_tag('actv', place);
+		char name[64];
 
-		if (place == NONE || tag == NONE)
-		{
-			snprintf(title, title_size, "No AI");
-			snprintf(text, text_size, "The profile has no AI on.");
-			break;
-		}
-		snprintf(title, title_size, "%s", tags_tag_shown(tags_campaign_base(), tag));
-		snprintf(text, text_size, "The weapons it may hold, one at random that its unit can hold (its own when none "
-			"chosen, or none it can).\n \nA lists them.");
+		tag_campaign_slot_name(tags_screen.campaign_stock, tag_campaign_enemy_rank(tags_screen.campaign_stock, place),
+			name, sizeof(name));
+		snprintf(title, title_size, "%s", name);
+		snprintf(text, text_size, "The AI that take the place of the level's %ss%s.\n \nA opens them.", name,
+			tag_campaign_enemy_armed(tags_screen.campaign_stock) ? ", and the weapons they hold" : "");
 		break;
 	}
+	case _tags_list_campaign_slot:
+		snprintf(title, title_size, "%s", tags_campaign_stock_name());
+		if (place == _tags_campaign_slot_replace)
+			snprintf(text, text_size, "%s", tags_campaign_manual() ? "The AI that take its place, one of those on at "
+				"random each placed. None chosen: it stays as it is.\n \nA lists them." : "ENEMIES' REPLACEMENT is "
+				"RANDOM: any of the profile's AI takes its place. MANUAL chooses them here.");
+		else if (!tag_campaign_enemy_armed(tags_screen.campaign_stock))
+			snprintf(text, text_size, "It holds no weapons a loadout can choose.");
+		else
+			snprintf(text, text_size, "The weapons it holds (it, or the AI that took its place), one of those on that "
+				"it can hold, at random. None chosen: its own, swapped as WEAPONS says.\n \nA lists them.");
+		break;
 	case _tags_list_campaign_loadout:
 	{
 		char value[256];
 		char shown[ROW_TEXT_LENGTH];
 
-		snprintf(title, title_size, "%s", tags_tag_shown(tags_campaign_base(), tags_screen.campaign_ai));
+		snprintf(title, title_size, "%s", tags_campaign_stock_name());
 		tags_campaign_loadout_choice(place, value, sizeof(value), shown, sizeof(shown));
 		snprintf(text, text_size, "On: it may hold %s%s.\n \nA, left or right turns it on or off.",
 			place == 0 ? "its own weapon" : shown,
@@ -7572,7 +7647,7 @@ static boolean tags_screen_reset(boolean opening)
 	tags_screen.campaign_profile = NONE;
 	tags_screen.campaign_enemies = FALSE;
 	tags_screen.campaign_stock = 0;
-	tags_screen.campaign_ai = NONE;
+	tags_screen.campaign_rank = 0;
 	tags_screen.campaign_deleting = NONE;
 	tags_screen.message[0] = 0;
 	tags_screen.shown[0] = 0;
@@ -7973,20 +8048,13 @@ static boolean tags_choose(struct widget_instance *widget)
 		case _tags_campaign_row_replace:
 			tags_campaign_value_step(TRUE, 1);
 			break;
-		case _tags_campaign_row_stock:
-			tags_screen.campaign_stock = stock;
-			ui_play_audio_feedback_sound(SOUND_FORWARD);
-			tags_list_open(list, _tags_list_campaign_manual, 0);
-			break;
 		default:
-			if (!tags_campaign_tag_count('actv'))
-			{
-				tags_message("The profile has no AI on.");
-				ui_play_audio_feedback_sound(SOUND_ERROR);
-				break;
-			}
+			/* (a weapon's choices; an enemy's ranks, else its one slot) */
+			tags_screen.campaign_stock = stock;
+			tags_screen.campaign_rank = 0;
 			ui_play_audio_feedback_sound(SOUND_FORWARD);
-			tags_list_open(list, _tags_list_campaign_loadouts, 0);
+			tags_list_open(list, !tags_screen.campaign_enemies ? _tags_list_campaign_manual :
+				tag_campaign_enemy_rank_count(stock) ? _tags_list_campaign_ranks : _tags_list_campaign_slot, 0);
 			break;
 		}
 		break;
@@ -7994,12 +8062,27 @@ static boolean tags_choose(struct widget_instance *widget)
 	case _tags_list_campaign_manual:
 		tags_campaign_manual_toggle(place);
 		break;
-	case _tags_list_campaign_loadouts:
-		tags_screen.campaign_ai = tags_campaign_tag('actv', place);
-		if (tags_screen.campaign_ai == NONE)
-			break;
+	case _tags_list_campaign_ranks:
+		tags_screen.campaign_rank = tag_campaign_enemy_rank(tags_screen.campaign_stock, place);
 		ui_play_audio_feedback_sound(SOUND_FORWARD);
-		tags_list_open(list, _tags_list_campaign_loadout, 0);
+		tags_list_open(list, _tags_list_campaign_slot, 0);
+		break;
+	case _tags_list_campaign_slot:
+		if (place == _tags_campaign_slot_replace && !tags_campaign_manual())
+		{
+			tags_message("ENEMIES' REPLACEMENT is RANDOM: MANUAL chooses each enemy's AI.");
+			ui_play_audio_feedback_sound(SOUND_ERROR);
+			break;
+		}
+		if (place == _tags_campaign_slot_loadout && !tag_campaign_enemy_armed(tags_screen.campaign_stock))
+		{
+			tags_message("It holds no weapons a loadout can choose.");
+			ui_play_audio_feedback_sound(SOUND_ERROR);
+			break;
+		}
+		ui_play_audio_feedback_sound(SOUND_FORWARD);
+		tags_list_open(list, place == _tags_campaign_slot_replace ? _tags_list_campaign_manual :
+			_tags_list_campaign_loadout, 0);
 		break;
 	case _tags_list_campaign_loadout:
 		tags_campaign_loadout_toggle(place);
@@ -8191,10 +8274,14 @@ static boolean tags_back(struct widget_instance *widget, boolean *widget_deleted
 	case _tags_list_campaign_weapons:
 	case _tags_list_campaign_enemies: up = _tags_list_campaign_profile; break;
 	case _tags_list_campaign_manual:
-		up = tags_screen.campaign_enemies ? _tags_list_campaign_enemies : _tags_list_campaign_weapons;
+		up = tags_screen.campaign_enemies ? _tags_list_campaign_slot : _tags_list_campaign_weapons;
 		break;
-	case _tags_list_campaign_loadouts: up = _tags_list_campaign_enemies; break;
-	case _tags_list_campaign_loadout: up = _tags_list_campaign_loadouts; break;
+	case _tags_list_campaign_ranks: up = _tags_list_campaign_enemies; break;
+	case _tags_list_campaign_slot:
+		up = tag_campaign_enemy_rank_count(tags_screen.campaign_stock) ? _tags_list_campaign_ranks :
+			_tags_list_campaign_enemies;
+		break;
+	case _tags_list_campaign_loadout: up = _tags_list_campaign_slot; break;
 	default:
 		ui_widget_port_go_back(widget);
 		*widget_deleted = TRUE;
@@ -8249,7 +8336,8 @@ static short tags_buttons(void)
 	case _tags_list_campaign_weapons:
 	case _tags_list_campaign_enemies:
 	case _tags_list_campaign_manual:
-	case _tags_list_campaign_loadouts:
+	case _tags_list_campaign_ranks:
+	case _tags_list_campaign_slot:
 	case _tags_list_campaign_loadout:
 		return _tags_buttons_campaign_profile;
 	default:
@@ -8729,15 +8817,12 @@ static void tags_update(struct widget_instance *list)
 		tags_list_show(list, _tags_list_mp_profile);
 	if (tags_screen.mp_deleting != NONE && tags_buttons() != _tags_buttons_mp_profile)
 		tags_screen.mp_deleting = NONE;
-	/* (a campaign profile deleted; MANUAL turned off; an AI turned off) */
+	/* (a campaign profile deleted; MANUAL turned off) */
 	if (tags_buttons() == _tags_buttons_campaign_profile &&
 		(tags_screen.campaign_profile == NONE || tags_screen.campaign_profile >= port_tag_campaign_profiles_count()))
 		tags_list_show(list, _tags_list_campaign_profiles);
 	if (tags_screen.list == _tags_list_campaign_manual && !tags_campaign_manual())
-		tags_list_show(list, tags_screen.campaign_enemies ? _tags_list_campaign_enemies : _tags_list_campaign_weapons);
-	if (tags_screen.list == _tags_list_campaign_loadout && (tags_screen.campaign_ai == NONE ||
-		port_tag_profiles_tag_group(tags_campaign_base(), tags_screen.campaign_ai) != 'actv'))
-		tags_list_show(list, _tags_list_campaign_loadouts);
+		tags_list_show(list, tags_screen.campaign_enemies ? _tags_list_campaign_slot : _tags_list_campaign_weapons);
 	if (tags_screen.campaign_deleting != NONE && tags_buttons() != _tags_buttons_campaign_profile)
 		tags_screen.campaign_deleting = NONE;
 	first = &tags_screen.first[tags_screen.list];
@@ -8831,7 +8916,7 @@ static void tags_update(struct widget_instance *list)
 			"%d %ld %d %ld %d %d %s",
 			tags_screen.list, tags_screen.mp_profile, tags_screen.mp_weapon, port_tag_mp_profiles_scans(),
 			tags_screen.campaign_profile, tags_screen.campaign_enemies, tags_screen.campaign_stock,
-			tags_screen.campaign_ai, port_tag_campaign_profiles_scans(), *chosen,
+			(long)tags_screen.campaign_rank, port_tag_campaign_profiles_scans(), *chosen,
 			count, tags_screen.category, tags_screen.profile_category, tags_screen.profile, tags_screen.tag,
 			tags_screen.campaign,
 			tags_screen.folder, port_tag_profiles_scans(), config_boolean("game.tag_injection"), tags_screen.removing,

@@ -166,24 +166,34 @@ the profile shown last in TAG PROFILES. A on one opens it:
   - **ROTATION**: **ADD TO LEVEL'S**, the profile's weapons join the
     level's, so a weapon lying in the level may stay as it is; **PROFILE'S
     ONLY**, every one is the profile's.
-  - **REPLACEMENT**: **RANDOM**, each weapon lying in the level is one of
-    the profile's at random; **MANUAL**: below it a row for each of the
-    campaign's weapons that lie in the levels (ASSAULT RIFLE, PISTOL,
-    SNIPER RIFLE, ROCKET LAUNCHER, SHOTGUN, FLAMETHROWER, PLASMA RIFLE,
-    PLASMA PISTOL, NEEDLER), with how many weapons are chosen for it (AS IT
-    IS: none, and it stays the level's); A on one lists **ORIGINAL** and the
-    profile's weapons on, each turned on or off by A, left or right. With
-    ADD TO LEVEL'S, the original is among them whether or not it is on.
-- **ENEMIES**: A opens the same for the level's actors, ROTATION,
-  REPLACEMENT (**RANDOM**: any of the profile's AI, the player's allies
-  left as they are; **MANUAL**: a row for each of the campaign's enemies,
-  GRUNT, ELITE, JACKAL, HUNTER, COMBAT FORM, CARRIER FORM, MARINE,
-  INFECTION FORM, ENGINEER, SENTINEL, each listing ORIGINAL and the
-  profile's AI), and last **ENEMY LOADOUT**: A lists the profile's AI, each
-  with how many weapons are chosen for it (ITS OWN: none), and A on one
-  lists the weapons it may hold: **ORIGINAL** (its own), the profile's
-  weapons on and the campaign's (FUEL ROD and ENERGY SWORD too), each
-  turned on or off by A, left or right.
+  - **REPLACEMENT**: **RANDOM**, each weapon lying in the level, or given
+    to an actor, is one of the profile's at random; **MANUAL**: below it a
+    row for each of the campaign's weapons (ASSAULT RIFLE, PISTOL, SNIPER
+    RIFLE, ROCKET LAUNCHER, SHOTGUN, FLAMETHROWER, PLASMA RIFLE, PLASMA
+    PISTOL, NEEDLER, and the AI's own, FUEL ROD and ENERGY SWORD), with how
+    many weapons are chosen for it (AS IT IS: none, and it stays the
+    level's); A on one lists **ORIGINAL** and the profile's weapons on, each
+    turned on or off by A, left or right. With ADD TO LEVEL'S, the original
+    is among them whether or not it is on. An actor keeps its own weapon
+    when its unit has no animations to hold the one chosen.
+- **ENEMIES**: A opens ROTATION and REPLACEMENT for the level's actors
+  (**RANDOM**: any of the profile's AI, the player's allies left as they
+  are; **MANUAL**: the AI chosen for each enemy below), then a row for each
+  of the campaign's enemies, GRUNT, ELITE, JACKAL, HUNTER, COMBAT FORM,
+  CARRIER FORM, MARINE, INFECTION FORM, ENGINEER, SENTINEL (each with how
+  many AI and weapons are chosen for it, or AS IT IS). An enemy with ranks
+  (GRUNT: MINOR, MAJOR, SPEC OPS; ELITE: those, ZEALOT and STEALTH; JACKAL
+  and HUNTER: MINOR and MAJOR; COMBAT FORM: HUMAN and ELITE) lists its
+  ranks, each a slot of its own; one without opens its slot at once. A
+  slot has:
+  - **REPLACEMENT**: A lists ORIGINAL and the profile's AI, each turned on
+    or off (with RANDOM, it says so and does not open).
+  - **LOADOUT**: the weapons an actor placed in the slot holds, the
+    level's own or the AI that took its place: A lists **ORIGINAL** (its
+    own), the profile's weapons on and the campaign's, each turned on or
+    off. An enemy that holds no weapons a loadout can choose (HUNTER,
+    CARRIER FORM, INFECTION FORM, ENGINEER, SENTINEL) says NO WEAPONS, and
+    it does not open.
 
 In a campaign profile's lists the button bar has **DELETE PROFILE**, which,
 pressed twice, deletes the campaign profile (not its profile).
@@ -357,23 +367,26 @@ enemy_replace = "random"
 plasma_rifle = ["original", "cmt\\weapons\\covenant\\carbine\\carbine"]
 
 [enemies]
-elite = ["cmt\\characters\\brute\\brute major"]
+elite_major = ["cmt\\characters\\brute\\brute major"]
+flood_infection = ["original", "cmt\\characters\\flood\\infection"]
 
 [loadout]
-"cmt\\characters\\brute\\brute major" = ["original", "stock:needler"]
+elite_major = ["original", "stock:needler"]
 ```
 
 `weapon_rotation` and `enemy_rotation` are `"add"` or `"only"`;
 `weapon_replace` and `enemy_replace` `"random"` or `"manual"`; `[weapons]`
 the weapons chosen for each of the campaign's by its key (`assault_rifle`,
 `pistol`, `sniper_rifle`, `rocket_launcher`, `shotgun`, `flamethrower`,
-`plasma_rifle`, `plasma_pistol`, `needler`), `[enemies]` the AI chosen for
-each of its enemies (`grunt`, `elite`, `jackal`, `hunter`, `flood_combat`,
+`plasma_rifle`, `plasma_pistol`, `needler`, `fuel_rod`, `energy_sword`),
+`[enemies]` the AI chosen for each enemy slot and `[loadout]` the weapons
+its actors may hold: `"original"` its own, a weapon of the profile by its
+path, or one of the campaign's as `"stock:"` and its key. A slot's key is
+its enemy's (`grunt`, `elite`, `jackal`, `hunter`, `flood_combat`,
 `flood_carrier`, `marine`, `flood_infection`, `engineer`, `sentinel`), and
-`[loadout]` the weapons each of the profile's AI may hold, by its path:
-`"original"` its own, a weapon of the profile by its path, or one of the
-campaign's as `"stock:"` and its key (`fuel_rod` and `energy_sword` too). A
-setting left out is the first of its values.
+of one with ranks `_` and its rank's (`minor`, `major`, `specops`,
+`zealot`, `stealth`; a combat form's `human` or `elite`): `grunt_specops`,
+`flood_combat_human`. A setting left out is the first of its values.
 
 `rotation` is `"add"` or `"only"`; `replace` `"random"`, `"position"`,
 `"weapon"` or `"manual"`; `loadout` `"map"`, `"random"` or `"set"`;
@@ -485,22 +498,28 @@ so:
 - is given the profile's tags on as the randomizer's profile's are ("In a
   level", above: their HUDs, REPLACE ORIGINAL, their failures), and no tags
   of the other campaign maps (the skulls' aside);
-- swaps each weapon lying in it (not one a script names) as WEAPONS says:
-  RANDOM among the profile's weapons (and the level's own, with ADD TO
-  LEVEL'S), MANUAL among those chosen for the campaign's weapon it is;
+- swaps each weapon lying in it (not one a script names), and each given
+  to an actor (the fuel rod and the energy sword are only so), as WEAPONS
+  says: RANDOM among the profile's weapons (and the level's own, with ADD
+  TO LEVEL'S), MANUAL among those chosen for the campaign's weapon it is;
+  an actor's among those its unit has the animations to hold, else its
+  own;
 - swaps each actor it places (not one a script commands, nor a squad a
   conversation names) as ENEMIES says: RANDOM among the profile's AI (and
   the level's own, with ADD), the player's allies left as they are; MANUAL
-  among those chosen for the campaign's enemy it is, by its unit's name as
-  the randomizer finds it (MARINE swaps the allies too). As the
+  among those chosen for its slot: the campaign's enemy it is, by its
+  unit's name as the randomizer finds it, and its rank, by its own name
+  (`major`, `specops`, `commander` the zealot, `stealth`; a combat form's
+  `human` or not; else minor) (MARINE swaps the allies too). As the
   randomizer's, a squad's infection forms swapped for other AI are placed
   one in three, an AI a script seats in a vehicle without the animations
   for it rides as the level's own and is swapped back once out;
-- gives each of the profile's AI it places one of the weapons ENEMY
-  LOADOUT chose for it, at random, of those its unit has the animations to
-  hold (a campaign's weapon only when the level has it); with none chosen,
-  or none it can hold, its own. An AI the profile gives no weapon holds
-  none.
+- gives each actor it places in a slot (the level's own, or the AI that
+  took its place) one of the weapons its LOADOUT chose, at random, of those
+  its unit has the animations to hold (a campaign's weapon only when the
+  level has it), in place of WEAPONS' swap; with none chosen, or none it
+  can hold, its own, swapped as WEAPONS says. An AI whose actor variant
+  gives it no weapon holds none.
 
 Each roll is the placement's, so starting the level again rolls again,
 and a checkpoint keeps what was placed. As the randomizer's profile, a

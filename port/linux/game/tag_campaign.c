@@ -10,23 +10,26 @@ of the Tag Injector's and how the level plays its weapons and AI
 place: randomizer.c adds the profile's tags to the level as it would its own
 (tag_injector_tags_load), and asks here what each placement is.
 
-- Weapons. Each weapon lying in the level (not one a script names) is
-  swapped as WEAPON ROTATION and WEAPON REPLACEMENT say: RANDOM, one of the
-  profile's weapons at random, and with ADD the level's own among them;
-  MANUAL, the weapons chosen for each of the campaign's (ORIGINAL among
-  them), and with ADD the level's own too. One with none chosen stays as it
-  is.
+- Weapons. Each weapon lying in the level (not one a script names), and
+  each an actor is given (the fuel rod and the energy sword are only
+  those), is swapped as WEAPON ROTATION and WEAPON REPLACEMENT say: RANDOM,
+  one of the profile's weapons at random, and with ADD the level's own
+  among them; MANUAL, the weapons chosen for each of the campaign's
+  (ORIGINAL among them), and with ADD the level's own too. One with none
+  chosen stays as it is; an actor's, one its unit cannot hold too.
 - Enemies. Each actor the level places (not one a script commands, nor one
   a conversation names) is swapped as ENEMY ROTATION and ENEMY REPLACEMENT
   say, as weapons are: RANDOM among the profile's AI (the player's allies
-  are left as they are), MANUAL the AI chosen for each of the campaign's
-  enemies (by its unit's type, randomizer.c's: a grunt, an elite, a
-  marine...). randomizer.c places a squad's infection forms swapped for
-  other AI only a third of the time, as its own pools do.
-- Loadouts. Each of the profile's AI the level places holds one of the
-  weapons chosen for it (ORIGINAL its own, the profile's weapons, the
-  campaign's when the level has them) that its unit can hold, at random;
-  none chosen, or none it can hold, its own.
+  are left as they are), MANUAL the AI chosen for its slot: its kind of
+  the campaign's enemies (by its unit's type, randomizer.c's: a grunt, an
+  elite, a marine...) and, of a kind with ranks, its rank (by its name:
+  minor, major, spec ops...). randomizer.c places a squad's infection forms
+  swapped for other AI only a third of the time, as its own pools do.
+- Loadouts. An actor placed in a slot (the level's own, or the AI it was
+  swapped for) holds one of the weapons chosen for the slot (ORIGINAL its
+  own, the profile's weapons, the campaign's when the level has them) that
+  its unit can hold, at random, in place of the weapons' swap; none chosen,
+  or none it can hold, its own, swapped as weapons are.
 
 Each roll is the placement's (randomizer.c's placement_seed), so a level
 started again rolls again, and a checkpoint keeps what was placed.
@@ -106,7 +109,7 @@ struct choices
 
 /* ---------- globals */
 
-/* (the pickups first: TAG_CAMPAIGN_PICKUP_WEAPONS) */
+/* (the fuel rod and the energy sword last: the AI alone hold them) */
 static struct stock_weapon const stock_weapons[TAG_CAMPAIGN_STOCK_WEAPONS] =
 {
 	{ "assault_rifle", "ASSAULT RIFLE", "weapons\\assault rifle\\assault rifle" },
@@ -122,23 +125,46 @@ static struct stock_weapon const stock_weapons[TAG_CAMPAIGN_STOCK_WEAPONS] =
 	{ "energy_sword", "ENERGY SWORD", "weapons\\energy sword\\energy sword" },
 };
 
-/* (randomizer.c's TYPE_* order) */
+/* (randomizer.c's RANK_* order) */
 static struct
 {
 	char const *key;
 	char const *name;
+} const ranks[TAG_CAMPAIGN_RANKS] =
+{
+	{ "any", "ANY" },
+	{ "minor", "MINOR" },
+	{ "major", "MAJOR" },
+	{ "specops", "SPEC OPS" },
+	{ "zealot", "ZEALOT" },
+	{ "stealth", "STEALTH" },
+	{ "human", "HUMAN" },
+	{ "elite", "ELITE" },
+};
+
+#define RANK_BIT(rank) (1 << (rank))
+#define RANKS_MINOR_MAJOR (RANK_BIT(1) | RANK_BIT(2))
+
+/* (randomizer.c's TYPE_* order): each its ranks (RANK_BIT's: the
+randomizer screen's), and whether it holds weapons a loadout can choose */
+static struct
+{
+	char const *key;
+	char const *name;
+	short ranks;
+	boolean armed;
 } const stock_enemies[TAG_CAMPAIGN_STOCK_ENEMIES] =
 {
-	{ "grunt", "GRUNT" },
-	{ "elite", "ELITE" },
-	{ "jackal", "JACKAL" },
-	{ "hunter", "HUNTER" },
-	{ "flood_combat", "COMBAT FORM" },
-	{ "flood_carrier", "CARRIER FORM" },
-	{ "marine", "MARINE" },
-	{ "flood_infection", "INFECTION FORM" },
-	{ "engineer", "ENGINEER" },
-	{ "sentinel", "SENTINEL" },
+	{ "grunt", "GRUNT", RANKS_MINOR_MAJOR | RANK_BIT(3), TRUE },
+	{ "elite", "ELITE", RANKS_MINOR_MAJOR | RANK_BIT(3) | RANK_BIT(4) | RANK_BIT(5), TRUE },
+	{ "jackal", "JACKAL", RANKS_MINOR_MAJOR, TRUE },
+	{ "hunter", "HUNTER", RANKS_MINOR_MAJOR, FALSE },
+	{ "flood_combat", "COMBAT FORM", RANK_BIT(6) | RANK_BIT(7), TRUE },
+	{ "flood_carrier", "CARRIER FORM", 0, FALSE },
+	{ "marine", "MARINE", 0, TRUE },
+	{ "flood_infection", "INFECTION FORM", 0, FALSE },
+	{ "engineer", "ENGINEER", 0, FALSE },
+	{ "sentinel", "SENTINEL", 0, FALSE },
 };
 
 static struct
@@ -158,11 +184,11 @@ static struct
 	long ai[MAXIMUM_PROFILE_ROOTS];
 	short ai_count;
 	long stock[TAG_CAMPAIGN_STOCK_WEAPONS];
-	/* MANUAL's choices for each of the campaign's weapons and enemies, and
-	each AI's loadout */
-	struct choices weapon_manual[TAG_CAMPAIGN_PICKUP_WEAPONS];
-	struct choices enemy_manual[TAG_CAMPAIGN_STOCK_ENEMIES];
-	struct choices loadouts[MAXIMUM_PROFILE_ROOTS];
+	/* MANUAL's choices for each of the campaign's weapons and each enemy
+	slot, and each slot's loadout (by enemy and rank) */
+	struct choices weapon_manual[TAG_CAMPAIGN_STOCK_WEAPONS];
+	struct choices enemy_manual[TAG_CAMPAIGN_STOCK_ENEMIES][TAG_CAMPAIGN_RANKS];
+	struct choices loadouts[TAG_CAMPAIGN_STOCK_ENEMIES][TAG_CAMPAIGN_RANKS];
 } tag_campaign_level;
 
 /* ---------- private code */
@@ -267,6 +293,33 @@ static long choice_pick(struct choices const *choices, long original, unsigned l
 	return tag == CHOICE_ORIGINAL ? original : tag;
 }
 
+/* an enemy's slot's rank: its rank, of a kind that has it; RANK_ANY of a
+kind without ranks; NONE for none of its kind's */
+static short slot_rank(short enemy, short rank)
+{
+	if (enemy < 0 || enemy >= TAG_CAMPAIGN_STOCK_ENEMIES)
+		return NONE;
+	if (!stock_enemies[enemy].ranks)
+		return 0;
+	return rank > 0 && rank < TAG_CAMPAIGN_RANKS && (stock_enemies[enemy].ranks & RANK_BIT(rank)) ? rank : NONE;
+}
+
+/* those of a choice's tags (ORIGINAL the actor's own) its unit can hold */
+static short holdable(struct choices const *choices, long weapon, long unit_index, long *held)
+{
+	short count = 0;
+	short index;
+
+	for (index = 0; index < choices->count; index++)
+	{
+		long tag = choices->tags[index] == CHOICE_ORIGINAL ? weapon : choices->tags[index];
+
+		if (tag == weapon || unit_can_hold_weapon_definition(unit_index, tag))
+			held[count++] = tag;
+	}
+	return count;
+}
+
 /* RANDOM's: one of the profile's tags, and with ADD the level's own */
 static long random_pick(long const *tags, short count, boolean add, long original, unsigned long seed)
 {
@@ -309,6 +362,67 @@ char const *tag_campaign_enemy_name(
 	short enemy)
 {
 	return enemy >= 0 && enemy < TAG_CAMPAIGN_STOCK_ENEMIES ? stock_enemies[enemy].name : "";
+}
+
+short tag_campaign_enemy_rank_count(
+	short enemy)
+{
+	short count = 0;
+	short rank;
+
+	for (rank = 1; enemy >= 0 && enemy < TAG_CAMPAIGN_STOCK_ENEMIES && rank < TAG_CAMPAIGN_RANKS; rank++)
+		count += (stock_enemies[enemy].ranks & RANK_BIT(rank)) != 0;
+	return count;
+}
+
+short tag_campaign_enemy_rank(
+	short enemy,
+	short index)
+{
+	short rank;
+
+	for (rank = 1; enemy >= 0 && enemy < TAG_CAMPAIGN_STOCK_ENEMIES && rank < TAG_CAMPAIGN_RANKS; rank++)
+	{
+		if ((stock_enemies[enemy].ranks & RANK_BIT(rank)) && !index--)
+			return rank;
+	}
+	return 0;
+}
+
+char const *tag_campaign_rank_name(
+	short rank)
+{
+	return rank >= 0 && rank < TAG_CAMPAIGN_RANKS ? ranks[rank].name : "";
+}
+
+boolean tag_campaign_enemy_armed(
+	short enemy)
+{
+	return enemy >= 0 && enemy < TAG_CAMPAIGN_STOCK_ENEMIES && stock_enemies[enemy].armed;
+}
+
+void tag_campaign_slot_key(
+	short enemy,
+	short rank,
+	char *key,
+	long key_size)
+{
+	if (slot_rank(enemy, rank) > 0)
+		snprintf(key, (size_t)key_size, "%s_%s", stock_enemies[enemy].key, ranks[rank].key);
+	else
+		snprintf(key, (size_t)key_size, "%s", tag_campaign_enemy_key(enemy));
+}
+
+void tag_campaign_slot_name(
+	short enemy,
+	short rank,
+	char *name,
+	long name_size)
+{
+	if (slot_rank(enemy, rank) > 0)
+		snprintf(name, (size_t)name_size, "%s %s", stock_enemies[enemy].name, ranks[rank].name);
+	else
+		snprintf(name, (size_t)name_size, "%s", tag_campaign_enemy_name(enemy));
 }
 
 long tag_campaign_profile_chosen(
@@ -402,28 +516,35 @@ void tag_campaign_level_loaded(
 		if (group == 'weap' && tag_campaign_level.weapon_count < MAXIMUM_PROFILE_ROOTS)
 			tag_campaign_level.weapons[tag_campaign_level.weapon_count++] = roots[index];
 		else if (group == 'actv' && tag_campaign_level.ai_count < MAXIMUM_PROFILE_ROOTS)
-		{
-			short ai = tag_campaign_level.ai_count++;
-
-			tag_campaign_level.ai[ai] = roots[index];
-			choices_read(&tag_campaign_level.loadouts[ai], campaign_profile, "loadout",
-				port_tag_profiles_tag_name(profile, root_tags[index]), profile, roots, root_tags, count, 'weap',
-				FALSE);
-		}
+			tag_campaign_level.ai[tag_campaign_level.ai_count++] = roots[index];
 	}
 
-	/* MANUAL's */
+	/* MANUAL's, and each slot's loadout */
 	add = tag_campaign_level.weapon_rotation == _rotation_add;
-	for (entry = 0; tag_campaign_level.weapon_replace == _replace_manual && entry < TAG_CAMPAIGN_PICKUP_WEAPONS; entry++)
+	for (entry = 0; tag_campaign_level.weapon_replace == _replace_manual && entry < TAG_CAMPAIGN_STOCK_WEAPONS; entry++)
 	{
 		choices_read(&tag_campaign_level.weapon_manual[entry], campaign_profile, "weapons", stock_weapons[entry].key,
 			profile, roots, root_tags, count, 'weap', add);
 	}
 	add = tag_campaign_level.enemy_rotation == _rotation_add;
-	for (entry = 0; tag_campaign_level.enemy_replace == _replace_manual && entry < TAG_CAMPAIGN_STOCK_ENEMIES; entry++)
+	for (entry = 0; entry < TAG_CAMPAIGN_STOCK_ENEMIES; entry++)
 	{
-		choices_read(&tag_campaign_level.enemy_manual[entry], campaign_profile, "enemies", stock_enemies[entry].key,
-			profile, roots, root_tags, count, 'actv', add);
+		short rank;
+
+		for (rank = 0; rank < TAG_CAMPAIGN_RANKS; rank++)
+		{
+			char key[64];
+
+			if (slot_rank(entry, rank) != rank)
+				continue;
+			tag_campaign_slot_key(entry, rank, key, sizeof(key));
+			if (tag_campaign_level.enemy_replace == _replace_manual)
+				choices_read(&tag_campaign_level.enemy_manual[entry][rank], campaign_profile, "enemies", key,
+					profile, roots, root_tags, count, 'actv', add);
+			if (stock_enemies[entry].armed)
+				choices_read(&tag_campaign_level.loadouts[entry][rank], campaign_profile, "loadout", key, profile,
+					roots, root_tags, count, 'weap', FALSE);
+		}
 	}
 	error(_error_silent, "tag campaign: %s plays %s: %d weapons (rotation %s, replace %s), %d AI (rotation %s, "
 		"replace %s)", port_tag_campaign_profiles_name(campaign_profile), port_tag_profiles_name(profile),
@@ -447,6 +568,7 @@ boolean tag_campaign_level_playing(
 long tag_campaign_actor_variant(
 	long original,
 	short enemy,
+	short rank,
 	boolean ally,
 	unsigned long seed)
 {
@@ -454,8 +576,8 @@ long tag_campaign_actor_variant(
 		return original;
 	if (tag_campaign_level.enemy_replace == _replace_manual)
 	{
-		return enemy >= 0 && enemy < TAG_CAMPAIGN_STOCK_ENEMIES ?
-			choice_pick(&tag_campaign_level.enemy_manual[enemy], original, seed) : original;
+		rank = slot_rank(enemy, rank);
+		return rank != NONE ? choice_pick(&tag_campaign_level.enemy_manual[enemy][rank], original, seed) : original;
 	}
 	/* (RANDOM leaves the player's allies as they are: MANUAL's MARINE
 	swaps them) */
@@ -478,7 +600,7 @@ long tag_campaign_pickup(
 		return random_pick(tag_campaign_level.weapons, tag_campaign_level.weapon_count,
 			tag_campaign_level.weapon_rotation == _rotation_add, weapon, seed);
 	}
-	for (entry = 0; entry < TAG_CAMPAIGN_PICKUP_WEAPONS; entry++)
+	for (entry = 0; entry < TAG_CAMPAIGN_STOCK_WEAPONS; entry++)
 	{
 		if (tag_campaign_level.stock[entry] == weapon)
 			return choice_pick(&tag_campaign_level.weapon_manual[entry], weapon, seed);
@@ -487,33 +609,44 @@ long tag_campaign_pickup(
 }
 
 long tag_campaign_enemy_weapon(
-	long variant,
+	short enemy,
+	short rank,
 	long weapon,
 	long unit_index,
 	unsigned long seed)
 {
-	long held[MAXIMUM_CHOICES];
-	short held_count = 0;
-	short ai;
-	short index;
+	struct choices swaps;
+	long held[MAXIMUM_PROFILE_ROOTS + 1];
+	short held_count;
+	short entry;
 
-	if (!tag_campaign_level.active || variant == NONE)
+	if (!tag_campaign_level.active || weapon == NONE)
 		return weapon;
-	for (ai = 0; ai < tag_campaign_level.ai_count && tag_campaign_level.ai[ai] != variant; ai++)
+	/* (its slot's loadout) */
+	rank = slot_rank(enemy, rank);
+	if (rank != NONE && tag_campaign_level.loadouts[enemy][rank].count)
 	{
+		held_count = holdable(&tag_campaign_level.loadouts[enemy][rank], weapon, unit_index, held);
+		return held_count ? held[seed % (unsigned long)held_count] : weapon;
 	}
-	if (ai == tag_campaign_level.ai_count || !tag_campaign_level.loadouts[ai].count)
-		return weapon;
-	/* (those its unit has the animations to hold: its own it holds as the
-	level has it) */
-	for (index = 0; index < tag_campaign_level.loadouts[ai].count; index++)
+	/* (else its weapon swapped as one lying in the level is, among those its
+	unit can hold) */
+	swaps.count = 0;
+	if (tag_campaign_level.weapon_replace == _replace_random)
 	{
-		long tag = tag_campaign_level.loadouts[ai].tags[index];
-
-		if (tag == CHOICE_ORIGINAL)
-			held[held_count++] = weapon;
-		else if (unit_can_hold_weapon_definition(unit_index, tag))
-			held[held_count++] = tag;
+		for (entry = 0; entry < tag_campaign_level.weapon_count && swaps.count < MAXIMUM_CHOICES; entry++)
+			choice_add(&swaps, tag_campaign_level.weapons[entry]);
+		if (swaps.count && tag_campaign_level.weapon_rotation == _rotation_add)
+			choice_add(&swaps, CHOICE_ORIGINAL);
 	}
+	else
+	{
+		for (entry = 0; entry < TAG_CAMPAIGN_STOCK_WEAPONS; entry++)
+		{
+			if (tag_campaign_level.stock[entry] == weapon)
+				swaps = tag_campaign_level.weapon_manual[entry];
+		}
+	}
+	held_count = holdable(&swaps, weapon, unit_index, held);
 	return held_count ? held[seed % (unsigned long)held_count] : weapon;
 }

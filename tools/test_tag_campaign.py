@@ -56,8 +56,9 @@ def test_store_keys():
 
 def test_stock_tables():
     """The campaign's weapons are the randomizer's weapon kinds (by their
-    settings' names and paths), the pickups first; its enemies are the
-    randomizer's types, in TYPE_* order."""
+    settings' names and paths), the AI's own (the fuel rod, the energy
+    sword) last; its enemies are the randomizer's types, in TYPE_* order,
+    and its ranks the randomizer's, in RANK_* order."""
     game = TAG_CAMPAIGN.read_text()
     randomizer = RANDOMIZER.read_text()
     weapons = re.findall(r'\{ "([a-z_]+)", "[A-Z ]+", "(weapons\\\\[^"]+)" \}',
@@ -65,14 +66,15 @@ def test_stock_tables():
     kinds = re.findall(r'\{ "(weapons\\\\[^"]+)", "([a-z_]+)", \d, \d, \d, \d, (\d) \}',
                        randomizer.split("weapon_kinds[WEAPON_KIND_COUNT] =", 1)[1].split("};", 1)[0])
     assert sorted(weapons) == sorted((key, tag) for tag, key, _ in kinds)
-    pickups = int(re.search(r"TAG_CAMPAIGN_PICKUP_WEAPONS = (\d+)", (GAME / "tag_campaign.h").read_text()).group(1))
-    actors_only = {key for _, key, only in kinds if only == "1"}
-    assert {key for key, _ in weapons[pickups:]} == actors_only
-    assert not actors_only & {key for key, _ in weapons[:pickups]}
+    assert [key for key, _ in weapons[-2:]] == ["fuel_rod", "energy_sword"]
     enemies = _c_strings(game.split("} const stock_enemies[TAG_CAMPAIGN_STOCK_ENEMIES] =", 1)[1], "{")
     types = ["GRUNT"] + re.findall(r"TYPE_([A-Z_]+),",
                                    randomizer.split("TYPE_GRUNT = 0,", 1)[1].split("TYPE_COUNT", 1)[0])
     assert enemies == [name.lower() for name in types]
+    ranks = _c_strings(game.split("} const ranks[TAG_CAMPAIGN_RANKS] =", 1)[1], "{")
+    assert ranks == _array(randomizer, "static char const *const names[RANK_COUNT] =")
+    assert "RANK_ANY = 0,\n\tRANK_MINOR,\n\tRANK_MAJOR,\n\tRANK_SPECOPS,\n\tRANK_ZEALOT,\n\tRANK_STEALTH,\n" \
+        "\tRANK_HUMAN,\n\tRANK_ELITE," in randomizer
 
 
 def test_randomizer_hooks():
