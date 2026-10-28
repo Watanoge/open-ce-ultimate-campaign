@@ -620,9 +620,10 @@ long tag_campaign_enemy_weapon(
 	short held_count;
 	short entry;
 
-	if (!tag_campaign_level.active || weapon == NONE)
+	if (!tag_campaign_level.active)
 		return weapon;
-	/* (its slot's loadout) */
+	/* (its slot's loadout: an actor without a weapon of its own too, as an
+	AI whose weapon could not be added is) */
 	rank = slot_rank(enemy, rank);
 	if (rank != NONE && tag_campaign_level.loadouts[enemy][rank].count)
 	{
@@ -631,6 +632,8 @@ long tag_campaign_enemy_weapon(
 	}
 	/* (else its weapon swapped as one lying in the level is, among those its
 	unit can hold) */
+	if (weapon == NONE)
+		return NONE;
 	swaps.count = 0;
 	if (tag_campaign_level.weapon_replace == _replace_random)
 	{

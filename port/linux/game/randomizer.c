@@ -4842,7 +4842,7 @@ long randomizer_enemy_weapon(long weapon_definition, long unit_index, long attem
 		int rank;
 
 		if (attempt > 0)
-			return attempt == 1 ? weapon_definition : NONE;
+			return attempt == 1 && weapon_definition != NONE ? weapon_definition : NONE;
 		unit = unit_try_and_get(unit_index);
 		if (!unit)
 			return weapon_definition;
@@ -4860,6 +4860,8 @@ long randomizer_enemy_weapon(long weapon_definition, long unit_index, long attem
 		seed = placement_seed(weapon_definition, 0, attempt, &unit->object.position.x);
 		return tag_campaign_enemy_weapon((short)type, (short)rank, weapon_definition, unit_index, seed);
 	}
+	if (weapon_definition == NONE)
+		return NONE;
 	if (!loaded || !current.weapons || actor_weapon_choice.count <= 0 || attempt > 0)
 		return attempt == 0 || (attempt == 1 && loaded && current.weapons) ? weapon_definition : NONE;
 	unit = unit_try_and_get(unit_index);

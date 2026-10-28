@@ -2437,7 +2437,8 @@ void actor_customize_unit(
 		}
 	}
 
-	if (actor_variant_definition->ranged_combat.reference.index != NONE)
+	/* port: an unarmed one too, which a Tag Injector campaign profile's
+	loadout may arm (an AI whose weapon could not be added) */
 	{
 		/* port: the campaign randomizer's weapon, among those this unit
 		can hold (port/linux/game/randomizer.c). One it cannot take is

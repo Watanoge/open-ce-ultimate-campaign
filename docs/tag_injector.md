@@ -241,8 +241,10 @@ game.
 
 A weapon without a first-person model or animations cannot be added: its
 map never let a player hold it, and the game reads them as the player holds
-it (a debug build stops). A profile's bundle that would add one, as an AI's
-weapon, is left out where the profile is played.
+it (a debug build stops). An AI whose bundle carries one is played without
+it: the weapon is left out (what names it names none), and the AI is added
+unarmed of it, for a campaign profile's LOADOUT (below) to arm; the
+randomizer and a level without a loadout for it leave it unarmed.
 
 A protected map's tags have no paths of their own (they are all
 `<protected>`, nothing, or one path many share), which the menu lists them,
@@ -515,7 +517,8 @@ so:
   one in three, an AI a script seats in a vehicle without the animations
   for it rides as the level's own and is swapped back once out;
 - gives each actor it places in a slot (the level's own, or the AI that
-  took its place) one of the weapons its LOADOUT chose, at random, of those
+  took its place, an AI added without its weapon too) one of the weapons
+  its LOADOUT chose, at random, of those
   its unit has the animations to hold (a campaign's weapon only when the
   level has it), in place of WEAPONS' swap; with none chosen, or none it
   can hold, its own, swapped as WEAPONS says. An AI whose actor variant
