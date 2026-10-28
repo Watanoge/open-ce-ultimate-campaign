@@ -196,8 +196,6 @@ SCREENS = {
              "Shields light their surroundings as they flare.\nOnline: the host's choice.", None),
             ("GLOW INTENSITY:", "display.shield_glow_intensity", [("DEFAULT", "default"), ("LIGHT SHOW", "light_show")],
              "Light Show: three times as far, at full from a\nthird of the flare. Online: the host's choice.", None),
-            ("MATCH TIMER:", "display.match_timer", ON_OFF,
-             "Draw a clock at the bottom right in multiplayer,\ncounting up from the start of the game.", None),
             # (the OpenGL renderer's alone, as texture filtering: the deko3d
             # and Vulkan ones draw the Xbox's range)
             ("HDR:", "display.hdr", ON_OFF,
@@ -350,7 +348,7 @@ SCREENS["gamepad_setup/gyro"] = {
 # pending edits, Defaults, OK and Cancel as the other settings screens.
 _video = SCREENS["video_settings"]
 _graphics = {"display.high_res_hud", "display.hud_button_style", "display.high_res_text", "display.anti_aliasing",
-             "display.anisotropic_filtering", "display.shadow_resolution", "display.per_pixel_lighting", "display.match_timer",
+             "display.anisotropic_filtering", "display.shadow_resolution", "display.per_pixel_lighting",
              "display.model_detail"}
 # (the visual modifiers: a screen of their own, Extra Effects)
 _extra_effects = {"display.shield_glow", "display.shield_glow_intensity",
@@ -443,7 +441,7 @@ _network["categories"] = [
      "Downloading Custom Edition maps you do not have,\nand helping send them to other players.",
      "desktop android ps5"),
     ("MULTIPLAYER HUD:", "network_setup/multiplayer_hud",
-     "Players' names above their heads, the\nscoreboard, and the text chat."),
+     "Players' names above their heads, the\nscoreboard, the text chat and the match clock."),
     ("STREAMER MODE:", "network_setup/streamer_mode",
      "Hide offensive words in names and text from\nother players, maps and mods, as stars."),
     ("SERVER BROWSER:", "network_setup/server_browser",
@@ -695,6 +693,8 @@ SCREENS["network_setup/multiplayer_hud"] = {
          "SHOW the text chat, or HIDE it: no lines, and\nits keys and D-pad Up open nothing.", None),
         ("CHAT TEXT:", "display.chat_style", [("COLORS", "colors"), ("WHITE", "white")],
          "The text chat's colors: COLORS, names in their\nteam's color; WHITE, as Custom Edition.", None),
+        ("MATCH TIMER:", "display.match_timer", ON_OFF,
+         "Draw a clock at the bottom right in multiplayer,\ncounting up from the start of the game.", None),
     ],
 }
 
