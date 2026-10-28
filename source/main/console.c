@@ -236,6 +236,33 @@ static boolean console_process_command(
 	console_globals.previous_command_count = MIN(console_globals.previous_command_count + 1, MAXIMUM_NUMBER_OF_PREVIOUS_COMMANDS);
 	console_globals.selected_previous_command_index = NONE;
 
+	/* port: "overlay" opens the overlay menu (port/linux/game/overlay_menu.c)
+	without a controller; the console closes, as it takes every key */
+	{
+		char word[8];
+		const char *start = command;
+		size_t length;
+
+		while (*start == ' ' || *start == '\t') start++;
+		length = strlen(start);
+		while (length && (start[length - 1] == ' ' || start[length - 1] == '\t')) length--;
+		if (length == 7)
+		{
+			memcpy(word, start, 7);
+			word[7] = '\0';
+		}
+		else
+		{
+			word[0] = '\0';
+		}
+		if (!csstrcasecmp(word, "overlay"))
+		{
+			console_close();
+			overlay_menu_toggle_request();
+			return TRUE;
+		}
+	}
+
 	return hs_compile_and_evaluate(command);
 }
 

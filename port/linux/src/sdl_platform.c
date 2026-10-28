@@ -1662,9 +1662,13 @@ static void queue_keystroke(const SDL_KeyboardEvent *event)
 	keystroke->ascii = event->down ? ascii_from_key(event->key, event->mod) : 0;
 	keystroke->flags = flags;
 	/* (SDL's key is the one typed, its modifiers taken: | wherever the
-	layout has it; a build's SDL that gives the key bare still has Shift+\) */
+	layout has it; a build's SDL that gives the key bare still has Shift+\;
+	and Shift+O, the O key wherever it is: | shares the console's key on
+	some layouts) */
 	keystroke->overlay = event->down && !event->repeat && (event->key == SDLK_PIPE ||
-		(event->key == SDLK_BACKSLASH && (event->mod & SDL_KMOD_SHIFT)));
+		(event->key == SDLK_BACKSLASH && (event->mod & SDL_KMOD_SHIFT)) ||
+		(event->scancode == SDL_SCANCODE_O && (event->mod & SDL_KMOD_SHIFT) &&
+			!(event->mod & (SDL_KMOD_CTRL | SDL_KMOD_ALT | SDL_KMOD_GUI))));
 	keystroke_count++;
 }
 
