@@ -235,8 +235,10 @@ gamepads operate controllers 2 to 4. With two or more players on this
 computer (co-op, or split screen in a network game) and only one gamepad,
 that gamepad is controller 2 (player 2) and the keyboard and mouse stay
 controller 1. The gamepad changes controller only when none of its buttons
-is held. The profile's button layout (Settings > Gamepads) is the
-gamepads' only. Besides the Xbox's five, it has the Master Chief
+is held. The profile's button layout (Settings > Gamepads > BUTTON
+LAYOUT, which shows the layout chosen on a picture of the controller,
+what each button does by it) is the gamepads' only. Besides the Xbox's
+five, it has the Master Chief
 Collection's Bumper Jumper: jump on the left bumper, melee on the right,
 switching grenades on A, action and reload on B and the flashlight on X.
 Fishsticks has zoom on the left trigger and melee on the right stick's

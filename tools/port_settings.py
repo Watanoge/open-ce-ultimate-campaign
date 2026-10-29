@@ -347,6 +347,79 @@ SCREENS["gamepad_setup/gyro"] = {
     "save_on_leave": True,
 }
 
+# BUTTON LAYOUT is its own screen, opened from Gamepads: the button and stick
+# layouts, and below them the overlay of the layout shown, a picture of the
+# controller with what the layout puts by each button (_layout_overlays)
+LAYOUT = f"{PE}/gamepad_setup/layout"
+_layout_rows = {"profile.button_preset", "profile.joystick_preset"}
+_gamepads["categories"].insert(0, (
+    "BUTTON LAYOUT:", "gamepad_setup/layout", "See what each button does in each layout,\nand choose one."))
+SCREENS["gamepad_setup/layout"] = {
+    "screen": "button_layout_screen", "header": _gamepads["header"], "spacing": 30, "help_top": 133,
+    "rows": [row for row in _gamepads["rows"] if row[1] in _layout_rows],
+}
+_gamepads["rows"] = [row for row in _gamepads["rows"] if row[1] not in _layout_rows]
+
+# the overlay's controllers: AL2009man's Gamepad Asset Pack's
+# (port/assets/menus/controllers, MIT), the platform's, and where each of its
+# buttons is (a fraction of the picture's width and height), by the Xbox's
+# names (the others' by place, as xinput_sdl.c reads them: the PS5's cross is
+# a, the Switch's B is a); a trigger and a bumper where they show, above the
+# controller. Back and Start in the middle are labelled above it (top), not
+# across the buttons by them
+CONTROLLERS = {
+    "xbox_series": {"platform": "desktop android web", "aspect": 1.6087, "top": ("back", "start"), "buttons": {
+        "a": (0.767, 0.538), "b": (0.838, 0.426), "x": (0.697, 0.437), "y": (0.770, 0.326),
+        "trigger_left": (0.198, 0.04), "trigger_right": (0.792, 0.04), "white": (0.19, 0.15), "black": (0.81, 0.15),
+        "back": (0.422, 0.440), "start": (0.576, 0.440), "stick_left": (0.229, 0.464),
+        "stick_right": (0.636, 0.703), "dpad": (0.363, 0.686)}},
+    "dualsense": {"platform": "ps5", "aspect": 1.7981, "buttons": {
+        "a": (0.820, 0.636), "b": (0.897, 0.522), "x": (0.746, 0.527), "y": (0.824, 0.411),
+        "trigger_left": (0.184, 0.05), "trigger_right": (0.815, 0.05), "white": (0.178, 0.17), "black": (0.822, 0.17),
+        "back": (0.256, 0.335), "start": (0.744, 0.335), "stick_left": (0.335, 0.776),
+        "stick_right": (0.665, 0.777), "dpad": (0.178, 0.524)}},
+    "switch_pro": {"platform": "switch", "aspect": 1.3762, "top": ("back", "start"), "buttons": {
+        "a": (0.762, 0.413), "b": (0.841, 0.319), "x": (0.685, 0.319), "y": (0.762, 0.224),
+        "trigger_left": (0.23, 0.03), "trigger_right": (0.77, 0.03), "white": (0.20, 0.11), "black": (0.80, 0.11),
+        "back": (0.377, 0.215), "start": (0.621, 0.215), "stick_left": (0.224, 0.318),
+        "stick_right": (0.630, 0.510), "dpad": (0.347, 0.510)}},
+}
+# the labels each side of the controller, ordered top to bottom by their
+# buttons, and the lines each has room for (a stick's: what it does, and
+# its button's; the D-pad's: its directions' a layout gives a control)
+LAYOUT_LABELS = {"left": {"trigger_left": 1, "white": 1, "back": 1, "stick_left": 2, "dpad": 2},
+                 "right": {"trigger_right": 1, "black": 1, "y": 1, "b": 1, "x": 1, "a": 1, "start": 1,
+                           "stick_right": 2}}
+# the overlays: Gamepad Setup's BUTTON LAYOUT's, below its rows and their
+# help, and the profile settings' picture's (its 279 by 202, where Gamepad
+# Setup's row shows it: menu_functions.c's profile_gamepad_layout), which is
+# the controller alone, no labels. The area (left, top, width, height), the
+# controller's width and how far right of the middle it is, the labels'
+# widths (each side's) and font, a line's height and the text's top in it.
+# large_ui takes about 10.5 units a letter and its lines are 21 apart (a
+# Switch's screenshots): the left's longest is a stick's PRESS: SWITCH
+# GRENADE (Reclaimer's), the right's ACTION / RELOAD (its stick's button is
+# only ever zoom or melee)
+LAYOUT_OVERLAYS = {
+    "overlay": {"area": (0, 172, 640, 236), "width": 200, "shift": 34,
+                "label_width": {"left": 240, "right": 172}, "font": "ui\\large_ui", "line": 21, "text_y": 2},
+    "overlay_small": {"area": (288, 85, 279, 202), "width": 250, "labels": False},
+}
+# their words: the game's controls (input_abstraction.c's), what a stick
+# does, and the start of a line of a stick's button or a D-pad direction
+# (menu_functions.c's _layout_word_*)
+LAYOUT_WORDS = ["JUMP", "SWITCH GRENADE", "ACTION / RELOAD", "SWITCH WEAPON", "MELEE", "FLASHLIGHT",
+                "THROW GRENADE", "FIRE", "PAUSE", "SCORES", "CROUCH", "ZOOM",
+                "MOVE", "LOOK", "MOVE / TURN", "STRAFE / LOOK", "PRESS:", "UP:", "DOWN:", "LEFT:", "RIGHT:"]
+# the controller tinted as the Xbox's pictures of its controller are: its
+# lightness from the dark blue to the light
+LAYOUT_TINT = ((0.02, 0.09, 0.20), (0.62, 0.84, 1.0))
+LAYOUT_LINE_COLOR = "#2896FF"
+# (BUTTON LAYOUT's, each platform's controller)
+SCREENS["gamepad_setup/layout"]["screen_children"] = [
+    f'<child widget="{LAYOUT}/{controller}/overlay" platform="{spec["platform"]}"/>'
+    for controller, spec in CONTROLLERS.items()]
+
 # Video Setup's categories open ordinary settings screens. Each has the same
 # pending edits, Defaults, OK and Cancel as the other settings screens.
 _video = SCREENS["video_settings"]
@@ -564,7 +637,8 @@ CONTROL_ROWS = 7
 
 # the settings whose rows have the wider spinner (a device's name)
 WIDE_SETTINGS = {"audio.output_device", "audio.input_device", "streamer.slurs", "streamer.swearing",
-                 "streamer.insults", "network.listings", "network.browser_maps", "network.browser_sort"}
+                 "streamer.insults", "network.listings", "network.browser_maps", "network.browser_sort",
+                 "profile.button_preset"}
 
 # Teamplay Options' rows of the port's (_teamplay_options_extras): the
 # gametype's FORCE TEAM SPAWNS, then the host's voice chat and vote kicks;
@@ -670,7 +744,8 @@ def _screen(folder: str, spec: dict, rows: list, list_inputs: list, list_handler
                       f'<child{attributes([("widget", f"{base}/{header}")])}/>',
                       f'<child{attributes([("widget", f"{base}/options_menu")])}/>',
                       *[f'<child{attributes([("widget", f"{base}/note_{index}"), ("x", 54), ("y", 73 + place * spec["spacing"]), ("platform", platform)])}/>'
-                        for index, (_, platform, place) in enumerate(spec.get("notes", []))]])
+                        for index, (_, platform, place) in enumerate(spec.get("notes", []))],
+                      *spec.get("screen_children", [])])
     lines += _widget(f"{base}/{header}", [("controller", 1), ("left", 35), ("top", 11), ("width", 605), ("height", 59),
                                           ("bitmap", header_bitmap)], [])
     # (a note is text alone, which the focus never lands on)
@@ -879,6 +954,122 @@ def _gameplay_profile_item() -> list:
                     '<on event="left_mouse" run="mouse emit accept event"/>'])
 
 
+def layout_overlay_places(controller: str, size: str) -> tuple:
+    """where an overlay's picture of the controller is (left, top, width,
+    height), its picture (the controller and the labels' lines: the same
+    for every layout) and each label's line's middle: {button: (x, y)},
+    all in the menu's units"""
+    spec, overlay = CONTROLLERS[controller], LAYOUT_OVERLAYS[size]
+    left, top, width, height = overlay["area"]
+    picture_width = overlay["width"]
+    picture_height = picture_width / spec["aspect"]
+    x0 = left + (width - picture_width) / 2 + overlay.get("shift", 0)
+    y0 = top + (height - picture_height) / 2
+    anchors = {button: (x0 + x * picture_width, y0 + y * picture_height) for button, (x, y) in spec["buttons"].items()}
+    # (the controller alone: no labels, so no lines)
+    if not overlay.get("labels", True):
+        return (x0 - 8, top, picture_width + 16, height), anchors, {}
+    line = overlay["line"]
+    # (those above it, just above it: Back's ending left of its middle,
+    # Start's from right of it)
+    middle = x0 + picture_width / 2
+    tops = spec.get("top", ())
+    middles = {button: (middle - 4 if index == 0 else middle + 4, max(top + line / 2, y0 - line))
+               for index, button in enumerate(tops)}
+    for side, labels in LAYOUT_LABELS.items():
+        labels = {button: count for button, count in labels.items() if button not in tops}
+        order = sorted(labels, key=lambda button: anchors[button][1])
+        # (each as near its button's height as the ones above leave it,
+        # then those that would go past the bottom moved up)
+        ys = []
+        for index, button in enumerate(order):
+            least = top + line / 2 if not index else ys[-1] + labels[order[index - 1]] * line + 2
+            ys.append(max(anchors[button][1], least))
+        for index in reversed(range(len(order))):
+            most = top + height - (labels[order[index]] - 0.5) * line if index == len(order) - 1 else \
+                ys[index + 1] - labels[order[index]] * line - 2
+            ys[index] = min(ys[index], most)
+        edge = x0 - 6 if side == "left" else x0 + picture_width + 6
+        middles.update({button: (edge, y) for button, y in zip(order, ys)})
+    return (x0 - 8, top, picture_width + 16, height), anchors, middles
+
+
+def layout_overlay_svg(controller: str, size: str) -> str:
+    """an overlay's picture: the controller (port_svg/controllers' copy),
+    tinted, and from each label's place a line to its button"""
+    (left, top, width, height), anchors, middles = layout_overlay_places(controller, size)
+    overlay = LAYOUT_OVERLAYS[size]
+    picture_width = overlay["width"]
+    picture_height = picture_width / CONTROLLERS[controller]["aspect"]
+    dark, light = LAYOUT_TINT
+    matrix = " ".join(" ".join(f"{(high - low) * weight:.4f}" for weight in (0.2126, 0.7152, 0.0722)) + f" 0 {low:.4f}"
+                      for low, high in zip(dark, light)) + " 0 0 0 1 0"
+    lines = [f'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" '
+             f'width="{width:g}" height="{height:g}" viewBox="{left:g} {top:g} {width:g} {height:g}">',
+             '  <defs><filter id="tint" color-interpolation-filters="sRGB">'
+             f'<feColorMatrix type="matrix" values="{matrix}"/></filter></defs>',
+             f'  <image xlink:href="{controller}.svg" href="{controller}.svg" x="{left + 8:.2f}" '
+             f'y="{top + (height - picture_height) / 2:.2f}" width="{picture_width:g}" height="{picture_height:.2f}" '
+             'preserveAspectRatio="none" filter="url(#tint)"/>']
+    for button, (x, y) in sorted(middles.items()):
+        ax, ay = anchors[button]
+        # (from below a label above the controller)
+        if button in CONTROLLERS[controller].get("top", ()):
+            y += overlay["line"] / 2
+        lines.append(f'  <line x1="{x:.2f}" y1="{y:.2f}" x2="{ax:.2f}" y2="{ay:.2f}" stroke="{LAYOUT_LINE_COLOR}" '
+                     'stroke-width="0.75" stroke-linecap="round"/>')
+        lines.append(f'  <circle cx="{ax:.2f}" cy="{ay:.2f}" r="1.75" fill="#FFFFFF" stroke="{LAYOUT_LINE_COLOR}" '
+                     'stroke-width="0.75"/>')
+    lines.append("</svg>")
+    return "\n".join(lines) + "\n"
+
+
+def layout_overlay_pictures() -> list:
+    """the overlays' bitmaps (tools/ce_menus.py draws them): (name, frames)"""
+    pictures = []
+    for controller in CONTROLLERS:
+        for size in LAYOUT_OVERLAYS:
+            (_, _, width, height), _, _ = layout_overlay_places(controller, size)
+            pictures.append((f"controllers/{controller}_{size}",
+                             [(layout_overlay_svg(controller, size), round(width), round(height))]))
+    return pictures
+
+
+def _layout_overlays() -> list:
+    """the overlays, a picture of each platform's controller and its labels,
+    which menu_functions.c's gamepad_layout_overlay fills in: BUTTON
+    LAYOUT's, and the profile settings' controller alone (Edit Profile
+    Settings' picture's children: WIDGET_PATCHES)"""
+    lines = []
+    for controller, spec in CONTROLLERS.items():
+        for size, overlay in LAYOUT_OVERLAYS.items():
+            name = f"{LAYOUT}/{controller}/{size}"
+            (left, top, width, height), _, middles = layout_overlay_places(controller, size)
+            labels = {button: count for side in LAYOUT_LABELS.values() for button, count in side.items()}
+            # (the controller alone needs nothing filled in)
+            children = ['<data input="port gamepad layout overlay"/>'] if middles else []
+            for button, (x, y) in sorted(middles.items()):
+                right = x < left + width / 2
+                label_width = overlay["label_width"]["left" if right else "right"]
+                label_x = x - 2 - label_width if right else x + 2
+                label_y = y - overlay["line"] / 2 - overlay["text_y"]
+                children.append(f'<child{attributes([("widget", f"{name}/label_{button}"), ("x", round(label_x)), ("y", round(label_y))])}/>')
+                lines += _widget(f"{name}/label_{button}",
+                                 [("type", "text"), ("width", label_width),
+                                  # (a label of two lines a line taller: the
+                                  # font's lines are further apart than the
+                                  # labels' places, and the second was cut)
+                                  ("height", (2 * labels[button] - 1) * overlay["line"] + 2 * overlay["text_y"]),
+                                  ("font", overlay["font"]), ("color", "#FF2896FF"),
+                                  ("align", "right" if right else "left"), ("text_y", overlay["text_y"]),
+                                  ("text_flags", "no_focus_test")], [])
+            lines += _widget(name, [("left", round(left)), ("top", round(top)), ("width", round(width)),
+                                    ("height", round(height)), ("bitmap", f"controllers/{controller}_{size}"),
+                                    ("platform", spec["platform"])], children)
+    lines += _strings(f"{LAYOUT}/words", LAYOUT_WORDS)
+    return lines
+
+
 def settings_files() -> dict:
     """the files of the port's screens, by their names in ce/"""
     files = {}
@@ -886,6 +1077,8 @@ def settings_files() -> dict:
         lines = _setting_screen(folder, spec)
         if folder == "gameplay":
             lines += _gameplay_profile_item()
+        if folder == "gamepad_setup/layout":
+            lines += _layout_overlays()
         files[f"{PE}/{folder}".replace("/", ".") + ".xml"] = lines
     files[f"{PE}/controls_setup".replace("/", ".") + ".xml"] = _controls_screen()
     return {name: ['<?xml version="1.0" encoding="UTF-8"?>',
@@ -1137,10 +1330,13 @@ WIDGET_PATCHES = {
     f"{PLAYLIST_EDIT}/edit_playlist_select_list": {
         "insert_before": {f"{PLAYLIST_EDIT}/playlist_edit_button_bar": [f'<child widget="{OPENCE_ITEM}"/>']},
         "inputs": ["port playlist edit desc"]},
-    # (the profile settings' picture: on Gamepad Setup's row, the profile's
-    # button settings, BITMAP_FRAMES; menu_functions.c's
-    # profile_gamepad_layout)
+    # (the profile settings' picture: on Gamepad Setup's row, the overlay's
+    # controller alone in its place, _layout_overlays;
+    # menu_functions.c's profile_gamepad_layout)
     f"{PE}/profile_edit_extended_desc_pic": {"inputs": ["port gamepad layout preview"]},
+    f"{PE}/profile_edit_extended_description": {"children": [
+        f'<child widget="{LAYOUT}/{controller}/overlay_small" x="4" platform="{spec["platform"]}"/>'
+        for controller, spec in CONTROLLERS.items()]},
     # (Gameplay, before About: its screen is the gameplay file's; the rows'
     # places, PROFILE_ROWS)
     f"{PE}/profile_edit_select_list": {"insert_before": {
@@ -1267,17 +1463,6 @@ WIDGET_PATCHES = {
         f"{MT}/join_game/join_game_button_refresh": f"{MT}/join_game/button_clipboard",
         f"{MT}/join_game/join_game_button_update": f"{MT}/join_game/join_game_button_refresh",
     }},
-}
-
-# frames added after a PC bitmap's (by our names): (the Xbox map's bitmap,
-# its frame, the size drawn at, where in the widget). The profile settings'
-# picture gets the Xbox's Controller Setup's pictures of its five button
-# settings (its first four frames are the thumbstick settings'), which show
-# 512 by 235 of their 512 by 512: drawn at 279 wide, in the middle of the
-# picture's 279 by 202
-XBOX_CONTROLLER_PICTURES = f"ui\\shell\\{PE.replace('/', chr(92))}\\controller_edit\\config_controller"
-BITMAP_FRAMES = {
-    f"{PE}/profile_options": [(XBOX_CONTROLLER_PICTURES, 4 + preset, 279, 279, 0, 34) for preset in range(5)],
 }
 
 # the titles this port has that the PC version has not, set as its headers

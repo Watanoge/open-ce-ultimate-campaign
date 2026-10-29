@@ -565,6 +565,9 @@ A profiling build plays with normal builds. It does not use
 - [Kenney](https://kenney.nl/)'s [Input Prompts](https://kenney.nl/assets/input-prompts)
   (CC0), the controller buttons' pictures on the Switch and the PS5, and
   a replay's button prompts everywhere.
+- AL2009man's [Gamepad Asset Pack](https://github.com/AL2009man/Gamepad-Asset-Pack)
+  (MIT), the controllers of the button-layout overlay (Gamepad Setup's
+  BUTTON LAYOUT).
 
 Halo is a trademark of Microsoft. This project is not affiliated with or
 endorsed by Microsoft, Bungie or 343 Industries.
