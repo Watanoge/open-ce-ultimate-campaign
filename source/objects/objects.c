@@ -101,10 +101,23 @@ index, which reads no function: 0 */
 the tick's value moved into the frame */
 static int object_function_render_depth = 0;
 
+/* port: the incoming values each object's functions were last computed from
+(object_compute_function_values), for the picture's: a child exports into its
+parent's after the parent's functions are computed (an invisible weapon's,
+weapon_export_function_values: the warthog's gun its illumination over the
+driver's seat power, input A, which its headlights are), and the Xbox's
+lights and shaders read the values the tick computed */
+static struct
+{
+	short identifier;
+	real values[NUMBER_OF_INCOMING_OBJECT_FUNCTIONS];
+} object_function_tick_inputs[MAXIMUM_OBJECTS_PER_MAP];
+
 static real object_function_addition(
 	struct object_datum *object,
 	struct object_function_definition *function,
 	real huh,
+	real const *incoming,
 	real const *outgoing,
 	boolean *active);
 static real object_function_wrap(
@@ -1586,6 +1599,7 @@ void object_function_values_for_render(
 		definition->object.functions.count,
 		NUMBER_OF_OUTGOING_OBJECT_FUNCTIONS);
 	short function_index;
+	real const *incoming = object->object.incoming_function_values;
 	real huh;
 	real back;
 
@@ -1598,6 +1612,13 @@ void object_function_values_for_render(
 
 	back = 1.0f - fraction;
 	huh = (57 * DATUM_INDEX_TO_ABSOLUTE_INDEX(object_index) + game_time_get()) * 0.033333335f;
+	/* (the tick's incoming values, if its functions were computed since the
+	object was made) */
+	if (object_function_tick_inputs[DATUM_INDEX_TO_ABSOLUTE_INDEX(object_index)].identifier ==
+		(short)DATUM_INDEX_TO_IDENTIFIER(object_index))
+	{
+		incoming = object_function_tick_inputs[DATUM_INDEX_TO_ABSOLUTE_INDEX(object_index)].values;
+	}
 	for (function_index = 0; function_index < function_count; function_index++)
 	{
 		struct object_function_definition *function = TAG_BLOCK_GET_ELEMENT(
@@ -1616,6 +1637,7 @@ void object_function_values_for_render(
 				object,
 				function,
 				huh,
+				incoming,
 				object->object.outgoing_function_values,
 				&active);
 			values[function_index] = object_function_wrap(
@@ -1627,6 +1649,7 @@ void object_function_values_for_render(
 				object,
 				function,
 				huh - back * 0.033333335f,
+				incoming,
 				values,
 				&active);
 			values[function_index] = output;
@@ -5270,7 +5293,7 @@ static void object_delete_recursive(
 }
 
 static real object_function_input_value(
-	struct object_datum *object,
+	real const *incoming,
 	real const *outgoing,
 	short index)
 {
@@ -5279,7 +5302,7 @@ static real object_function_input_value(
 		return 0.0f;
 	if (index >= NUMBER_OF_INCOMING_OBJECT_FUNCTIONS + 1)
 		return outgoing[index - NUMBER_OF_INCOMING_OBJECT_FUNCTIONS - 1];
-	return object->object.incoming_function_values[index - 1];
+	return incoming[index - 1];
 }
 
 static real object_function_wrap(
@@ -5299,6 +5322,7 @@ static real object_function_addition(
 	struct object_datum *object,
 	struct object_function_definition *function,
 	real huh,
+	real const *incoming,
 	real const *outgoing,
 	boolean *active)
 {
@@ -5310,7 +5334,7 @@ static real object_function_addition(
 	if (function->scale_period_by_function_index)
 	{
 		real function_value = object_function_input_value(
-			object,
+			incoming,
 			outgoing,
 			function->scale_period_by_function_index);
 
@@ -5323,7 +5347,7 @@ static real object_function_addition(
 	if (function->scale_function_by_function_index)
 	{
 		value *= object_function_input_value(
-			object,
+			incoming,
 			outgoing,
 			function->scale_function_by_function_index);
 	}
@@ -5355,14 +5379,14 @@ static real object_function_addition(
 
 	if (function->add_function_index)
 	{
-		value += object_function_input_value(object, outgoing, function->add_function_index);
+		value += object_function_input_value(incoming, outgoing, function->add_function_index);
 		value = MIN(value, 1.f);
 	}
 
 	if (function->scale_result_by_function_index)
 	{
 		value *= object_function_input_value(
-			object,
+			incoming,
 			outgoing,
 			function->scale_result_by_function_index);
 	}
@@ -5430,6 +5454,15 @@ static void object_compute_function_values(
 		object_definition_data_error(object->definition_index, "function count; only the first 4 are computed");
 	}
 
+	/* port: the incoming values they are computed from, for the picture's
+	(object_function_tick_inputs) */
+	object_function_tick_inputs[DATUM_INDEX_TO_ABSOLUTE_INDEX(object_index)].identifier =
+		(short)DATUM_INDEX_TO_IDENTIFIER(object_index);
+	csmemcpy(
+		object_function_tick_inputs[DATUM_INDEX_TO_ABSOLUTE_INDEX(object_index)].values,
+		object->object.incoming_function_values,
+		sizeof(object->object.incoming_function_values));
+
 	for (function_index = 0; function_index<function_count; ++function_index)
 	{
 		struct object_function_definition* function = TAG_BLOCK_GET_ELEMENT(
@@ -5441,6 +5474,7 @@ static void object_compute_function_values(
 			object,
 			function,
 			huh,
+			object->object.incoming_function_values,
 			object->object.outgoing_function_values,
 			&function_is_active);
 
