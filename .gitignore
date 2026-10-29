@@ -42,6 +42,7 @@ reference/
 .DS_Store
 
 /maps
+/exports
 /logs
 
 # Release files collected by tools/release.py

@@ -7,10 +7,12 @@ port/linux/game/custom_edition_maps.c, docs/custom_edition_caches.md), from
 a custom_maps folder the player chose: its maps, their pictures (.bmp) and
 descriptions (.txt), and Custom Edition's bitmaps.map, sounds.map and
 loc.map, in the folder itself and in one level of subfolders, as the game
-lists them (each subfolder a category). It runs in a Worker, which can write
-with synchronous OPFS access handles. The files are added to those already
-there, replacing those of the same names, so that the maps map sharing
-downloaded stay.
+lists them (each subfolder a category), or from maps chosen alone and zips
+(archive.js) of them or of a custom_maps folder, as its export makes. It
+runs in a Worker, which can write with synchronous OPFS access handles. The
+files are added to those already there, replacing those of the same names,
+so that the maps map sharing downloaded stay. It exports them too: a zip of
+custom_maps, whose paths start with custom_maps/.
 
 The folder is the player's, so its paths are checked as the mods importer
 checks them (mods-worker.js): no part of one empty, hidden or with a
@@ -22,12 +24,16 @@ the three resource maps, so a folder that brings none of them when the
 browser has none either is refused.
 
 Messages from the page: { type: 'add', files } (the chosen folder's File
-objects, each with its webkitRelativePath) or { type: 'remove' } (all of
-custom_maps). To the page: { type: 'progress', file, done, total }, then
-{ type: 'done', files, bytes, skipped } or { type: 'error', message }.
+objects, each with its webkitRelativePath, or the files chosen: maps and
+zips), { type: 'remove' } (all of custom_maps) or { type: 'export' }. To
+the page: { type: 'progress', file, done, total, verb }, then { type: 'done',
+files, bytes, skipped, blob (an export's zip) } or { type: 'error',
+message }.
 */
 
 'use strict';
+
+if (typeof importScripts === 'function') importScripts('archive.js');
 
 const FOLDER = 'custom_maps';
 // (custom_edition_maps.h's CUSTOM_EDITION_MAP_CATEGORY_LENGTH, with its
@@ -35,7 +41,6 @@ const FOLDER = 'custom_maps';
 // description each)
 const MAXIMUM_CATEGORY_LENGTH = 63;
 const MAXIMUM_FILES = 3 * 8192;
-const COPY_CHUNK = 4 * 1024 * 1024;
 const MAP_HEADER_SIZE = 0x800;
 const CUSTOM_EDITION_CACHE_VERSION = 609;
 const XBOX_CACHE_VERSION = 5;
@@ -76,6 +81,34 @@ function mapProblem(name, header) {
   if (version === XBOX_CACHE_VERSION) return 'it is an Xbox map (those go in the maps folder: Game data)';
   if (version !== CUSTOM_EDITION_CACHE_VERSION) return `it is not a Custom Edition map (its cache version is ${version})`;
   return null;
+}
+
+// A zip's files as a custom_maps folder's: its paths put under custom_maps/.
+// A zip of one folder is of custom_maps itself when the folder is named so,
+// has the resource maps or has subfolders; else the folder is a category.
+function zipFolderFiles(files) {
+  const split = files.map((file) => file.webkitRelativePath.split('/'));
+  const tops = new Set(split.map((parts) => (parts.length > 1 ? parts[0] : null)));
+  let root = false;
+  if (tops.size === 1 && !tops.has(null)) {
+    const top = [...tops][0];
+    root = asciiLower(top) === FOLDER || split.some((parts) => parts.length > 2) ||
+      split.some((parts) => parts.length === 2 && RESOURCE_MAPS[asciiLower(parts[1])] !== undefined);
+  }
+  files.forEach((file, index) => {
+    file.webkitRelativePath = `${FOLDER}/${(root ? split[index].slice(1) : split[index]).join('/')}`;
+  });
+  return files;
+}
+
+// the files chosen, each zip among those chosen alone as its files
+async function expandZips(list) {
+  const files = [];
+  for (const file of list) {
+    if (!file.webkitRelativePath && HaloArchive.isZip(file)) files.push(...zipFolderFiles(await HaloArchive.open(file)));
+    else files.push(file);
+  }
+  return files;
 }
 
 // The files of a chosen folder to copy: [{ parts, file }], parts the path
@@ -168,20 +201,22 @@ async function writeFile(directory, name, file, onChunk) {
   let complete = false;
   try {
     access.truncate(0);
+    // (a stream: a zip's deflated file is read once, from its start)
+    const reader = file.stream().getReader();
     let position = 0;
-    while (position < file.size) {
-      const count = Math.min(COPY_CHUNK, file.size - position);
-      const bytes = await readBytes(file, position, position + count);
-      if (bytes.length !== count) throw new Error(`Could not read ${file.name}.`);
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
       let written = 0;
-      while (written < count) {
-        const result = access.write(bytes.subarray(written), { at: position + written });
+      while (written < value.length) {
+        const result = access.write(value.subarray(written), { at: position + written });
         if (!result) throw new Error(`Could not write ${file.name}: is the device full?`);
         written += result;
       }
-      position += count;
-      onChunk(count);
+      position += value.length;
+      onChunk(value.length);
     }
+    if (position !== file.size) throw new Error(`Could not read ${file.name}.`);
     access.flush();
     complete = true;
   } finally {
@@ -192,7 +227,7 @@ async function writeFile(directory, name, file, onChunk) {
 }
 
 async function add(list) {
-  const found = customMapFiles(list);
+  const found = customMapFiles(await expandZips(list));
   const files = await checkedFiles(found);
   const storage = await navigator.storage.getDirectory();
   const folder = await storage.getDirectoryHandle(FOLDER, { create: true });
@@ -241,10 +276,45 @@ async function remove() {
   return { files: 0, bytes: 0, skipped: [] };
 }
 
+// custom_maps as a zip: the folder's maps, pictures and descriptions and its
+// subfolders', as the game lists them
+async function exportMaps() {
+  const storage = await navigator.storage.getDirectory();
+  const entries = [];
+  const collect = async (directory, prefix, top) => {
+    for await (const [name, handle] of directory.entries()) {
+      if (!plainPart(name)) continue;
+      if (handle.kind === 'directory') {
+        if (top) await collect(handle, `${prefix}${name}/`, false);
+      } else if (KEPT_EXTENSIONS.some((extension) => asciiLower(name).endsWith(extension))) {
+        entries.push({ name: prefix + name, data: await handle.getFile() });
+      }
+    }
+  };
+  try {
+    await collect(await storage.getDirectoryHandle(FOLDER), `${FOLDER}/`, true);
+  } catch {
+    // none yet
+  }
+  if (!entries.length) throw new Error('There are no Custom Edition maps to export.');
+  let lastReport = 0;
+  const blob = await HaloArchive.zip(entries, (file, done, total) => {
+    const now = Date.now();
+    if (now - lastReport > 100 || done === total) {
+      lastReport = now;
+      postMessage({ type: 'progress', file, done, total, verb: 'Packing' });
+    }
+  });
+  const bytes = entries.reduce((sum, entry) => sum + entry.data.size, 0);
+  return { files: entries.length, bytes, skipped: [], blob };
+}
+
 if (typeof onmessage !== 'undefined' || typeof WorkerGlobalScope !== 'undefined') {
   onmessage = async (event) => {
     try {
-      const result = event.data.type === 'remove' ? await remove() : await add(event.data.files);
+      const type = event.data.type;
+      const result = type === 'remove' ? await remove() : type === 'export' ? await exportMaps() :
+        await add(event.data.files);
       postMessage({ type: 'done', ...result });
     } catch (error) {
       postMessage({ type: 'error', message: error && error.message ? error.message : String(error) });
@@ -254,5 +324,5 @@ if (typeof onmessage !== 'undefined' || typeof WorkerGlobalScope !== 'undefined'
 
 // (for the tests: port/web/tests)
 if (typeof module !== 'undefined') {
-  module.exports = { customMapFiles, checkedFiles, mapProblem, resourceMapsAmong, plainPart };
+  module.exports = { customMapFiles, checkedFiles, mapProblem, resourceMapsAmong, plainPart, zipFolderFiles };
 }

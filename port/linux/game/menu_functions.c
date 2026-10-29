@@ -42,7 +42,9 @@ calls them from PC_MENU_FUNCTION_BASE on):
   left" and "right" choose the Tag Injector profile's custom type of a
   TAG INJECTOR row; before it, with the Tag Injector on and a profile,
   "randomizer tag profiles update" lists them and "randomizer tag
-  profile choose" plays one (or none) and opens it;
+  profile choose" plays one (or none) and opens it: the campaign profiles
+  too (tag_campaign.c), the randomizer on or not, one of which plays the
+  level in the randomizer's place, its screen passed over;
 - the skulls screen (tools/port_settings.py), after a campaign level's
   difficulty (and the randomizer's screen) when game.skulls is on: "skull
   toggle" turns the skull of the item chosen on or off, "skulls toggle all"
@@ -127,6 +129,7 @@ their handlers open opens.
 #include "tag_injector.h"
 #include "firing_range.h"
 #include "tag_multiplayer.h"
+#include "tag_campaign.h"
 #include "tag_preview.h"
 #include "campaign_score.h"
 #include "community.h"
@@ -2488,6 +2491,20 @@ int port_tag_mp_profiles_set_option(long profile, char const *key, char const *v
 long port_tag_mp_profiles_manual_count(long profile, char const *key);
 int port_tag_mp_profiles_manual_has(long profile, char const *key, char const *path);
 int port_tag_mp_profiles_manual_set(long profile, char const *key, char const *path, int on);
+long port_tag_campaign_profiles_scan(void);
+long port_tag_campaign_profiles_count(void);
+unsigned long port_tag_campaign_profiles_scans(void);
+char const *port_tag_campaign_profiles_name(long profile);
+char const *port_tag_campaign_profiles_file(long profile);
+long port_tag_campaign_profiles_find(char const *file);
+long port_tag_campaign_profiles_create(char const *name, char const *profile);
+int port_tag_campaign_profiles_delete(long profile);
+int port_tag_campaign_profiles_rename(long profile, char const *name);
+char const *port_tag_campaign_profiles_option(long profile, char const *key);
+int port_tag_campaign_profiles_set_option(long profile, char const *key, char const *value);
+long port_tag_campaign_profiles_list_count(long profile, char const *section, char const *key);
+int port_tag_campaign_profiles_list_has(long profile, char const *section, char const *key, char const *path);
+int port_tag_campaign_profiles_list_set(long profile, char const *section, char const *key, char const *path, int on);
 
 /* a size as the Tag Injector's menus show it */
 static void tags_size_text(unsigned long size, char *text, size_t text_size)
@@ -2520,7 +2537,9 @@ static void randomizer_tags_refresh(void)
 	if (randomizer_tags.checked && system_milliseconds() - randomizer_tags.checked <= 1000)
 		return;
 	randomizer_tags.checked = system_milliseconds();
-	randomizer_tags.profile = campaign_screens_for_server ? NONE : tag_injector_profile_playable();
+	/* (a co-op game's: the profile chosen for it, which it shares) */
+	randomizer_tags.profile = campaign_screens_for_server ? tag_multiplayer_game_randomizer_profile() :
+		tag_injector_profile_playable();
 	randomizer_tags.actor_type_count = randomizer_tags.profile == NONE ? 0 :
 		tag_injector_custom_types(randomizer_tags.profile, 'actv', randomizer_tags.actor_types, RANDOMIZER_CUSTOM_TYPES);
 	randomizer_tags.weapon_type_count = randomizer_tags.profile == NONE ? 0 :
@@ -2779,11 +2798,34 @@ static boolean randomizer_custom_step(struct widget_instance *widget, short step
 
 /* the screen before the randomizer's (tools/port_settings.py's
 _randomizer_tag_profiles_screen), with the Tag Injector on and a profile:
-NONE, then the profiles, a list at a time from this place */
+NONE, then the campaign profiles (tag_campaign.c), then with the randomizer
+on the profiles it plays, a list at a time from this place */
 #define RANDOMIZER_TAG_PROFILE_ROWS 9
 #define RANDOMIZER_TAG_PROFILE_SCREEN "pc\\main_menu\\difficulty_select\\randomizer\\tag_profile_screen"
 #define RANDOMIZER_SCREEN "pc\\main_menu\\difficulty_select\\randomizer\\randomizer_screen"
 static short randomizer_tag_profile_first;
+
+/* the screen's rows past NONE: the campaign profiles, then (the randomizer
+on) the profiles; of a place, the campaign profile it is (NONE: not one) and
+the profile (NONE: not one) */
+static short randomizer_tag_profile_count(void)
+{
+	return (short)(1 + port_tag_campaign_profiles_count() +
+		(config_boolean("game.randomizer") ? port_tag_profiles_count() : 0));
+}
+
+static long randomizer_tag_profile_place(short place, long *profile)
+{
+	long campaign_profiles = port_tag_campaign_profiles_count();
+
+	*profile = NONE;
+	if (place <= 0)
+		return NONE;
+	if (place <= campaign_profiles)
+		return place - 1;
+	*profile = place - 1 - campaign_profiles;
+	return NONE;
+}
 
 /* the row (tag_profile_<n>) a widget is or is in, or NONE */
 static short randomizer_tag_profile_row(struct widget_instance *widget)
@@ -2802,7 +2844,7 @@ of the one chosen: what it plays */
 static void randomizer_tag_profiles_update(struct widget_instance *list)
 {
 	struct widget_instance *help = list->parameters.list.extended_description;
-	short count = (short)(port_tag_profiles_count() + 1);
+	short count = randomizer_tag_profile_count();
 	short focused = randomizer_tag_profile_row(list->focused_child);
 	short *first = &randomizer_tag_profile_first;
 	short index;
@@ -2836,25 +2878,52 @@ static void randomizer_tag_profiles_update(struct widget_instance *list)
 		row->visible = place < count;
 		if (place >= count)
 			continue;
-		snprintf(text, sizeof(text), "%s", place ? port_tag_profiles_name(place - 1) : "NONE");
-		for (character = 0; text[character] && character < ROW_TEXT_LENGTH - 1; character++)
-			wide[character] = (wchar_t)(unsigned char)text[character];
-		wide[character] = 0;
-		text_set(row, wide);
-		if (index != focused || !help)
-			continue;
-		if (!place)
 		{
-			snprintf(text, sizeof(text), "No Tag Injector tags: the randomizer plays the\ncampaign's alone.");
-		}
-		else
-		{
-			char size[24];
+			long profile;
+			long campaign_profile = randomizer_tag_profile_place(place, &profile);
 
-			tags_size_text(port_tag_profiles_size(place - 1), size, sizeof(size));
-			snprintf(text, sizeof(text), "%ld AI and %ld weapons on (%s): they join\nthe pools, and TAG INJECTOR's.",
-				tag_injector_profile_enabled_count(place - 1, 'actv'),
-				tag_injector_profile_enabled_count(place - 1, 'weap'), size);
+			/* (a campaign profile by its name, a profile the randomizer
+			plays marked so) */
+			if (campaign_profile != NONE)
+				snprintf(text, sizeof(text), "%s", port_tag_campaign_profiles_name(campaign_profile));
+			else if (profile != NONE)
+				snprintf(text, sizeof(text), "%s (RANDOMIZER)", port_tag_profiles_name(profile));
+			else
+				snprintf(text, sizeof(text), "NONE");
+			for (character = 0; text[character] && character < ROW_TEXT_LENGTH - 1; character++)
+				wide[character] = (wchar_t)(unsigned char)text[character];
+			wide[character] = 0;
+			text_set(row, wide);
+			if (index != focused || !help)
+				continue;
+			if (campaign_profile != NONE)
+			{
+				long base = port_tag_profiles_find(port_tag_campaign_profiles_option(campaign_profile, "profile"));
+
+				if (base == NONE)
+					snprintf(text, sizeof(text), "A campaign profile whose profile is not there:\nthe level plays as it is.");
+				else
+					snprintf(text, sizeof(text), "Campaign profile: %ld AI and %ld weapons of %.24s,\nin the randomizer's place.",
+						tag_injector_profile_enabled_count(base, 'actv'), tag_injector_profile_enabled_count(base, 'weap'),
+						port_tag_profiles_name(base));
+			}
+			else if (profile != NONE)
+			{
+				char size[24];
+
+				tags_size_text(port_tag_profiles_size(profile), size, sizeof(size));
+				snprintf(text, sizeof(text), "%ld AI and %ld weapons on (%s): they join\nthe pools, and TAG INJECTOR's.",
+					tag_injector_profile_enabled_count(profile, 'actv'),
+					tag_injector_profile_enabled_count(profile, 'weap'), size);
+			}
+			else if (config_boolean("game.randomizer"))
+			{
+				snprintf(text, sizeof(text), "No Tag Injector tags: the randomizer plays the\ncampaign's alone.");
+			}
+			else
+			{
+				snprintf(text, sizeof(text), "No Tag Injector tags: the level as it is.");
+			}
 		}
 		for (character = 0; text[character] && character < (short)NUMBEROF(wide) - 1; character++)
 			wide[character] = (wchar_t)(unsigned char)text[character];
@@ -2864,19 +2933,32 @@ static void randomizer_tag_profiles_update(struct widget_instance *list)
 }
 
 /* "randomizer tag profile choose" (A on a row): the profile played (or
-none), then the randomizer's screen, whose Back comes back here */
+none), then the randomizer's screen, whose Back comes back here; a campaign
+profile (or none, the randomizer off), the skulls' screen or the level */
 static boolean randomizer_tag_profile_choose(struct widget_instance *widget, boolean *widget_deleted)
 {
 	short row = randomizer_tag_profile_row(widget);
 	short place = row == NONE ? NONE : (short)(randomizer_tag_profile_first + row);
+	long profile;
+	long campaign_profile;
 
-	if (place == NONE || place > port_tag_profiles_count())
+	if (place == NONE || place >= randomizer_tag_profile_count())
 		return campaign_fail();
-	if (!config_write("game.randomizer_tag_profile", place ? port_tag_profiles_folder(place - 1) : ""))
+	campaign_profile = randomizer_tag_profile_place(place, &profile);
+	tag_campaign_profile_choose(campaign_profile);
+	if (!config_write("game.randomizer_tag_profile", profile != NONE ? port_tag_profiles_folder(profile) : ""))
 		error(_error_silent, "randomizer: could not write game.randomizer_tag_profile");
 	error(_error_silent, "randomizer: the Tag Injector's profile played: %s",
-		place ? port_tag_profiles_name(place - 1) : "none");
+		profile != NONE ? port_tag_profiles_name(profile) : "none");
 	randomizer_tags.checked = 0;
+	if (campaign_profile != NONE || !config_boolean("game.randomizer"))
+	{
+		ui_play_audio_feedback_sound(SOUND_FORWARD);
+		if (config_boolean("game.skulls") && skulls_open(widget, widget_deleted))
+			return TRUE;
+		campaign_start(campaign_pending.map_name, campaign_pending.difficulty, campaign_pending.controller, FALSE);
+		return TRUE;
+	}
 	if (!ui_widget_load_by_name_or_tag(RANDOMIZER_SCREEN, NONE, NULL, NONE, screen_of(widget)->definition_tag_index,
 		NONE, NONE))
 	{
@@ -3318,7 +3400,8 @@ static void gameplay_screen_update(struct widget_instance *list)
 item's; "set difficulty" (its OK button) at the one its description shows.
 With the randomizer on, one of the ten campaign levels opens its screen
 first (before it, with the Tag Injector on and a profile, the screen
-choosing the profile it plays, or none), and with the skulls on, theirs (after
+choosing the profile it plays, or none; that screen with a campaign profile
+too, the randomizer on or not), and with the skulls on, theirs (after
 the randomizer's: tools/port_settings.py); Continue and Load Game do not */
 static boolean difficulty_start(struct widget_instance *widget, short difficulty, short controller,
 	boolean *widget_deleted)
@@ -3337,10 +3420,21 @@ static boolean difficulty_start(struct widget_instance *widget, short difficulty
 	campaign_pending.controller = controller;
 	campaign_pending.difficulty = difficulty;
 	campaign_screens_for_server = FALSE;
-	if (config_boolean("game.randomizer") && base_campaign)
+	/* (a campaign profile is played only as chosen there: none without the
+	screen) */
+	if (base_campaign && config_boolean("game.tag_injection"))
+	{
+		port_tag_profiles_scan();
+		port_tag_campaign_profiles_scan();
+	}
+	if (!base_campaign || !config_boolean("game.tag_injection") || !port_tag_campaign_profiles_count())
+		tag_campaign_profile_choose(NONE);
+	if ((config_boolean("game.randomizer") || (config_boolean("game.tag_injection") &&
+		port_tag_campaign_profiles_count() > 0)) && base_campaign)
 	{
 		long screen_tag = screen_of(widget)->definition_tag_index;
-		boolean choose_tags = config_boolean("game.tag_injection") && port_tag_profiles_scan() > 0;
+		boolean choose_tags = config_boolean("game.tag_injection") && (port_tag_campaign_profiles_count() > 0 ||
+			port_tag_profiles_count() > 0);
 		struct widget_instance *opened;
 
 		main_set_difficulty(difficulty);
@@ -5521,7 +5615,12 @@ MULTIPLAYER PROFILES lists the multiplayer profiles (port_tag_mp_profiles.c,
 tag_multiplayer.c): each a profile whose weapons a multiplayer game plays,
 and how (its settings' list; MANUAL's weapons a list of their own, the
 profile's weapons on and ORIGINAL each turned on or off), made with NEW
-PROFILE and deleted with DELETE PROFILE, twice. */
+PROFILE and deleted with DELETE PROFILE, twice. CAMPAIGN PROFILES lists the
+campaign profiles (port_tag_mp_profiles.c's, tag_campaign.c) the same way:
+each a profile whose weapons and AI a campaign level plays, its WEAPONS'
+and ENEMIES' lists how (ROTATION, REPLACEMENT, MANUAL's choices for each of
+the campaign's weapons, and each of its enemies: its ranks, if it has any,
+each with its REPLACEMENT and, if it holds weapons, its LOADOUT). */
 
 #define TAG_ROWS MOD_ROWS
 #define TAG_PROFILE_NAME 24
@@ -5551,6 +5650,17 @@ enum
 	_tags_list_mp_profiles,
 	_tags_list_mp_profile,
 	_tags_list_mp_manual,
+	/* CAMPAIGN PROFILES, one's settings, its WEAPONS and ENEMIES, MANUAL's
+	choices for one of the campaign's weapons or enemy slots, an enemy's
+	ranks, a slot's REPLACEMENT and LOADOUT, and LOADOUT's weapons */
+	_tags_list_campaign_profiles,
+	_tags_list_campaign_profile,
+	_tags_list_campaign_weapons,
+	_tags_list_campaign_enemies,
+	_tags_list_campaign_manual,
+	_tags_list_campaign_ranks,
+	_tags_list_campaign_slot,
+	_tags_list_campaign_loadout,
 	NUMBER_OF_TAGS_LISTS
 };
 
@@ -5559,6 +5669,7 @@ enum
 {
 	_tags_top_injection,
 	_tags_top_profiles,
+	_tags_top_campaign,
 	_tags_top_multiplayer,
 	_tags_top_maps,
 	NUMBER_OF_TAGS_TOP_ROWS
@@ -5605,7 +5716,28 @@ enum
 	_tags_naming_duplicate,
 	/* a new multiplayer profile's, and the one shown's */
 	_tags_naming_mp_profile,
-	_tags_naming_mp_name
+	_tags_naming_mp_name,
+	/* a new campaign profile's, and the one shown's */
+	_tags_naming_campaign_profile,
+	_tags_naming_campaign_name
+};
+
+/* a campaign profile's rows, and its WEAPONS' and ENEMIES' (tags_campaign_row_of:
+a row each of the campaign's weapons, with MANUAL, or of its enemies) */
+enum
+{
+	_tags_campaign_name,
+	_tags_campaign_profile,
+	_tags_campaign_weapons,
+	_tags_campaign_enemies,
+	NUMBER_OF_TAGS_CAMPAIGN_ROWS
+};
+
+enum
+{
+	_tags_campaign_row_rotation,
+	_tags_campaign_row_replace,
+	_tags_campaign_row_stock
 };
 
 /* a multiplayer profile's settings' rows (tags_mp_setting_of: MANUAL's
@@ -5664,6 +5796,9 @@ static struct tags_choice const tags_mp_replaces[] =
 	{ "manual", "MANUAL" },
 };
 static struct tags_choice const tags_mp_loadouts[] = { { "map", "GAMETYPE'S" }, { "random", "RANDOM" }, { "set", "SET" } };
+/* a campaign profile's (tag_campaign.c's) */
+static struct tags_choice const tags_campaign_rotations[] = { { "add", "ADD TO LEVEL'S" }, { "only", "PROFILE'S ONLY" } };
+static struct tags_choice const tags_campaign_replaces[] = { { "random", "RANDOM" }, { "manual", "MANUAL" } };
 
 static struct
 {
@@ -5709,8 +5844,17 @@ static struct
 	long mp_profile;
 	short mp_weapon;
 	long mp_deleting;
+	/* the campaign profile shown; whether its ENEMIES are shown (else its
+	WEAPONS); the campaign's weapon or enemy shown, and the enemy's rank (0:
+	one without ranks); and DELETE PROFILE pressed once for that profile
+	(NONE) */
+	long campaign_profile;
+	boolean campaign_enemies;
+	short campaign_stock;
+	short campaign_rank;
+	long campaign_deleting;
 } tags_screen = { 0, NONE, NONE, NONE, FALSE, FALSE, "", NONE, NONE, { 0 }, { 0 }, _tags_naming_none, { 0 }, NONE, NONE,
-	NONE, "", 0, "", { { 0 } }, "" };
+	NONE, "", 0, "", { { 0 } }, "", { FALSE }, NONE, 0, NONE, NONE, FALSE, 0, 0, NONE };
 
 static void tags_message(char const *text)
 {
@@ -6191,6 +6335,292 @@ static void tags_mp_manual_toggle(short place)
 	ui_play_audio_feedback_sound(SOUND_CURSOR);
 }
 
+/* the profile the campaign profile shown plays (NONE: none, or not found) */
+static long tags_campaign_base(void)
+{
+	return port_tag_profiles_find(port_tag_campaign_profiles_option(tags_screen.campaign_profile, "profile"));
+}
+
+/* the tags on of a group of the profile it plays: how many, and the
+profile's tag of one */
+static long tags_campaign_tag_count(unsigned long group)
+{
+	long base = tags_campaign_base();
+	long count = port_tag_profiles_tag_count(base);
+	long found = 0;
+	long tag;
+
+	for (tag = 0; tag < count; tag++)
+		found += port_tag_profiles_tag_group(base, tag) == group && port_tag_profiles_tag_enabled(base, tag);
+	return found;
+}
+
+static long tags_campaign_tag(unsigned long group, long index)
+{
+	long base = tags_campaign_base();
+	long count = port_tag_profiles_tag_count(base);
+	long tag;
+
+	for (tag = 0; tag < count; tag++)
+	{
+		if (port_tag_profiles_tag_group(base, tag) == group && port_tag_profiles_tag_enabled(base, tag) && !index--)
+			return tag;
+	}
+	return NONE;
+}
+
+/* the WEAPONS' or ENEMIES' shown: its settings' keys, its table's, and how
+many of the campaign's weapons or enemies it has a row for */
+static char const *tags_campaign_key(boolean replace)
+{
+	if (tags_screen.campaign_enemies)
+		return replace ? "enemy_replace" : "enemy_rotation";
+	return replace ? "weapon_replace" : "weapon_rotation";
+}
+
+static char const *tags_campaign_section(void)
+{
+	return tags_screen.campaign_enemies ? "enemies" : "weapons";
+}
+
+static boolean tags_campaign_manual(void)
+{
+	return !strcmp(port_tag_campaign_profiles_option(tags_screen.campaign_profile, tags_campaign_key(TRUE)), "manual");
+}
+
+/* (the weapons' rows with MANUAL alone; the enemies' always, for their
+loadouts) */
+static short tags_campaign_stock_count(void)
+{
+	if (tags_screen.campaign_enemies)
+		return TAG_CAMPAIGN_STOCK_ENEMIES;
+	return tags_campaign_manual() ? TAG_CAMPAIGN_STOCK_WEAPONS : 0;
+}
+
+/* the key and name of what MANUAL's list is of: the campaign's weapon, or
+the enemy's slot (its rank's) */
+static char const *tags_campaign_stock_key(void)
+{
+	static char key[64];
+
+	if (!tags_screen.campaign_enemies)
+		return tag_campaign_weapon_key(tags_screen.campaign_stock);
+	tag_campaign_slot_key(tags_screen.campaign_stock, tags_screen.campaign_rank, key, sizeof(key));
+	return key;
+}
+
+static char const *tags_campaign_stock_name(void)
+{
+	static char name[64];
+
+	if (!tags_screen.campaign_enemies)
+		return tag_campaign_weapon_name(tags_screen.campaign_stock);
+	tag_campaign_slot_name(tags_screen.campaign_stock, tags_screen.campaign_rank, name, sizeof(name));
+	return name;
+}
+
+/* the WEAPONS' or ENEMIES' rows: ROTATION, REPLACEMENT, and one for each of
+the campaign's weapons (with MANUAL) or enemies: how many, and of a row its
+kind and (of the campaign's) which */
+static short tags_campaign_row_count(void)
+{
+	return (short)(2 + tags_campaign_stock_count());
+}
+
+static short tags_campaign_row_of(short place, short *stock)
+{
+	*stock = NONE;
+	if (place == 0)
+		return _tags_campaign_row_rotation;
+	if (place == 1)
+		return _tags_campaign_row_replace;
+	*stock = (short)(place - 2);
+	return _tags_campaign_row_stock;
+}
+
+/* a ROTATION's or REPLACEMENT's choice */
+static short tags_campaign_value(boolean replace)
+{
+	struct tags_choice const *choices = replace ? tags_campaign_replaces : tags_campaign_rotations;
+	short count = replace ? (short)NUMBEROF(tags_campaign_replaces) : (short)NUMBEROF(tags_campaign_rotations);
+	char const *value = port_tag_campaign_profiles_option(tags_screen.campaign_profile, tags_campaign_key(replace));
+	short index;
+
+	for (index = 0; index < count; index++)
+	{
+		if (!strcmp(choices[index].value, value))
+			return index;
+	}
+	return 0;
+}
+
+static void tags_campaign_written(boolean written)
+{
+	if (!written)
+		tags_message("The campaign profile cannot be written (the log says why).");
+	ui_play_audio_feedback_sound(SOUND_CURSOR);
+}
+
+/* the campaign profile's TAG PROFILE, its value before or after */
+static void tags_campaign_profile_step(short step)
+{
+	long profiles = port_tag_profiles_count();
+	long base = tags_campaign_base();
+
+	if (!profiles)
+	{
+		tags_message("No profiles: TAG PROFILES' NEW PROFILE makes one.");
+		ui_play_audio_feedback_sound(SOUND_ERROR);
+		return;
+	}
+	base = base == NONE ? 0 : (base + step + profiles) % profiles;
+	tags_campaign_written(port_tag_campaign_profiles_set_option(tags_screen.campaign_profile, "profile",
+		port_tag_profiles_folder(base)));
+}
+
+/* ROTATION's or REPLACEMENT's value before or after */
+static void tags_campaign_value_step(boolean replace, short step)
+{
+	struct tags_choice const *choices = replace ? tags_campaign_replaces : tags_campaign_rotations;
+	short count = replace ? (short)NUMBEROF(tags_campaign_replaces) : (short)NUMBEROF(tags_campaign_rotations);
+
+	tags_campaign_written(port_tag_campaign_profiles_set_option(tags_screen.campaign_profile,
+		tags_campaign_key(replace), choices[(tags_campaign_value(replace) + step + count) % count].value));
+}
+
+/* the slots' list of an enemy with ranks (each a rank), and a slot's rows
+(REPLACEMENT, LOADOUT) */
+enum
+{
+	_tags_campaign_slot_replace,
+	_tags_campaign_slot_loadout,
+	NUMBER_OF_TAGS_CAMPAIGN_SLOT_ROWS
+};
+
+/* how many of a slot's tables' tags are chosen for it */
+static long tags_campaign_slot_chosen(short enemy, short rank, char const *section)
+{
+	char key[64];
+
+	tag_campaign_slot_key(enemy, rank, key, sizeof(key));
+	return port_tag_campaign_profiles_list_count(tags_screen.campaign_profile, section, key);
+}
+
+/* what a slot's row says: its REPLACEMENT's and LOADOUT's choices (an
+enemy's: its ranks', all of them) */
+static void tags_campaign_slot_state(short enemy, short rank, char *state, size_t state_size)
+{
+	long replaced = 0;
+	long armed = 0;
+	short count = tag_campaign_enemy_rank_count(enemy);
+	short index;
+
+	for (index = 0; index < MAX(1, count); index++)
+	{
+		short each = count ? tag_campaign_enemy_rank(enemy, index) : 0;
+
+		if (rank != NONE && each != rank && count)
+			continue;
+		replaced += tags_campaign_slot_chosen(enemy, each, "enemies");
+		armed += tags_campaign_slot_chosen(enemy, each, "loadout");
+	}
+	if (!replaced && !armed)
+		snprintf(state, state_size, "AS IT IS");
+	else if (!tag_campaign_enemy_armed(enemy) || !armed)
+		snprintf(state, state_size, "%ld AI", replaced);
+	else
+		snprintf(state, state_size, "%ld AI, %ld WEAPONS", replaced, armed);
+}
+
+/* MANUAL's list's row: ORIGINAL (0), or the profile's weapon's or AI's path
+and the name it is shown by */
+static char const *tags_campaign_manual_path(short place, char *shown, size_t shown_size)
+{
+	long tag;
+
+	if (place == 0)
+	{
+		snprintf(shown, shown_size, "ORIGINAL (LEVEL'S %s)", tags_campaign_stock_name());
+		return "original";
+	}
+	tag = tags_campaign_tag(tags_screen.campaign_enemies ? 'actv' : 'weap', place - 1);
+	if (tag == NONE)
+	{
+		shown[0] = 0;
+		return NULL;
+	}
+	tag_injector_tag_display_name(tags_campaign_base(), tag, shown, (long)shown_size);
+	return port_tag_profiles_tag_name(tags_campaign_base(), tag);
+}
+
+static void tags_campaign_manual_toggle(short place)
+{
+	char shown[ROW_TEXT_LENGTH];
+	char const *path = tags_campaign_manual_path(place, shown, sizeof(shown));
+	char const *key = tags_campaign_stock_key();
+
+	if (!path)
+		return;
+	tags_campaign_written(port_tag_campaign_profiles_list_set(tags_screen.campaign_profile, tags_campaign_section(),
+		key, path, !port_tag_campaign_profiles_list_has(tags_screen.campaign_profile, tags_campaign_section(), key,
+		path)));
+}
+
+/* LOADOUT's weapons of the slot shown: ORIGINAL (its own), the profile's
+weapons on, then the campaign's (stock:<key>): how many, and of one its
+value and the name it is shown by */
+static long tags_campaign_loadout_count(void)
+{
+	return 1 + tags_campaign_tag_count('weap') + TAG_CAMPAIGN_STOCK_WEAPONS;
+}
+
+static char const *tags_campaign_loadout_choice(long place, char *value, size_t value_size, char *shown,
+	size_t shown_size)
+{
+	long weapons = tags_campaign_tag_count('weap');
+
+	value[0] = 0;
+	shown[0] = 0;
+	if (place == 0)
+	{
+		snprintf(value, value_size, "original");
+		snprintf(shown, shown_size, "ORIGINAL (ITS OWN)");
+	}
+	else if (place <= weapons)
+	{
+		long tag = tags_campaign_tag('weap', place - 1);
+		char name[256];
+
+		if (tag == NONE)
+			return NULL;
+		snprintf(value, value_size, "%s", port_tag_profiles_tag_name(tags_campaign_base(), tag));
+		tag_injector_tag_display_name(tags_campaign_base(), tag, name, sizeof(name));
+		upper_copy(shown, shown_size, name);
+	}
+	else if (place - 1 - weapons < TAG_CAMPAIGN_STOCK_WEAPONS)
+	{
+		snprintf(value, value_size, "stock:%s", tag_campaign_weapon_key((short)(place - 1 - weapons)));
+		snprintf(shown, shown_size, "CAMPAIGN'S %s", tag_campaign_weapon_name((short)(place - 1 - weapons)));
+	}
+	else
+	{
+		return NULL;
+	}
+	return value;
+}
+
+static void tags_campaign_loadout_toggle(short place)
+{
+	char value[256];
+	char shown[ROW_TEXT_LENGTH];
+	char const *key = tags_campaign_stock_key();
+
+	if (!tags_campaign_loadout_choice(place, value, sizeof(value), shown, sizeof(shown)))
+		return;
+	tags_campaign_written(port_tag_campaign_profiles_list_set(tags_screen.campaign_profile, "loadout", key, value,
+		!port_tag_campaign_profiles_list_has(tags_screen.campaign_profile, "loadout", key, value)));
+}
+
 /* how many rows the list shown has */
 static short tags_count(void)
 {
@@ -6227,6 +6657,21 @@ static short tags_count(void)
 	}
 	case _tags_list_mp_manual:
 		return (short)MIN(1 + tags_mp_weapon_count(), 0x7FFF);
+	case _tags_list_campaign_profiles:
+		return (short)port_tag_campaign_profiles_count();
+	case _tags_list_campaign_profile:
+		return NUMBER_OF_TAGS_CAMPAIGN_ROWS;
+	case _tags_list_campaign_weapons:
+	case _tags_list_campaign_enemies:
+		return tags_campaign_row_count();
+	case _tags_list_campaign_manual:
+		return (short)MIN(1 + tags_campaign_tag_count(tags_screen.campaign_enemies ? 'actv' : 'weap'), 0x7FFF);
+	case _tags_list_campaign_ranks:
+		return tag_campaign_enemy_rank_count(tags_screen.campaign_stock);
+	case _tags_list_campaign_slot:
+		return NUMBER_OF_TAGS_CAMPAIGN_SLOT_ROWS;
+	case _tags_list_campaign_loadout:
+		return (short)MIN(tags_campaign_loadout_count(), 0x7FFF);
 	default:
 		return (short)MIN(tag_injector_category_count(tags_screen.category), 0x7FFF);
 	}
@@ -6355,6 +6800,11 @@ static void tags_row_text(short place, char *name, size_t name_size, char *state
 		{
 			snprintf(name, name_size, "TAG PROFILES");
 			snprintf(state, state_size, "%ld", port_tag_profiles_count());
+		}
+		else if (place == _tags_top_campaign)
+		{
+			snprintf(name, name_size, "CAMPAIGN PROFILES");
+			snprintf(state, state_size, "%ld", port_tag_campaign_profiles_count());
 		}
 		else if (place == _tags_top_multiplayer)
 		{
@@ -6531,6 +6981,125 @@ static void tags_row_text(short place, char *name, size_t name_size, char *state
 			tag_multiplayer_stock_key(tags_screen.mp_weapon), path) ? "ON" : "OFF");
 		break;
 	}
+	case _tags_list_campaign_profiles:
+	{
+		long base = port_tag_profiles_find(port_tag_campaign_profiles_option(place, "profile"));
+
+		snprintf(name, name_size, "%s", port_tag_campaign_profiles_name(place));
+		upper_copy(state, state_size, base != NONE ? port_tag_profiles_name(base) : "NO PROFILE");
+		break;
+	}
+	case _tags_list_campaign_profile:
+		switch (place)
+		{
+		case _tags_campaign_name:
+			snprintf(name, name_size, "NAME");
+			upper_copy(state, state_size, port_tag_campaign_profiles_name(tags_screen.campaign_profile));
+			break;
+		case _tags_campaign_profile:
+			snprintf(name, name_size, "TAG PROFILE");
+			upper_copy(state, state_size, tags_campaign_base() != NONE ? port_tag_profiles_name(tags_campaign_base()) :
+				"NONE");
+			break;
+		case _tags_campaign_weapons:
+		case _tags_campaign_enemies:
+		{
+			boolean enemies = place == _tags_campaign_enemies;
+			char const *rotation = port_tag_campaign_profiles_option(tags_screen.campaign_profile,
+				enemies ? "enemy_rotation" : "weapon_rotation");
+			char const *replace = port_tag_campaign_profiles_option(tags_screen.campaign_profile,
+				enemies ? "enemy_replace" : "weapon_replace");
+
+			snprintf(name, name_size, "%s", enemies ? "ENEMIES" : "WEAPONS");
+			snprintf(state, state_size, "%s, %s", !strcmp(rotation, "only") ? "ONLY" : "ADD",
+				!strcmp(replace, "manual") ? "MANUAL" : "RANDOM");
+			break;
+		}
+		}
+		break;
+	case _tags_list_campaign_weapons:
+	case _tags_list_campaign_enemies:
+	{
+		short stock;
+
+		switch (tags_campaign_row_of(place, &stock))
+		{
+		case _tags_campaign_row_rotation:
+			snprintf(name, name_size, "ROTATION");
+			snprintf(state, state_size, "%s", tags_campaign_rotations[tags_campaign_value(FALSE)].shown);
+			break;
+		case _tags_campaign_row_replace:
+			snprintf(name, name_size, "REPLACEMENT");
+			snprintf(state, state_size, "%s", tags_campaign_replaces[tags_campaign_value(TRUE)].shown);
+			break;
+		default:
+			if (tags_screen.campaign_enemies)
+			{
+				snprintf(name, name_size, "  %s", tag_campaign_enemy_name(stock));
+				tags_campaign_slot_state(stock, NONE, state, state_size);
+			}
+			else
+			{
+				long chosen = port_tag_campaign_profiles_list_count(tags_screen.campaign_profile, "weapons",
+					tag_campaign_weapon_key(stock));
+
+				snprintf(name, name_size, "  %s", tag_campaign_weapon_name(stock));
+				if (chosen)
+					snprintf(state, state_size, "%ld CHOSEN", chosen);
+				else
+					snprintf(state, state_size, "AS IT IS");
+			}
+			break;
+		}
+		break;
+	}
+	case _tags_list_campaign_manual:
+	{
+		char shown[ROW_TEXT_LENGTH];
+		char const *path = tags_campaign_manual_path(place, shown, sizeof(shown));
+
+		upper_copy(name, name_size, shown);
+		snprintf(state, state_size, "%s", path && port_tag_campaign_profiles_list_has(tags_screen.campaign_profile,
+			tags_campaign_section(), tags_campaign_stock_key(), path) ? "ON" : "OFF");
+		break;
+	}
+	case _tags_list_campaign_ranks:
+	{
+		short rank = tag_campaign_enemy_rank(tags_screen.campaign_stock, place);
+
+		snprintf(name, name_size, "%s", tag_campaign_rank_name(rank));
+		tags_campaign_slot_state(tags_screen.campaign_stock, rank, state, state_size);
+		break;
+	}
+	case _tags_list_campaign_slot:
+	{
+		boolean replace = place == _tags_campaign_slot_replace;
+		long chosen = tags_campaign_slot_chosen(tags_screen.campaign_stock, tags_screen.campaign_rank,
+			replace ? "enemies" : "loadout");
+
+		snprintf(name, name_size, "%s", replace ? "REPLACEMENT" : "LOADOUT");
+		if (replace && !tags_campaign_manual())
+			snprintf(state, state_size, "RANDOM");
+		else if (!replace && !tag_campaign_enemy_armed(tags_screen.campaign_stock))
+			snprintf(state, state_size, "NO WEAPONS");
+		else if (chosen)
+			snprintf(state, state_size, "%ld CHOSEN", chosen);
+		else
+			snprintf(state, state_size, replace ? "AS IT IS" : "ITS OWN");
+		break;
+	}
+	case _tags_list_campaign_loadout:
+	{
+		char value[256];
+		char shown[ROW_TEXT_LENGTH];
+
+		if (!tags_campaign_loadout_choice(place, value, sizeof(value), shown, sizeof(shown)))
+			break;
+		snprintf(name, name_size, "%s", shown);
+		snprintf(state, state_size, "%s", port_tag_campaign_profiles_list_has(tags_screen.campaign_profile, "loadout",
+			tags_campaign_stock_key(), value) ? "ON" : "OFF");
+		break;
+	}
 	default:
 		snprintf(name, name_size, "%s", tag_leaf(tag_injector_category_tag(tags_screen.category, place)));
 		if (tag_injector_category_addable(tags_screen.category) &&
@@ -6595,9 +7164,16 @@ static void tags_details_text(short place, char *title, size_t title_size, char 
 		if (place == _tags_top_injection)
 		{
 			snprintf(title, title_size, "Tag Injection");
-			snprintf(text, text_size, "On: the randomizer can add a profile's weapons and AI to a campaign level played "
-				"alone. A screen before the randomizer's chooses which profile, or none.\n \nA, left or right "
-				"turns it on or off.");
+			snprintf(text, text_size, "On: a campaign level played alone can be given a profile's weapons and AI, by "
+				"the randomizer or as a campaign profile says. A screen before the level chooses which, or none.\n \n"
+				"A, left or right turns it on or off.");
+		}
+		else if (place == _tags_top_campaign)
+		{
+			snprintf(title, title_size, "Campaign Profiles");
+			snprintf(text, text_size, "How a campaign level played alone plays a profile's weapons and AI, in the "
+				"randomizer's place: the level's weapons and enemies swapped for them, and the weapons its AI "
+				"hold. The screen before the level chooses one.\n \nA lists them.");
 		}
 		else if (place == _tags_top_multiplayer)
 		{
@@ -6644,11 +7220,11 @@ static void tags_details_text(short place, char *title, size_t title_size, char 
 		if (place == TAGS_FIRING_RANGE_ROW)
 		{
 			snprintf(title, title_size, "FIRING RANGE");
-			snprintf(text, text_size, "A plays a plane to try %s's weapons and AI on, alone. West: its weapons on "
-				"benches, each back a moment after it is taken. South: a mirror, behind which a copy of you moves "
-				"as you do while you stand before it. North: its AI, each playing its animations; action by one "
-				"puts it in the arena, armed.\n \n"
-				"The pause menu's QUIT leaves it.", profile);
+			snprintf(text, text_size, "Try out all the weapon and enemy tags from your profile.\n \n"
+				"When holding a weapon, you're able to edit its values (like HUD element positions, name, "
+				"category, damage, etc) from the overlay menu.\n \n"
+				"You'll be able to see all enemies and their animations, as well as spawn them into a small arena "
+				"to fight them and make sure everything works properly.");
 			break;
 		}
 		snprintf(title, title_size, "%s", profile);
@@ -6812,7 +7388,7 @@ static void tags_details_text(short place, char *title, size_t title_size, char 
 		{
 			snprintf(title, title_size, "No multiplayer profiles");
 			snprintf(text, text_size, "NEW PROFILE makes one, playing the weapons of a profile of TAG PROFILES. Each "
-				"is a file of the tag_injector folder's .multiplayer folder.");
+				"is a file of the tag_injector folder's multiplayer folder.");
 			break;
 		}
 		base = port_tag_profiles_find(port_tag_mp_profiles_option(place, "profile"));
@@ -6866,6 +7442,134 @@ static void tags_details_text(short place, char *title, size_t title_size, char 
 				"(when the map has it).\n \nA, left and right choose another.");
 			break;
 		}
+		break;
+	}
+	case _tags_list_campaign_profiles:
+	{
+		long base;
+
+		if (place == NONE)
+		{
+			snprintf(title, title_size, "No campaign profiles");
+			snprintf(text, text_size, "NEW PROFILE makes one, playing the weapons and AI of a profile of TAG "
+				"PROFILES. Each is a file of the tag_injector folder's campaign folder.");
+			break;
+		}
+		base = port_tag_profiles_find(port_tag_campaign_profiles_option(place, "profile"));
+		snprintf(title, title_size, "%s", port_tag_campaign_profiles_name(place));
+		if (base == NONE)
+			snprintf(text, text_size, "Its profile (%s) is not there: A, then TAG PROFILE, chooses another.",
+				port_tag_campaign_profiles_option(place, "profile"));
+		else
+			snprintf(text, text_size, "Plays the %ld weapons and %ld AI on of %s.\n \nA opens its settings: there "
+				"DELETE PROFILE, twice, deletes it.", tag_injector_profile_enabled_count(base, 'weap'),
+				tag_injector_profile_enabled_count(base, 'actv'), port_tag_profiles_name(base));
+		break;
+	}
+	case _tags_list_campaign_profile:
+		snprintf(title, title_size, "%s", port_tag_campaign_profiles_name(tags_screen.campaign_profile));
+		switch (place)
+		{
+		case _tags_campaign_name:
+			snprintf(text, text_size, "The name the menus show it by.\n \nA types another.");
+			break;
+		case _tags_campaign_profile:
+			snprintf(text, text_size, "The profile whose weapons (%ld) and AI (%ld) on it plays.\n \nA, left and "
+				"right choose another.", tags_campaign_tag_count('weap'), tags_campaign_tag_count('actv'));
+			break;
+		case _tags_campaign_weapons:
+			snprintf(text, text_size, "How the weapons lying in the level are swapped for the profile's.\n \nA "
+				"opens them.");
+			break;
+		default:
+			snprintf(text, text_size, "How the level's enemies are swapped for the profile's AI, and the weapons "
+				"each kind and rank of them holds (its LOADOUT).\n \nA opens them.");
+			break;
+		}
+		break;
+	case _tags_list_campaign_weapons:
+	case _tags_list_campaign_enemies:
+	{
+		short stock;
+		boolean enemies = tags_screen.campaign_enemies;
+
+		snprintf(title, title_size, "%s", enemies ? "Enemies" : "Weapons");
+		switch (tags_campaign_row_of(place, &stock))
+		{
+		case _tags_campaign_row_rotation:
+			snprintf(text, text_size, "ADD TO LEVEL'S: the profile's %s join the level's, so one may stay as it is. "
+				"PROFILE'S ONLY: they are all the profile's.\n \nWith MANUAL, ADD keeps the level's own among those "
+				"chosen for it.\n \nLeft and right choose.", enemies ? "AI" : "weapons");
+			break;
+		case _tags_campaign_row_replace:
+			if (enemies)
+				snprintf(text, text_size, "How the level's enemies are swapped:\nRANDOM: any of the profile's AI, each "
+					"placed (your allies stay as they are).\nMANUAL: the AI chosen for each enemy (and rank) below.\n \n"
+					"Left and right choose.");
+			else
+				snprintf(text, text_size, "How the level's weapons, lying in it or held by its AI, are swapped:\nRANDOM: "
+					"any of the profile's weapons, each placed.\nMANUAL: the weapons chosen for each of the campaign's."
+					"\n \nLeft and right choose.");
+			break;
+		default:
+			if (!enemies)
+				snprintf(text, text_size, "The weapons that take the place of the level's %s, lying in it or held by "
+					"its AI (who keep it when they cannot hold them), one at random each placed. None chosen: it stays "
+					"as it is.\n \nA lists them.", tag_campaign_weapon_name(stock));
+			else if (tag_campaign_enemy_rank_count(stock))
+				snprintf(text, text_size, "The level's %ss, each rank its own: the AI that take its place, and the "
+					"weapons it holds.\n \nA lists its ranks.", tag_campaign_enemy_name(stock));
+			else
+				snprintf(text, text_size, "The AI that take the place of the level's %ss%s.\n \nA opens them.",
+					tag_campaign_enemy_name(stock), tag_campaign_enemy_armed(stock) ? ", and the weapons it holds" : "");
+			break;
+		}
+		break;
+	}
+	case _tags_list_campaign_manual:
+	{
+		char shown[ROW_TEXT_LENGTH];
+
+		snprintf(title, title_size, "%s", tags_campaign_stock_name());
+		tags_campaign_manual_path(place, shown, sizeof(shown));
+		snprintf(text, text_size, "On: %s may take the place of the level's %s, one of those on at random each "
+			"placed.\n \nA, left or right turns it on or off.", place == 0 ? "the level's own" : shown,
+			tags_campaign_stock_name());
+		break;
+	}
+	case _tags_list_campaign_ranks:
+	{
+		char name[64];
+
+		tag_campaign_slot_name(tags_screen.campaign_stock, tag_campaign_enemy_rank(tags_screen.campaign_stock, place),
+			name, sizeof(name));
+		snprintf(title, title_size, "%s", name);
+		snprintf(text, text_size, "The AI that take the place of the level's %ss%s.\n \nA opens them.", name,
+			tag_campaign_enemy_armed(tags_screen.campaign_stock) ? ", and the weapons they hold" : "");
+		break;
+	}
+	case _tags_list_campaign_slot:
+		snprintf(title, title_size, "%s", tags_campaign_stock_name());
+		if (place == _tags_campaign_slot_replace)
+			snprintf(text, text_size, "%s", tags_campaign_manual() ? "The AI that take its place, one of those on at "
+				"random each placed. None chosen: it stays as it is.\n \nA lists them." : "ENEMIES' REPLACEMENT is "
+				"RANDOM: any of the profile's AI takes its place. MANUAL chooses them here.");
+		else if (!tag_campaign_enemy_armed(tags_screen.campaign_stock))
+			snprintf(text, text_size, "It holds no weapons a loadout can choose.");
+		else
+			snprintf(text, text_size, "The weapons it holds (it, or the AI that took its place), one of those on that "
+				"it can hold, at random. None chosen: its own, swapped as WEAPONS says.\n \nA lists them.");
+		break;
+	case _tags_list_campaign_loadout:
+	{
+		char value[256];
+		char shown[ROW_TEXT_LENGTH];
+
+		snprintf(title, title_size, "%s", tags_campaign_stock_name());
+		tags_campaign_loadout_choice(place, value, sizeof(value), shown, sizeof(shown));
+		snprintf(text, text_size, "On: it may hold %s%s.\n \nA, left or right turns it on or off.",
+			place == 0 ? "its own weapon" : shown,
+			place > tags_campaign_tag_count('weap') ? " (when the level has it)" : "");
 		break;
 	}
 	case _tags_list_mp_manual:
@@ -6944,6 +7648,11 @@ static boolean tags_screen_reset(boolean opening)
 	tags_screen.mp_profile = NONE;
 	tags_screen.mp_weapon = 0;
 	tags_screen.mp_deleting = NONE;
+	tags_screen.campaign_profile = NONE;
+	tags_screen.campaign_enemies = FALSE;
+	tags_screen.campaign_stock = 0;
+	tags_screen.campaign_rank = 0;
+	tags_screen.campaign_deleting = NONE;
 	tags_screen.message[0] = 0;
 	tags_screen.shown[0] = 0;
 	csmemset(tags_screen.row_shown, 0, sizeof(tags_screen.row_shown));
@@ -6974,6 +7683,7 @@ static boolean tags_screen_reset(boolean opening)
 	}
 	port_tag_profiles_scan();
 	port_tag_mp_profiles_scan();
+	port_tag_campaign_profiles_scan();
 	tag_injector_maps_find();
 	map_browse_forget();
 	tags_screen.profile = port_tag_profiles_find(config_string("game.tag_injection_profile"));
@@ -7117,6 +7827,12 @@ static boolean tags_choose(struct widget_instance *widget)
 			port_tag_mp_profiles_scan();
 			ui_play_audio_feedback_sound(SOUND_FORWARD);
 			tags_list_open(list, _tags_list_mp_profiles, (short)MAX(0, tags_screen.mp_profile));
+		}
+		else if (place == _tags_top_campaign)
+		{
+			port_tag_campaign_profiles_scan();
+			ui_play_audio_feedback_sound(SOUND_FORWARD);
+			tags_list_open(list, _tags_list_campaign_profiles, (short)MAX(0, tags_screen.campaign_profile));
 		}
 		else if (!tag_injector_maps_available(reason, sizeof(reason)))
 		{
@@ -7297,6 +8013,84 @@ static boolean tags_choose(struct widget_instance *widget)
 	case _tags_list_mp_manual:
 		tags_mp_manual_toggle(place);
 		break;
+	case _tags_list_campaign_profiles:
+		tags_screen.campaign_profile = place;
+		tags_screen.campaign_deleting = NONE;
+		ui_play_audio_feedback_sound(SOUND_FORWARD);
+		tags_list_open(list, _tags_list_campaign_profile, 0);
+		break;
+	case _tags_list_campaign_profile:
+		if (place == _tags_campaign_name)
+		{
+			char shown[TAG_PROFILE_NAME + 1];
+
+			snprintf(shown, sizeof(shown), "%s", port_tag_campaign_profiles_name(tags_screen.campaign_profile));
+			tags_name_ask(_tags_naming_campaign_name, shown, TAG_PROFILE_NAME);
+		}
+		else if (place == _tags_campaign_profile)
+		{
+			tags_campaign_profile_step(1);
+		}
+		else
+		{
+			tags_screen.campaign_enemies = place == _tags_campaign_enemies;
+			ui_play_audio_feedback_sound(SOUND_FORWARD);
+			tags_list_open(list, tags_screen.campaign_enemies ? _tags_list_campaign_enemies : _tags_list_campaign_weapons,
+				0);
+		}
+		break;
+	case _tags_list_campaign_weapons:
+	case _tags_list_campaign_enemies:
+	{
+		short stock;
+
+		switch (tags_campaign_row_of(place, &stock))
+		{
+		case _tags_campaign_row_rotation:
+			tags_campaign_value_step(FALSE, 1);
+			break;
+		case _tags_campaign_row_replace:
+			tags_campaign_value_step(TRUE, 1);
+			break;
+		default:
+			/* (a weapon's choices; an enemy's ranks, else its one slot) */
+			tags_screen.campaign_stock = stock;
+			tags_screen.campaign_rank = 0;
+			ui_play_audio_feedback_sound(SOUND_FORWARD);
+			tags_list_open(list, !tags_screen.campaign_enemies ? _tags_list_campaign_manual :
+				tag_campaign_enemy_rank_count(stock) ? _tags_list_campaign_ranks : _tags_list_campaign_slot, 0);
+			break;
+		}
+		break;
+	}
+	case _tags_list_campaign_manual:
+		tags_campaign_manual_toggle(place);
+		break;
+	case _tags_list_campaign_ranks:
+		tags_screen.campaign_rank = tag_campaign_enemy_rank(tags_screen.campaign_stock, place);
+		ui_play_audio_feedback_sound(SOUND_FORWARD);
+		tags_list_open(list, _tags_list_campaign_slot, 0);
+		break;
+	case _tags_list_campaign_slot:
+		if (place == _tags_campaign_slot_replace && !tags_campaign_manual())
+		{
+			tags_message("ENEMIES' REPLACEMENT is RANDOM: MANUAL chooses each enemy's AI.");
+			ui_play_audio_feedback_sound(SOUND_ERROR);
+			break;
+		}
+		if (place == _tags_campaign_slot_loadout && !tag_campaign_enemy_armed(tags_screen.campaign_stock))
+		{
+			tags_message("It holds no weapons a loadout can choose.");
+			ui_play_audio_feedback_sound(SOUND_ERROR);
+			break;
+		}
+		ui_play_audio_feedback_sound(SOUND_FORWARD);
+		tags_list_open(list, place == _tags_campaign_slot_replace ? _tags_list_campaign_manual :
+			_tags_list_campaign_loadout, 0);
+		break;
+	case _tags_list_campaign_loadout:
+		tags_campaign_loadout_toggle(place);
+		break;
 	case _tags_list_categories:
 		if (!tag_injector_category_count(place))
 		{
@@ -7415,6 +8209,26 @@ static boolean tags_step(struct widget_instance *widget, short step)
 	case _tags_list_mp_manual:
 		tags_mp_manual_toggle(place);
 		return TRUE;
+	case _tags_list_campaign_profile:
+		if (place == _tags_campaign_profile)
+			tags_campaign_profile_step(step);
+		return TRUE;
+	case _tags_list_campaign_weapons:
+	case _tags_list_campaign_enemies:
+	{
+		short stock;
+		short row = tags_campaign_row_of(place, &stock);
+
+		if (row == _tags_campaign_row_rotation || row == _tags_campaign_row_replace)
+			tags_campaign_value_step(row == _tags_campaign_row_replace, step);
+		return TRUE;
+	}
+	case _tags_list_campaign_manual:
+		tags_campaign_manual_toggle(place);
+		return TRUE;
+	case _tags_list_campaign_loadout:
+		tags_campaign_loadout_toggle(place);
+		return TRUE;
 	default:
 		return TRUE;
 	}
@@ -7456,6 +8270,22 @@ static boolean tags_back(struct widget_instance *widget, boolean *widget_deleted
 		up = _tags_list_mp_profiles;
 		break;
 	case _tags_list_mp_manual: up = _tags_list_mp_profile; break;
+	case _tags_list_campaign_profiles: up = _tags_list_top; break;
+	case _tags_list_campaign_profile:
+		tags_screen.campaign_deleting = NONE;
+		up = _tags_list_campaign_profiles;
+		break;
+	case _tags_list_campaign_weapons:
+	case _tags_list_campaign_enemies: up = _tags_list_campaign_profile; break;
+	case _tags_list_campaign_manual:
+		up = tags_screen.campaign_enemies ? _tags_list_campaign_slot : _tags_list_campaign_weapons;
+		break;
+	case _tags_list_campaign_ranks: up = _tags_list_campaign_enemies; break;
+	case _tags_list_campaign_slot:
+		up = tag_campaign_enemy_rank_count(tags_screen.campaign_stock) ? _tags_list_campaign_ranks :
+			_tags_list_campaign_enemies;
+		break;
+	case _tags_list_campaign_loadout: up = _tags_list_campaign_slot; break;
 	default:
 		ui_widget_port_go_back(widget);
 		*widget_deleted = TRUE;
@@ -7480,7 +8310,11 @@ enum
 	/* NEW PROFILE in MULTIPLAYER PROFILES; DELETE PROFILE in a multiplayer
 	profile's lists */
 	_tags_buttons_mp_profiles,
-	_tags_buttons_mp_profile
+	_tags_buttons_mp_profile,
+	/* NEW PROFILE in CAMPAIGN PROFILES; DELETE PROFILE in a campaign
+	profile's lists */
+	_tags_buttons_campaign_profiles,
+	_tags_buttons_campaign_profile
 };
 
 static short tags_buttons(void)
@@ -7500,6 +8334,16 @@ static short tags_buttons(void)
 	case _tags_list_mp_profile:
 	case _tags_list_mp_manual:
 		return _tags_buttons_mp_profile;
+	case _tags_list_campaign_profiles:
+		return _tags_buttons_campaign_profiles;
+	case _tags_list_campaign_profile:
+	case _tags_list_campaign_weapons:
+	case _tags_list_campaign_enemies:
+	case _tags_list_campaign_manual:
+	case _tags_list_campaign_ranks:
+	case _tags_list_campaign_slot:
+	case _tags_list_campaign_loadout:
+		return _tags_buttons_campaign_profile;
 	default:
 		return _tags_buttons_maps;
 	}
@@ -7513,11 +8357,16 @@ static boolean tags_new_profile(void)
 	short buttons = tags_buttons();
 
 	if (tags_screen.naming != _tags_naming_none || buttons == _tags_buttons_none ||
-		buttons == _tags_buttons_mp_profile)
+		buttons == _tags_buttons_mp_profile || buttons == _tags_buttons_campaign_profile)
 		return TRUE;
 	if (buttons == _tags_buttons_mp_profiles)
 	{
 		tags_name_ask(_tags_naming_mp_profile, NULL, TAG_PROFILE_NAME);
+		return TRUE;
+	}
+	if (buttons == _tags_buttons_campaign_profiles)
+	{
+		tags_name_ask(_tags_naming_campaign_profile, NULL, TAG_PROFILE_NAME);
 		return TRUE;
 	}
 	if (buttons == _tags_buttons_profile && tags_screen.profile != NONE)
@@ -7569,6 +8418,37 @@ static boolean tags_profile_button(struct widget_instance *widget)
 	if (tags_buttons() == _tags_buttons_maps)
 	{
 		tags_view_profile(widget);
+		return TRUE;
+	}
+	/* (a campaign profile's: once the question, again its file deleted) */
+	if (tags_buttons() == _tags_buttons_campaign_profile)
+	{
+		long campaign_profile = tags_screen.campaign_profile;
+
+		if (tags_screen.campaign_deleting != campaign_profile)
+		{
+			tags_screen.campaign_deleting = campaign_profile;
+			snprintf(text, sizeof(text), "DELETE PROFILE again deletes the campaign profile %s (not its tags' "
+				"profile).", port_tag_campaign_profiles_name(campaign_profile));
+			tags_message(text);
+			ui_play_audio_feedback_sound(SOUND_CURSOR);
+			return TRUE;
+		}
+		snprintf(text, sizeof(text), "Deleted %s.", port_tag_campaign_profiles_name(campaign_profile));
+		if (!port_tag_campaign_profiles_delete(campaign_profile))
+		{
+			snprintf(text, sizeof(text), "%s cannot be deleted (the log says why).",
+				port_tag_campaign_profiles_name(campaign_profile));
+			ui_play_audio_feedback_sound(SOUND_ERROR);
+		}
+		else
+		{
+			ui_play_audio_feedback_sound(SOUND_BACK);
+		}
+		tags_screen.campaign_deleting = NONE;
+		tags_screen.campaign_profile = NONE;
+		tags_list_open(tags_list_of(widget), _tags_list_campaign_profiles, 0);
+		tags_message(text);
 		return TRUE;
 	}
 	/* (a multiplayer profile's: once the question, again its file deleted) */
@@ -7673,11 +8553,12 @@ static void tags_buttons_update(struct widget_instance *list)
 	if (!new_button || !profile_button)
 		return;
 	snprintf(tags_screen.buttons_shown, sizeof(tags_screen.buttons_shown), "%s", shown);
-	tags_button_show(new_button, buttons == _tags_buttons_none || buttons == _tags_buttons_mp_profile ? NULL :
+	tags_button_show(new_button, buttons == _tags_buttons_none || buttons == _tags_buttons_mp_profile ||
+		buttons == _tags_buttons_campaign_profile ? NULL :
 		buttons == _tags_buttons_profile ? L"DUPLICATE PROFILE" : L"NEW PROFILE");
 	mods_wide_text(view, wide, ROW_TEXT_LENGTH);
-	tags_button_show(profile_button, buttons == _tags_buttons_profile || buttons == _tags_buttons_mp_profile ?
-		L"DELETE PROFILE" : view[0] ? wide : NULL);
+	tags_button_show(profile_button, buttons == _tags_buttons_profile || buttons == _tags_buttons_mp_profile ||
+		buttons == _tags_buttons_campaign_profile ? L"DELETE PROFILE" : view[0] ? wide : NULL);
 }
 
 /* the name typed, once the keyboard has closed: a profile made, and shown,
@@ -7699,6 +8580,34 @@ void tag_injector_profiles_poll(void)
 	name[character] = 0;
 	if (!virtual_keyboard_last_exit_saved_text())
 		return;
+	if (naming == _tags_naming_campaign_name)
+	{
+		if (!port_tag_campaign_profiles_rename(tags_screen.campaign_profile, name))
+			tags_message("A name needs a letter or a digit (the log says why).");
+		tags_screen.shown[0] = 0;
+		csmemset(tags_screen.row_shown, 0, sizeof(tags_screen.row_shown));
+		return;
+	}
+	if (naming == _tags_naming_campaign_profile)
+	{
+		/* (playing the profile shown last, else the first) */
+		long base = tags_screen.profile != NONE ? tags_screen.profile : port_tag_profiles_count() ? 0 : NONE;
+
+		profile = port_tag_campaign_profiles_create(name, base != NONE ? port_tag_profiles_folder(base) : "");
+		if (profile == NONE)
+		{
+			tags_message("A profile's name needs a letter or a digit (the log says why).");
+			return;
+		}
+		tags_screen.campaign_profile = profile;
+		tags_screen.chosen[_tags_list_campaign_profiles] = (short)profile;
+		snprintf(text, sizeof(text), "Made %s, playing %s. A opens its settings.",
+			port_tag_campaign_profiles_name(profile), base != NONE ? port_tag_profiles_name(base) : "no profile yet");
+		tags_message(text);
+		tags_screen.shown[0] = 0;
+		csmemset(tags_screen.row_shown, 0, sizeof(tags_screen.row_shown));
+		return;
+	}
 	if (naming == _tags_naming_mp_name)
 	{
 		if (!port_tag_mp_profiles_rename(tags_screen.mp_profile, name))
@@ -7912,6 +8821,14 @@ static void tags_update(struct widget_instance *list)
 		tags_list_show(list, _tags_list_mp_profile);
 	if (tags_screen.mp_deleting != NONE && tags_buttons() != _tags_buttons_mp_profile)
 		tags_screen.mp_deleting = NONE;
+	/* (a campaign profile deleted; MANUAL turned off) */
+	if (tags_buttons() == _tags_buttons_campaign_profile &&
+		(tags_screen.campaign_profile == NONE || tags_screen.campaign_profile >= port_tag_campaign_profiles_count()))
+		tags_list_show(list, _tags_list_campaign_profiles);
+	if (tags_screen.list == _tags_list_campaign_manual && !tags_campaign_manual())
+		tags_list_show(list, tags_screen.campaign_enemies ? _tags_list_campaign_slot : _tags_list_campaign_weapons);
+	if (tags_screen.campaign_deleting != NONE && tags_buttons() != _tags_buttons_campaign_profile)
+		tags_screen.campaign_deleting = NONE;
 	first = &tags_screen.first[tags_screen.list];
 	chosen = &tags_screen.chosen[tags_screen.list];
 	count = tags_count();
@@ -7999,14 +8916,17 @@ static void tags_update(struct widget_instance *list)
 
 		/* (made again only when what they show, or its fonts, change) */
 		needs_state = previewed ? tag_preview_needs(&needs) : _tag_preview_needs_waiting;
-		snprintf(shown, sizeof(shown), "%d %ld %d %lu %d %d %d %d %ld %ld %d %s %lu %d %ld %ld %s %ld %d %ld %d %d",
-			tags_screen.list, tags_screen.mp_profile, tags_screen.mp_weapon, port_tag_mp_profiles_scans(), *chosen,
+		snprintf(shown, sizeof(shown), "%d %ld %d %lu %ld %d %d %ld %lu %d %d %d %d %ld %ld %d %s %lu %d %ld %ld %ld "
+			"%d %ld %d %ld %d %d %s",
+			tags_screen.list, tags_screen.mp_profile, tags_screen.mp_weapon, port_tag_mp_profiles_scans(),
+			tags_screen.campaign_profile, tags_screen.campaign_enemies, tags_screen.campaign_stock,
+			(long)tags_screen.campaign_rank, port_tag_campaign_profiles_scans(), *chosen,
 			count, tags_screen.category, tags_screen.profile_category, tags_screen.profile, tags_screen.tag,
 			tags_screen.campaign,
 			tags_screen.folder, port_tag_profiles_scans(), config_boolean("game.tag_injection"), tags_screen.removing,
-			tags_screen.deleting, tags_screen.message, mods_screen.fonts[_mod_details_name],
+			tags_screen.deleting, tags_screen.campaign_deleting, mods_screen.fonts[_mod_details_name],
 			mods_screen.widths[_mod_details_name], mods_screen.fonts[_mod_details_text],
-			mods_screen.widths[_mod_details_text], needs_state);
+			mods_screen.widths[_mod_details_text], needs_state, tags_screen.message);
 		if (strcmp(shown, tags_screen.shown))
 		{
 			snprintf(tags_screen.shown, sizeof(tags_screen.shown), "%s", shown);
@@ -8777,6 +9697,11 @@ static struct
 } map_list;
 
 #define SERVER_SETUP_NAME "pc\\main_menu\\multiplayer_type_select\\server_settings\\server_settings_screen"
+/* (the game's TAG PROFILE screen, which a co-op level's difficulty opens
+before Server Setup when the game asks for its profile: below) */
+#define TAG_PROFILE_SCREEN_NAME \
+	"pc\\main_menu\\multiplayer_type_select\\server_settings\\tag_profile\\tag_profile_screen"
+static boolean tag_profile_asked(void);
 
 static short map_step_count(void)
 {
@@ -8988,6 +9913,8 @@ static boolean map_list_choose(struct widget_instance *list, boolean *widget_del
 			community_daily_cancel();
 			return campaign_fail();
 		}
+		tag_multiplayer_game_campaign_profile_set(NONE);
+		multiplayer.tag_profile_shown = FALSE;
 		return ui_widget_port_open(list, SERVER_SETUP_NAME, widget_deleted);
 	}
 	community_daily_cancel();
@@ -9005,9 +9932,15 @@ static boolean map_list_choose(struct widget_instance *list, boolean *widget_del
 		char const *map_name = map_list.kind == MAP_KIND_SINGLEPLAYER ? main_get_solo_level_name(map_list.level) :
 			custom_map_level_name(map_list.kind, flat);
 
-		/* the co-op game set up, then Server Setup in the gametypes' place */
+		/* the co-op game set up, then Server Setup in the gametypes' place
+		(first the game's TAG PROFILE screen, tag_profile_asked: the game
+		plays no campaign profile until that chooses one) */
 		if (!ui_widget_port_cooperative_level_choose(map_name, chosen))
 			return campaign_fail();
+		tag_multiplayer_game_campaign_profile_set(NONE);
+		multiplayer.tag_profile_shown = tag_profile_asked();
+		if (multiplayer.tag_profile_shown)
+			return ui_widget_port_open(list, TAG_PROFILE_SCREEN_NAME, widget_deleted);
 		return ui_widget_port_open(list, SERVER_SETUP_NAME, widget_deleted);
 	}
 	/* (a multiplayer map: the Xbox's, then the Custom Edition ones, in the
@@ -9308,23 +10241,85 @@ Injector on and a multiplayer profile made, on one of the game's own
 multiplayer maps: NONE (the game listed for every build), then the Tag
 Injector's multiplayer profiles (the game listed for builds with the mod
 alone, its players downloading the profile's weapons: tag_multiplayer.c).
-What is chosen stays the game's: Server Setup shows it, and B from there
-comes back here to choose again */
+A co-op game's, on one of the campaign's levels with a campaign profile
+made, between the difficulty and Server Setup: NONE, then the campaign
+profiles (its players downloading the profile's AI and weapons, which the
+host plays in the randomizer's place: tag_campaign.c). What is chosen stays
+the game's: Server Setup shows it, and B from there comes back here to
+choose again */
 
 #define TAG_PROFILE_ROWS 9
-#define TAG_PROFILE_SCREEN_NAME \
-	"pc\\main_menu\\multiplayer_type_select\\server_settings\\tag_profile\\tag_profile_screen"
+
+static boolean hosting_cooperative(void);
+
+/* whether the screen is a co-op game's: one of the campaign's levels, its
+rows the campaign profiles */
+static boolean tag_profile_cooperative(void)
+{
+	void *server = global_network_game_server_get();
+	struct network_game *game = server ? network_game_server_get_game(server) : NULL;
+
+	return game && hosting_cooperative() && tag_multiplayer_campaign_takes(game->map.name);
+}
 
 /* whether the game hosted asks for its profile: a multiplayer game on one
 of the game's own maps, with the Tag Injector on and a multiplayer profile
-made */
+made; a co-op game on one of the campaign's levels with a campaign profile
+made (not a daily challenge's, the same for everyone) */
 static boolean tag_profile_asked(void)
 {
 	void *server = global_network_game_server_get();
 	struct network_game *game = server ? network_game_server_get_game(server) : NULL;
 
-	return game && config_boolean("game.tag_injection") && tag_multiplayer_map_takes(game->map.name) &&
-		port_tag_mp_profiles_scan() > 0;
+	if (!game || !config_boolean("game.tag_injection"))
+		return FALSE;
+	if (tag_profile_cooperative())
+		return !community_challenge_running() && (port_tag_campaign_profiles_scan() > 0 ||
+			(config_boolean("game.randomizer") && port_tag_profiles_scan() > 0));
+	return !hosting_cooperative() && tag_multiplayer_map_takes(game->map.name) && port_tag_mp_profiles_scan() > 0;
+}
+
+/* the screen's profiles past NONE: a multiplayer game's multiplayer
+profiles; a co-op game's campaign profiles, then with the randomizer on the
+profiles it plays (as the solo screen lists them: randomizer_tag_profile_place).
+Of one (from 0), the campaign profile it is and the profile the randomizer
+plays (each NONE when it is not one), or the multiplayer profile (returned) */
+static long tag_profile_count(void)
+{
+	if (!tag_profile_cooperative())
+		return port_tag_mp_profiles_count();
+	return port_tag_campaign_profiles_count() + (config_boolean("game.randomizer") ? port_tag_profiles_count() : 0);
+}
+
+static long tag_profile_place(long index, long *campaign_profile, long *profile)
+{
+	long campaign_profiles = port_tag_campaign_profiles_count();
+
+	*campaign_profile = NONE;
+	*profile = NONE;
+	if (index < 0 || !tag_profile_cooperative())
+		return index;
+	if (index < campaign_profiles)
+		*campaign_profile = index;
+	else
+		*profile = index - campaign_profiles;
+	return NONE;
+}
+
+/* a row's name: a profile the randomizer plays marked so */
+static void tag_profile_name(long index, char *text, unsigned int size)
+{
+	long campaign_profile;
+	long profile;
+	long mp_profile = tag_profile_place(index, &campaign_profile, &profile);
+	char name[96];
+
+	if (profile != NONE)
+		snprintf(name, sizeof(name), "%s (RANDOMIZER)", port_tag_profiles_name(profile));
+	else
+		snprintf(name, sizeof(name), "%s", campaign_profile != NONE ? port_tag_campaign_profiles_name(campaign_profile) :
+			port_tag_mp_profiles_name(mp_profile));
+	upper_copy(text, size, name);
 }
 
 /* the row (tag_profile_<n>) a widget is or is in, or NONE */
@@ -9341,8 +10336,15 @@ static short tag_profile_row(struct widget_instance *widget)
 /* "mp tag profiles init": the profile chosen last focused, else NONE */
 static boolean tag_profiles_initialize(struct widget_instance *list)
 {
-	long chosen = tag_multiplayer_profile_chosen();
+	long chosen = tag_profile_cooperative() ? tag_campaign_profile_chosen() : tag_multiplayer_profile_chosen();
 	short place = (short)(chosen == NONE ? 0 : chosen + 1);
+
+	/* (a co-op game's: else the profile the randomizer played last) */
+	if (tag_profile_cooperative() && chosen == NONE && config_boolean("game.randomizer"))
+	{
+		chosen = tag_injector_profile_playable();
+		place = (short)(chosen == NONE ? 0 : port_tag_campaign_profiles_count() + chosen + 1);
+	}
 
 	multiplayer.tag_profile_first = (short)MAX(0, place - (TAG_PROFILE_ROWS - 1));
 	focus_row(list, (short)(place - multiplayer.tag_profile_first));
@@ -9355,9 +10357,12 @@ chosen: who sees the game, and what it plays */
 static void tag_profiles_update(struct widget_instance *list)
 {
 	struct widget_instance *help = list->parameters.list.extended_description;
-	short count = (short)(port_tag_mp_profiles_count() + 1);
+	short count = (short)(tag_profile_count() + 1);
 	short focused = tag_profile_row(list->focused_child);
 	short *first = &multiplayer.tag_profile_first;
+	boolean cooperative = tag_profile_cooperative();
+	long campaign_profile;
+	long randomizer_profile;
 	short index;
 
 	if (focused == TAG_PROFILE_ROWS - 1 && *first + TAG_PROFILE_ROWS < count && list_scrolls_at_end())
@@ -9389,7 +10394,7 @@ static void tag_profiles_update(struct widget_instance *list)
 		if (place >= count)
 			continue;
 		if (place)
-			upper_copy(text, sizeof(text), port_tag_mp_profiles_name(place - 1));
+			tag_profile_name(place - 1, text, sizeof(text));
 		else
 			snprintf(text, sizeof(text), "NONE");
 		for (character = 0; text[character] && character < ROW_TEXT_LENGTH - 1; character++)
@@ -9398,11 +10403,33 @@ static void tag_profiles_update(struct widget_instance *list)
 		text_set(row, wide);
 		if (index != focused || !help)
 			continue;
+		tag_profile_place(place - 1, &campaign_profile, &randomizer_profile);
 		if (!place)
-			snprintf(text, sizeof(text), "The map's own weapons. Every player can see and\njoin the game, on any build.");
+			snprintf(text, sizeof(text), cooperative ? "The levels' own AI and weapons, or the\nrandomizer's if it is on (Server Setup)." :
+				"The map's own weapons. Every player can see and\njoin the game, on any build.");
 		/* (the Tag Injector's bundles are Custom Edition maps': game.custom_edition) */
 		else if (!halo_custom_edition_tag_cache())
 			snprintf(text, sizeof(text), "Needs Custom Edition maps on (Settings > Gameplay).");
+		else if (cooperative && randomizer_profile != NONE)
+		{
+			char size[24];
+
+			tags_size_text(port_tag_profiles_size(randomizer_profile), size, sizeof(size));
+			snprintf(text, sizeof(text), "%ld AI, %ld weapons (%s) join the randomizer's\npools. "
+				"Only this build's players see the game.", tag_injector_profile_enabled_count(randomizer_profile, 'actv'),
+				tag_injector_profile_enabled_count(randomizer_profile, 'weap'), size);
+		}
+		else if (cooperative)
+		{
+			long profile = port_tag_profiles_find(port_tag_campaign_profiles_option(campaign_profile, "profile"));
+
+			if (profile == NONE)
+				snprintf(text, sizeof(text), "A campaign profile whose profile is not there:\nthe levels play as they are.");
+			else
+				snprintf(text, sizeof(text), "%ld AI, %ld weapons of %.20s. Only this build's\nplayers see the game; "
+					"they download them.", tag_injector_profile_enabled_count(profile, 'actv'),
+					tag_injector_profile_enabled_count(profile, 'weap'), port_tag_profiles_name(profile));
+		}
 		else
 		{
 			long profile = port_tag_profiles_find(port_tag_mp_profiles_option(place - 1, "profile"));
@@ -9425,10 +10452,31 @@ static boolean tag_profile_choose(struct widget_instance *widget, boolean *widge
 	short place = row == NONE ? NONE : (short)(multiplayer.tag_profile_first + row);
 	long profile = place > 0 ? place - 1 : NONE;
 
-	if (place == NONE || place > port_tag_mp_profiles_count() || (profile != NONE && !halo_custom_edition_tag_cache()))
+	if (place == NONE || place > tag_profile_count() || (profile != NONE && !halo_custom_edition_tag_cache()))
 		return campaign_fail();
-	tag_multiplayer_game_profile_set(profile);
-	tag_multiplayer_profile_choose(profile);
+	/* (a co-op game's campaign profile, which its levels play in the
+	randomizer's place, or the profile whose tags join its pools) */
+	if (tag_profile_cooperative())
+	{
+		long campaign_profile;
+		long randomizer_profile;
+
+		tag_profile_place(profile, &campaign_profile, &randomizer_profile);
+		if (randomizer_profile != NONE)
+			tag_multiplayer_game_randomizer_profile_set(randomizer_profile);
+		else
+			tag_multiplayer_game_campaign_profile_set(campaign_profile);
+		tag_campaign_profile_choose(campaign_profile);
+		if (!config_write("game.randomizer_tag_profile",
+			randomizer_profile != NONE ? port_tag_profiles_folder(randomizer_profile) : ""))
+			error(_error_silent, "randomizer: could not write game.randomizer_tag_profile");
+		randomizer_tags.checked = 0;
+	}
+	else
+	{
+		tag_multiplayer_game_profile_set(profile);
+		tag_multiplayer_profile_choose(profile);
+	}
 	ui_play_audio_feedback_sound(SOUND_FORWARD);
 	return ui_widget_port_open(widget, SERVER_SETUP_NAME, widget_deleted);
 }
@@ -9656,14 +10704,17 @@ static void wide_to_text(wchar_t const *wide, char *text, short size)
 	text[index] = 0;
 }
 
-/* whether Server Setup shows the game's TAG PROFILE: a multiplayer game
-whose TAG PROFILE screen was shown (tag_profile_asked), which chose it */
+/* whether Server Setup shows the game's TAG PROFILE: a multiplayer or
+co-op game whose TAG PROFILE screen was shown (tag_profile_asked), which
+chose it */
 static boolean server_settings_tag_profile_shown(void)
 {
 	void *server = global_network_game_server_get();
 	struct network_game *game = server ? network_game_server_get_game(server) : NULL;
 
-	return game && !hosting_cooperative() && multiplayer.tag_profile_shown &&
+	if (!game || !multiplayer.tag_profile_shown)
+		return FALSE;
+	return hosting_cooperative() ? tag_multiplayer_campaign_takes(game->map.name) :
 		tag_multiplayer_map_takes(game->map.name);
 }
 
@@ -9684,11 +10735,20 @@ static void server_settings_tag_profile_update(struct widget_instance *list)
 	if (!row || !shown)
 		return;
 	{
-		long profile = tag_multiplayer_game_profile();
+		boolean cooperative = hosting_cooperative();
+		long profile = cooperative ? tag_multiplayer_game_campaign_profile() : tag_multiplayer_game_profile();
+		long randomizer_profile = cooperative ? tag_multiplayer_game_randomizer_profile() : NONE;
 		char value[ROW_TEXT_LENGTH];
+		char name[96];
 
-		if (profile != NONE)
-			upper_copy(value, sizeof(value), port_tag_mp_profiles_name(profile));
+		if (randomizer_profile != NONE)
+		{
+			snprintf(name, sizeof(name), "%s (RANDOMIZER)", port_tag_profiles_name(randomizer_profile));
+			upper_copy(value, sizeof(value), name);
+		}
+		else if (profile != NONE)
+			upper_copy(value, sizeof(value), cooperative ? port_tag_campaign_profiles_name(profile) :
+				port_tag_mp_profiles_name(profile));
 		else
 			snprintf(value, sizeof(value), "NONE (EVERY BUILD)");
 		text_field_show(named(list, "tag_profile_value", 0), value, FALSE);
@@ -9776,8 +10836,11 @@ static void server_settings_update(struct widget_instance *list)
 			Settings > Gameplay: a level of the campaign's, any campaign map;
 			in a daily challenge's lobby both shown, dimmed, its own settings
 			not to be changed: community.c) */
+			/* (RANDOMIZER not with a campaign profile, played in its place:
+			tag_campaign.c) */
 			visible_set(randomizer_row, daily ||
-				(cooperative && config_boolean("game.randomizer") && hosting_campaign_level()));
+				(cooperative && config_boolean("game.randomizer") && hosting_campaign_level() &&
+				tag_multiplayer_game_campaign_profile() == NONE));
 			visible_set(skulls_row, daily || (cooperative && config_boolean("game.skulls")));
 			enabled_set(randomizer_row, !daily);
 			enabled_set(skulls_row, !daily);
@@ -13354,6 +14417,9 @@ enum
 	_option_byte_value	/* a byte of the variant, its number (not on or off) */
 };
 
+/* the most values an option has (BOTS': 0 to 33) */
+#define GAMETYPE_OPTION_VALUES 34
+
 struct gametype_option
 {
 	char const *spinner;
@@ -13361,10 +14427,10 @@ struct gametype_option
 	short offset;
 	unsigned long argument;
 	short count;
-	long values[16];
+	long values[GAMETYPE_OPTION_VALUES];
 	/* (_option_setting: the setting, and its values' text) */
 	char const *setting;
-	char const *setting_values[16];
+	char const *setting_values[GAMETYPE_OPTION_VALUES];
 };
 
 #define VARIANT_FIELD(field) (short)offsetof(struct game_variant, field)
@@ -13527,8 +14593,9 @@ static struct gametype_option const gametype_options[] =
 		{ "256", "512", "1024", "2048", "4096", "8192", "16384", "20480" } },
 	/* the bots' (Server Setup's BOTS, a LOCAL game's: tools/port_settings.py's
 	BOTS_SETUP; bots.c, which the lobby's bots follow as they change) */
-	{ "bots_count_spinner", _option_setting, 0, 0, 14, { 0 }, "bots.count",
-		{ "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "15" } },
+	{ "bots_count_spinner", _option_setting, 0, 0, 34, { 0 }, "bots.count",
+		{ "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16",
+		"17", "18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "31", "32", "33" } },
 	{ "bots_skill_spinner", _option_setting, 0, 0, 7, { 0 }, "bots.skill",
 		{ "distributed", "recruit", "easy", "normal", "heroic", "veteran", "legendary" } },
 	{ "bots_teams_spinner", _option_setting, 0, 0, 2, { 0 }, "bots.teams", { "even", "against" } },

@@ -158,6 +158,9 @@ difficulties and the screen stays (port/linux/game/menu_functions.c) */
 unsigned char menu_port_back(void *widget);
 /* the campaign's skulls (port/linux/game/skulls.c) */
 #include "halo_skulls.h"
+/* a weapon's pickup prompt as the Tag Editor's Pickup settings have it
+(port/linux/game/tag_editor.h; source/interface/hud.c) */
+unsigned short const *tag_editor_pickup_text(long weapon, unsigned char *text_wanted);
 /* the Switch GPU, waited on before a map's memory goes
 (port/switch/guest/d3d8_dk.c) */
 #ifdef HALO_SWITCH

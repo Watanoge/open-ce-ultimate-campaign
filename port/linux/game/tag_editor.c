@@ -216,8 +216,8 @@ enum edit_hud_value
 enum editor_page
 {
 	_page_root,
-	/* the first list's: the weapon's values, its HUDs, and its tag's
-	settings in the profile */
+	/* the first list's: the weapon's values, its HUDs, its pickup prompt,
+	and its tag's settings in the profile */
 	_page_stats,
 	_page_huds,
 	_page_settings,
@@ -227,6 +227,8 @@ enum editor_page
 	_page_projectile,
 	_page_damage,
 	_page_hud,
+	/* the pickup prompt's */
+	_page_pickup,
 };
 
 /* what a row of a list does */
@@ -247,6 +249,8 @@ enum editor_action
 	_action_option,
 	_action_custom_type,
 	_action_remove,
+	/* the pickup prompt's words typed */
+	_action_pickup_text,
 };
 
 /* the settings of a weapon's tag in its profile chosen among values */
@@ -254,6 +258,8 @@ enum editor_option
 {
 	_option_faction,
 	_option_class,
+	/* the pickup prompt: the HUD's icon, or words (Pickup settings') */
+	_option_pickup,
 	NUMBER_OF_EDITOR_OPTIONS
 };
 
@@ -262,6 +268,7 @@ enum editor_typing
 {
 	_typing_name,
 	_typing_custom_type,
+	_typing_pickup_text,
 	NUMBER_OF_EDITOR_TYPINGS
 };
 
@@ -358,7 +365,6 @@ int port_tag_profiles_tag_clear_edits(long profile, long tag, char const *prefix
 int port_tag_profiles_shared(long profile);
 int port_tag_profiles_tag_set_option(long profile, long tag, const char *key, const char *value);
 int port_tag_profiles_tag_remove(long profile, long tag);
-char const *port_tag_mp_profiles_option(long profile, char const *key);
 
 /* ---------- the values */
 
@@ -555,6 +561,7 @@ static struct option_choice const class_choices[] =
 	{ "", "AUTO" }, { "precision", "PRECISION" }, { "automatic", "AUTOMATIC" }, { "power", "POWER" },
 	{ "none", "NONE" },
 };
+static struct option_choice const pickup_choices[] = { { "", "ICON" }, { "text", "TEXT" } };
 
 /* each option's key in the profile, its row's label and note, and its
 values */
@@ -571,6 +578,8 @@ static struct
 		faction_choices, (short)NUMBEROF(faction_choices) },
 	{ "class", "Class", "Its pool: PRECISION, AUTOMATIC or POWER. AUTO: by its name. NONE: none. A: AUTO.",
 		class_choices, (short)NUMBEROF(class_choices) },
+	{ "pickup", "Prompt", "ICON: its HUD's icon (its name when it has none). TEXT: words, Text's. A: ICON.",
+		pickup_choices, (short)NUMBEROF(pickup_choices) },
 };
 
 /* each typing's key in the profile, and its words over the game */
@@ -582,6 +591,7 @@ static struct
 {
 	{ "name", "NAME" },
 	{ "custom_type", "CUSTOM TYPE" },
+	{ "pickup_text", "PICKUP TEXT" },
 };
 
 static void pending_write(void);
@@ -1702,10 +1712,8 @@ static void editor_context(
 	context->profile = level_profile;
 	if (port_tag_profiles_shared(level_profile))
 	{
-		long mp_profile = tag_multiplayer_game_profile();
-
-		context->profile = tag_multiplayer_hosted() && mp_profile != NONE ?
-			port_tag_profiles_find(port_tag_mp_profiles_option(mp_profile, "profile")) : NONE;
+		/* (a multiplayer profile's, or a co-op game's campaign profile's) */
+		context->profile = tag_multiplayer_hosted() ? tag_multiplayer_game_base_profile() : NONE;
 		if (context->profile == NONE)
 		{
 			snprintf(context->why, sizeof(context->why), "Only the host edits the game's weapons: its edits reach "
@@ -2020,6 +2028,7 @@ static short page_rows(
 		row_add(rows, &count, _tag_editor_row_folder, _action_page, _page_stats, 0, 0, NULL, "Weapon stats");
 		if (weapon_hud_levels(context->weapon))
 			row_add(rows, &count, _tag_editor_row_folder, _action_page, _page_huds, 0, 0, NULL, "HUD");
+		row_add(rows, &count, _tag_editor_row_folder, _action_page, _page_pickup, 0, 0, NULL, "Pickup settings");
 		row_add(rows, &count, _tag_editor_row_folder, _action_page, _page_settings, 0, 0, NULL, "Tag settings");
 		row_add(rows, &count, _tag_editor_row_command, _action_reset_all, 0, 0, 0, NULL, "Reset all edits");
 		return count;
@@ -2029,11 +2038,18 @@ static short page_rows(
 		short option;
 
 		row_add(rows, &count, _tag_editor_row_command, _action_rename, 0, 0, 0, NULL, "Name");
-		for (option = 0; option < NUMBER_OF_EDITOR_OPTIONS; option++)
+		for (option = _option_faction; option <= _option_class; option++)
 			row_add(rows, &count, _tag_editor_row_value, _action_option, option, 0, 0, NULL,
 				editor_options[option].label);
 		row_add(rows, &count, _tag_editor_row_command, _action_custom_type, 0, 0, 0, NULL, "Custom type");
 		row_add(rows, &count, _tag_editor_row_command, _action_remove, 0, 0, 0, NULL, "Remove from profile");
+		return count;
+	}
+	if (page == _page_pickup)
+	{
+		row_add(rows, &count, _tag_editor_row_value, _action_option, _option_pickup, 0, 0, NULL,
+			editor_options[_option_pickup].label);
+		row_add(rows, &count, _tag_editor_row_command, _action_pickup_text, 0, 0, 0, NULL, "Text");
 		return count;
 	}
 	if (page == _page_stats)
@@ -2284,6 +2300,33 @@ static void capture_end(
 
 /* ---------- public code */
 
+unsigned short const *tag_editor_pickup_text(
+	long weapon,
+	unsigned char *text_wanted)
+{
+	static unsigned short text[RENAME_LENGTH + 1];
+	long profile = tag_injector_level_profile();
+	char const *name = weapon == NONE ? NULL : tag_get_name(weapon);
+	char const *typed;
+	long tag;
+	short index;
+
+	*text_wanted = FALSE;
+	if (profile == NONE || !name)
+		return NULL;
+	tag = port_tag_profiles_tag_find(profile, WEAPON_DEFINITION_TAG, name);
+	if (tag == NONE || strcmp(tag_injector_tag_setting(profile, tag, "pickup"), "text"))
+		return NULL;
+	*text_wanted = TRUE;
+	typed = tag_injector_tag_setting(profile, tag, "pickup_text");
+	if (!typed || !typed[0])
+		return NULL;
+	for (index = 0; typed[index] && index < RENAME_LENGTH; index++)
+		text[index] = (unsigned char)typed[index];
+	text[index] = 0;
+	return text;
+}
+
 void tag_editor_menu_open(
 	void)
 {
@@ -2315,6 +2358,7 @@ char const *tag_editor_menu_title(
 	case _page_stats: return "Weapon stats";
 	case _page_huds: return "HUD";
 	case _page_settings: return "Tag settings";
+	case _page_pickup: return "Pickup settings";
 	case _page_weapon: return "Weapon";
 	case _page_trigger: return index ? "Secondary trigger" : "Primary trigger";
 	case _page_magazine: return index ? "Second magazine" : "Magazine";
@@ -2448,6 +2492,13 @@ static void row_fill(
 		snprintf(result->note, sizeof(result->note), "A types it: the randomizer's ONE TYPE plays a profile's "
 			"weapons of one together. Nothing typed: its name.");
 		break;
+	case _action_pickup_text:
+		if (context.profile != NONE)
+			snprintf(result->value, sizeof(result->value), "%s",
+				tag_injector_tag_setting(context.profile, context.tag, "pickup_text"));
+		snprintf(result->note, sizeof(result->note), "A types the words the prompt names it by, when Prompt is "
+			"TEXT. Nothing typed: its name as the map has it.");
+		break;
 	case _action_remove:
 		snprintf(result->note, sizeof(result->note), "%s", tag_editor.confirming == row ?
 			"Press A again to take it out of the profile, and delete its bundle." :
@@ -2561,6 +2612,10 @@ void tag_editor_menu_choose(
 	case _action_custom_type:
 		typing_begin(_typing_custom_type, context.profile == NONE ? "" :
 			tag_injector_tag_setting(context.profile, context.tag, "custom_type"));
+		return;
+	case _action_pickup_text:
+		typing_begin(_typing_pickup_text, context.profile == NONE ? "" :
+			tag_injector_tag_setting(context.profile, context.tag, "pickup_text"));
 		return;
 	case _action_option:
 		option_set(&context, spec->arguments[0], 0, status, status_size);

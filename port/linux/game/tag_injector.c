@@ -404,6 +404,10 @@ struct injected_bundle
 	long profile_tag;
 	boolean replace;
 	long replaced;
+	/* an AI's (an actor variant's bundle) that carries weapons a player
+	could not hold: they are left out, and it is added unarmed of them
+	(its loadout, or the randomizer, arms it) */
+	boolean drops_weapons;
 };
 
 /* ---------- globals */
@@ -778,24 +782,40 @@ static boolean weapon_holdable(
 		weapon->weapon.interface_definition.first_person_animations.index != NONE;
 }
 
+/* whether a bundle's tag is a weapon it would add that a player could not
+hold */
+static boolean bundle_weapon_unholdable(
+	struct injected_bundle const *bundle,
+	long bundle_index)
+{
+	return bundle_tag_group(&bundle->loaded, bundle_index) == WEAPON_DEFINITION_TAG &&
+		!bundle_tag_kept(bundle, WEAPON_DEFINITION_TAG, bundle_tag_name(&bundle->loaded, bundle_index)) &&
+		!weapon_holdable((struct weapon_definition const *)bundle_tag_root(&bundle->loaded, bundle_index));
+}
+
 /* whether every weapon a bundle would add can be held (a bundle's
-references name its own tags, or none) */
+references name its own tags, or none); an AI's that cannot are left out
+of it instead (drops_weapons), the AI added without them */
 static boolean bundle_weapons_holdable(
 	struct injected_bundle *bundle)
 {
 	long bundle_index;
 
+	bundle->drops_weapons = FALSE;
 	for (bundle_index = 0; bundle_index < bundle->loaded.tag_count; bundle_index++)
 	{
-		if (bundle_tag_group(&bundle->loaded, bundle_index) != WEAPON_DEFINITION_TAG ||
-			bundle_tag_kept(bundle, WEAPON_DEFINITION_TAG, bundle_tag_name(&bundle->loaded, bundle_index)))
+		if (!bundle_weapon_unholdable(bundle, bundle_index))
 			continue;
-		if (!weapon_holdable((struct weapon_definition const *)bundle_tag_root(&bundle->loaded, bundle_index)))
+		if (bundle_index > 0 && bundle_tag_group(&bundle->loaded, 0) == 'actv')
 		{
-			error(_error_silent, "tag injector: the weapon '%s' has no first-person model or animations: it cannot be "
-				"held", bundle_tag_name(&bundle->loaded, bundle_index));
-			return FALSE;
+			error(_error_silent, "tag injector: the weapon '%s' has no first-person model or animations: %s is added "
+				"without it", bundle_tag_name(&bundle->loaded, bundle_index), bundle_tag_name(&bundle->loaded, 0));
+			bundle->drops_weapons = TRUE;
+			continue;
 		}
+		error(_error_silent, "tag injector: the weapon '%s' has no first-person model or animations: it cannot be "
+			"held", bundle_tag_name(&bundle->loaded, bundle_index));
+		return FALSE;
 	}
 
 	return TRUE;
@@ -3141,7 +3161,8 @@ long tag_injector_tags_read(
 			long known;
 
 			if (bundle_tag_group(&bundle->loaded, tag) != WEAPON_DEFINITION_TAG ||
-				bundle_tag_kept(bundle, WEAPON_DEFINITION_TAG, bundle_tag_name(&bundle->loaded, tag)))
+				bundle_tag_kept(bundle, WEAPON_DEFINITION_TAG, bundle_tag_name(&bundle->loaded, tag)) ||
+				(bundle->drops_weapons && bundle_weapon_unholdable(bundle, tag)))
 				continue;
 			hud = weapon_stock_hud(bundle, tag);
 			if (hud == NONE || tag_loaded(WEAPON_HUD_INTERFACE_GROUP_TAG, stock_huds[hud].tag) != NONE)
@@ -3265,6 +3286,10 @@ long tag_injector_tags_load(
 				bundle->datums[tag] = bundle->replaced;
 				continue;
 			}
+			/* (an AI's weapon a player could not hold: left out, what names
+			it naming none) */
+			if (bundle->drops_weapons && bundle_weapon_unholdable(bundle, tag))
+				continue;
 			/* (a replacing bundle's are its own, but where a bundle's are:
 			added, or replacing the level's) */
 			if (group_left_out(group_tag) ||

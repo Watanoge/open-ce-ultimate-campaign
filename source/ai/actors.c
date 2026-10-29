@@ -2437,18 +2437,20 @@ void actor_customize_unit(
 		}
 	}
 
-	if (actor_variant_definition->ranged_combat.reference.index != NONE)
+	/* port: an unarmed one too, which a Tag Injector campaign profile's
+	loadout may arm (an AI whose weapon could not be added) */
 	{
 		/* port: the campaign randomizer's weapon, among those this unit
 		can hold (port/linux/game/randomizer.c). One it cannot take is
 		deleted, as the unit's own refusal is */
 		long attempt;
-		extern long randomizer_enemy_weapon(long, long, long);
+		extern long randomizer_enemy_weapon(long, long, long, long);
 
 		for (attempt = 0; attempt < 8; attempt++)
 		{
 			long chosen = randomizer_enemy_weapon(
-				actor_variant_definition->ranged_combat.reference.index, unit_index, attempt);
+				actor_variant_definition->ranged_combat.reference.index, unit_index, attempt,
+				actor_variant_definition_index);
 			long weapon_index;
 
 			if (chosen == NONE)

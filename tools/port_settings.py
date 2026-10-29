@@ -2758,7 +2758,7 @@ MAP_SHARE_SETUP = ("map_share_options", "MAP SHARING",
 # server_settings_update); laid out as co-op's options are. The bots join
 # the lobby as the screen's OK sets them, in a Slayer game (and SWAT,
 # Infection and Gun Game, Slayer's)
-BOTS_COUNTS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 15]
+BOTS_COUNTS = list(range(34))
 BOTS_SKILLS = ["recruit", "easy", "normal", "heroic", "veteran", "legendary"]
 # (SKILL's choices: DISTRIBUTED, bots.skill's default, a curve of the
 # levels, then each level: bots_combat.c's bots_combat_distributed_skill)

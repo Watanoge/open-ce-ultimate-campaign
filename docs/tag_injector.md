@@ -29,6 +29,8 @@ first leaves. Its first list has:
   (`game.tag_injection`). A, left or right turns it on or off.
 - **TAG PROFILES**: the profiles, each with the size of its folder (what
   its tags share counted once; EMPTY without any).
+- **CAMPAIGN PROFILES**: how a campaign level plays a profile's weapons
+  and AI without the randomizer (below, "Campaign profiles").
 - **MULTIPLAYER PROFILES**: how a multiplayer game plays a profile's
   weapons (below, "In multiplayer").
 - **MAPS**: the Custom Edition maps.
@@ -153,6 +155,49 @@ settings:
 In a multiplayer profile's lists the button bar has **DELETE PROFILE**,
 which, pressed twice, deletes the multiplayer profile (not its profile).
 
+**CAMPAIGN PROFILES** lists the campaign profiles, each with the profile
+whose tags it plays; **NEW PROFILE** asks for a name and makes one playing
+the profile shown last in TAG PROFILES. A on one opens it:
+
+- **NAME**: the name the menus show it by, which A types.
+- **TAG PROFILE**: the profile whose weapons and AI on it plays. A, left
+  and right choose another.
+- **WEAPONS** (its row says its ROTATION and REPLACEMENT): A opens
+  - **ROTATION**: **ADD TO LEVEL'S**, the profile's weapons join the
+    level's, so a weapon lying in the level may stay as it is; **PROFILE'S
+    ONLY**, every one is the profile's.
+  - **REPLACEMENT**: **RANDOM**, each weapon lying in the level, or given
+    to an actor, is one of the profile's at random; **MANUAL**: below it a
+    row for each of the campaign's weapons (ASSAULT RIFLE, PISTOL, SNIPER
+    RIFLE, ROCKET LAUNCHER, SHOTGUN, FLAMETHROWER, PLASMA RIFLE, PLASMA
+    PISTOL, NEEDLER, and the AI's own, FUEL ROD and ENERGY SWORD), with how
+    many weapons are chosen for it (AS IT IS: none, and it stays the
+    level's); A on one lists **ORIGINAL** and the profile's weapons on, each
+    turned on or off by A, left or right. With ADD TO LEVEL'S, the original
+    is among them whether or not it is on. An actor keeps its own weapon
+    when its unit has no animations to hold the one chosen.
+- **ENEMIES**: A opens ROTATION and REPLACEMENT for the level's actors
+  (**RANDOM**: any of the profile's AI, the player's allies left as they
+  are; **MANUAL**: the AI chosen for each enemy below), then a row for each
+  of the campaign's enemies, GRUNT, ELITE, JACKAL, HUNTER, COMBAT FORM,
+  CARRIER FORM, MARINE, INFECTION FORM, ENGINEER, SENTINEL (each with how
+  many AI and weapons are chosen for it, or AS IT IS). An enemy with ranks
+  (GRUNT: MINOR, MAJOR, SPEC OPS; ELITE: those, ZEALOT and STEALTH; JACKAL
+  and HUNTER: MINOR and MAJOR; COMBAT FORM: HUMAN and ELITE) lists its
+  ranks, each a slot of its own; one without opens its slot at once. A
+  slot has:
+  - **REPLACEMENT**: A lists ORIGINAL and the profile's AI, each turned on
+    or off (with RANDOM, it says so and does not open).
+  - **LOADOUT**: the weapons an actor placed in the slot holds, the
+    level's own or the AI that took its place: A lists **ORIGINAL** (its
+    own), the profile's weapons on and the campaign's, each turned on or
+    off. An enemy that holds no weapons a loadout can choose (HUNTER,
+    CARRIER FORM, INFECTION FORM, ENGINEER, SENTINEL) says NO WEAPONS, and
+    it does not open.
+
+In a campaign profile's lists the button bar has **DELETE PROFILE**, which,
+pressed twice, deletes the campaign profile (not its profile).
+
 Under the details of a map's tag (a kind's list in MAPS) and of a
 profile's (a kind's list in TAG PROFILES), the frame shows the tag's model,
 turning (`port/linux/game/tag_preview.c`): a weapon's, equipment's, a
@@ -196,8 +241,10 @@ game.
 
 A weapon without a first-person model or animations cannot be added: its
 map never let a player hold it, and the game reads them as the player holds
-it (a debug build stops). A profile's bundle that would add one, as an AI's
-weapon, is left out where the profile is played.
+it (a debug build stops). An AI whose bundle carries one is played without
+it: the weapon is left out (what names it names none), and the AI is added
+unarmed of it, for a campaign profile's LOADOUT (below) to arm; the
+randomizer and a level without a loadout for it leave it unarmed.
 
 A protected map's tags have no paths of their own (they are all
 `<protected>`, nothing, or one path many share), which the menu lists them,
@@ -282,7 +329,9 @@ randomizer's names: `faction` `"covenant"`, `"flood"`, `"human"` or
 `"needler"`.
 
 A profile holds its bundles, not the maps they came from: it is played
-without them, and can be copied to another machine whole. A folder without
+without them, and can be copied to another machine whole (in a browser, the
+page's **Tag profiles** exports and imports profiles as zips:
+`port/web/README.md`). A folder without
 `profile.toml` is not a profile, nor is one made for a later `format` (a
 profile with tag files is of format 2, which an earlier build does not
 list; one of bundles alone stays 1). A
@@ -291,8 +340,13 @@ where the profile is played, and the game's log says why.
 
 Limits: 64 profiles, 256 tags a profile.
 
-The multiplayer profiles are files of `tag_injector/.multiplayer` (64 at
-most), each its name, the folder of its profile and its settings:
+The multiplayer profiles are files of `tag_injector/multiplayer` (64 at
+most), each its name, the folder of its profile and its settings. No
+profile is made in a folder named `multiplayer` or `campaign` (whatever its
+case), nor is one listed. An earlier build kept these files in
+`.multiplayer` and `.campaign`, which hid them from a player copying the
+folder: the game moves such a folder's files to the new one as it reads
+them, unless that one is there already.
 
 ```toml
 name = "Shotgun Madness"
@@ -307,6 +361,42 @@ secondary = "stock:pistol"
 shotgun = ["original", "cmt\\weapons\\covenant\\carbine\\carbine"]
 ```
 
+The campaign profiles are files of `tag_injector/campaign` (64 at most),
+kept the same way:
+
+```toml
+name = "Brute Invasion"
+profile = "Brutes"
+weapon_rotation = "add"
+weapon_replace = "manual"
+enemy_rotation = "only"
+enemy_replace = "random"
+
+[weapons]
+plasma_rifle = ["original", "cmt\\weapons\\covenant\\carbine\\carbine"]
+
+[enemies]
+elite_major = ["cmt\\characters\\brute\\brute major"]
+flood_infection = ["original", "cmt\\characters\\flood\\infection"]
+
+[loadout]
+elite_major = ["original", "stock:needler"]
+```
+
+`weapon_rotation` and `enemy_rotation` are `"add"` or `"only"`;
+`weapon_replace` and `enemy_replace` `"random"` or `"manual"`; `[weapons]`
+the weapons chosen for each of the campaign's by its key (`assault_rifle`,
+`pistol`, `sniper_rifle`, `rocket_launcher`, `shotgun`, `flamethrower`,
+`plasma_rifle`, `plasma_pistol`, `needler`, `fuel_rod`, `energy_sword`),
+`[enemies]` the AI chosen for each enemy slot and `[loadout]` the weapons
+its actors may hold: `"original"` its own, a weapon of the profile by its
+path, or one of the campaign's as `"stock:"` and its key. A slot's key is
+its enemy's (`grunt`, `elite`, `jackal`, `hunter`, `flood_combat`,
+`flood_carrier`, `marine`, `flood_infection`, `engineer`, `sentinel`), and
+of one with ranks `_` and its rank's (`minor`, `major`, `specops`,
+`zealot`, `stealth`; a combat form's `human` or `elite`): `grunt_specops`,
+`flood_combat_human`. A setting left out is the first of its values.
+
 `rotation` is `"add"` or `"only"`; `replace` `"random"`, `"position"`,
 `"weapon"` or `"manual"`; `loadout` `"map"`, `"random"` or `"set"`;
 `primary` and `secondary` a weapon of the profile by its path, one of the
@@ -319,11 +409,13 @@ setting left out is the first of its values.
 ## In a level
 
 With **TAG INJECTION** on, the difficulty of a campaign level the randomizer
-plays opens, before the randomizer's screen, **TAG INJECTOR PROFILE**: NONE
-and each profile, A one to play it (`game.randomizer_tag_profile`), then the
+plays opens, before the randomizer's screen, **TAG INJECTOR PROFILE**: NONE,
+the campaign profiles (below, "Campaign profiles") and each profile, marked
+(RANDOMIZER), A one to play it (`game.randomizer_tag_profile`), then the
 randomizer's screen, whose CANCEL comes back to it. It is shown with any
 profile, one alone too, so a level can be played without its tags; with
-none, none is played.
+none, none is played. A campaign profile chosen there plays the level
+instead of the randomizer, whose screen is passed over.
 The randomizer's screen has the profile's choices only while it has tags on
 of their kind:
 
@@ -398,6 +490,53 @@ then, as the randomizer's are: one saved with a profile's tags expects the
 same profile.
 
 A multiplayer game plays a profile's weapons another way (below).
+
+## Campaign profiles
+
+A campaign profile plays a profile's weapons and AI in one of the ten
+campaign levels without the randomizer (`port/linux/game/tag_campaign.c`).
+With TAG INJECTION on and a campaign profile made, the difficulty of a
+campaign level opens the TAG INJECTOR PROFILE screen (above) whether the
+randomizer is on or not: NONE, then the campaign profiles (by their names),
+then, with the randomizer on, the profiles it plays, marked (RANDOMIZER).
+A campaign profile chosen (`game.campaign_tag_profile`) goes on to the
+skulls' screen, or the level; NONE goes on to the randomizer's screen with
+the randomizer on, else to the skulls' screen or the level. A level played
+so:
+
+- is given the profile's tags on as the randomizer's profile's are ("In a
+  level", above: their HUDs, REPLACE ORIGINAL, their failures), and no tags
+  of the other campaign maps (the skulls' aside);
+- swaps each weapon lying in it (not one a script names), and each given
+  to an actor (the fuel rod and the energy sword are only so), as WEAPONS
+  says: RANDOM among the profile's weapons (and the level's own, with ADD
+  TO LEVEL'S), MANUAL among those chosen for the campaign's weapon it is;
+  an actor's among those its unit has the animations to hold, else its
+  own;
+- swaps each actor it places (not one a script commands, nor a squad a
+  conversation names) as ENEMIES says: RANDOM among the profile's AI (and
+  the level's own, with ADD), the player's allies left as they are; MANUAL
+  among those chosen for its slot: the campaign's enemy it is, by its
+  unit's name as the randomizer finds it, and its rank, by its own name
+  (`major`, `specops`, `commander` the zealot, `stealth`; a combat form's
+  `human` or not; else minor) (MARINE swaps the allies too). As the
+  randomizer's, a squad's infection forms swapped for other AI are placed
+  one in three, an AI a script seats in a vehicle without the animations
+  for it rides as the level's own and is swapped back once out;
+- gives each actor it places in a slot (the level's own, or the AI that
+  took its place, an AI added without its weapon too) one of the weapons
+  its LOADOUT chose, at random, of those
+  its unit has the animations to hold (a campaign's weapon only when the
+  level has it), in place of WEAPONS' swap; with none chosen, or none it
+  can hold, its own, swapped as WEAPONS says. An AI whose actor variant
+  gives it no weapon holds none.
+
+Each roll is the placement's, so starting the level again rolls again,
+and a checkpoint keeps what was placed. A campaign profile is played in a
+level played alone, or in a co-op game ("In co-op", below); never in a
+daily challenge or a random run, and a saved game expects the same one.
+A campaign profile whose profile is gone, or has no tags on, plays the level
+as it is (the log says so).
 
 ## In multiplayer
 
@@ -480,20 +619,65 @@ it. A profile's tag of a later Tag Injector, or a bundle a player's build
 reads otherwise (a texture its renderer cannot draw), makes that player's
 level differ from the host's.
 
-Not built yet: Custom Edition maps and the campaign; a profile's AI or
+Not built yet: Custom Edition maps; a multiplayer profile's AI or
 equipment. Downloaded shares stay in `tag_injector/.shared`
 until deleted by hand.
+
+### In co-op
+
+A co-op game hosted on one of the ten campaign levels (not a Custom
+Edition campaign map, nor a daily challenge) can play a campaign profile
+("Campaign profiles", above) the same way. With TAG INJECTION on and a
+campaign profile made, the difficulty chosen for the level opens the same
+**TAG PROFILE** screen before Server Setup: NONE (the levels as they are,
+or the randomizer's, a game every build joins unless it is randomized or
+has skulls), then the campaign profiles (starting on
+`game.campaign_tag_profile`). A campaign profile makes the game a modded
+one, kept for the whole game, every level of it; Server Setup's TAG
+PROFILE row shows it, A goes back to choose again, and its RANDOMIZER row
+is hidden: the profile plays in the randomizer's place, as it does alone,
+and the game is not advertised as randomized. A dedicated server hosting a
+co-op game takes `game.campaign_tag_profile` (with `game.tag_injection` on).
+
+- **The share** is made, told and downloaded as a multiplayer game's
+  (above), of all the profile's tags on (its AI, its weapons and the
+  equipment their bundles added), with the campaign profile played
+  (`campaign.toml`); a player's copy of it is a profile and a campaign
+  profile, both " (online)".
+- **The level.** Each level of the game adds the share's tags on every
+  machine as a campaign profile's level played alone adds the profile's
+  (the stock HUDs, the skulls' tags), so that they are at the same indices
+  on each; the host checks each player's tags.
+- **The swaps.** The host alone plays the campaign profile: it swaps the
+  level's weapons and actors and gives the loadouts, as alone. Its players
+  have the host's objects and actors, so they swap nothing.
+
+With the randomizer on, the screen lists the Tag Injector's profiles after
+the campaign profiles, marked (RANDOMIZER), as the solo screen does. One
+chosen joins the randomizer's pools (its TAG INJECTOR pools and custom
+types too, set on Server Setup's RANDOMIZER screen, which stays shown) for
+every level of the game, and is written to `game.randomizer_tag_profile`.
+It is shared as a campaign profile is (all its tags on, without a profile
+of settings), and the host advertises its TAG INJECTOR pools and whether
+each one type is a custom type with the randomizer's setup, so each player
+copies the same tags of the other campaign maps and adds the share's; the
+host alone swaps. With the randomizer swapping nothing, the game plays no
+share and is a plain one.
 
 ## The Tag Editor
 
 The overlay menu's **TAG EDITOR** (L, R and the d-pad's down, or | on the keyboard) changes the
 weapon the first player holds, when it is one of the played profile's. Its
-first list has three:
+first list has four:
 
 - **Weapon stats**: the weapon's own values (zoom, heat, autoaim), its
   triggers, magazines and projectiles (their damage below them), and its
   melee damage.
 - **HUD**: its HUD and the parent HUDs it draws too (below).
+- **Pickup settings**: its pickup prompt ("Hold E to pick up ..."):
+  **Prompt** ICON, its HUD's icon (its name when its HUD has none), or
+  TEXT, words, and **Text**, the words (nothing typed: its name as its map
+  has it), typed as a name is.
 - **Tag settings**: **Name**, the name the profile shows it by;
   **Faction** and **Class**, the randomizer's pools it joins (left and
   right choose, A puts back AUTO), as the Tag Injector menu has them;
@@ -501,7 +685,7 @@ first list has three:
   typed: its name); and **Remove from profile** (A twice: the level loaded
   keeps it until it loads again).
 
-  A name and a custom type are typed over the game, on the keyboard (Enter
+  A name, a custom type and a pickup text are typed over the game, on the keyboard (Enter
   keeps it, Escape does not, the arrows, Home and End move the cursor) or
   on an on-screen keyboard, shown while a controller or the touchscreen was
   used last: the d-pad picks a key, A presses it, a click or a tap presses

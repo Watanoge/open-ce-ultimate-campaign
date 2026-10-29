@@ -5,7 +5,10 @@ The Tag Injector in multiplayer (tag_multiplayer.c, docs/tag_injector.md
 "In multiplayer"): a game on one of the game's own multiplayer maps plays
 the weapons of a profile, as a multiplayer profile says (port_tag_mp_profiles.c),
 on every machine: the host shares them as one file (map_share.c), and
-swaps the map's weapons for them and gives them as its players' loadouts.
+swaps the map's weapons for them and gives them as its players' loadouts. A
+co-op game on one of the campaign's levels plays a campaign profile's tags
+(tag_campaign.c), or a profile's in the randomizer's pools (randomizer.c),
+on every machine alike, shared the same way.
 */
 
 #ifndef __TAG_MULTIPLAYER_H
@@ -51,10 +54,30 @@ long tag_multiplayer_game_profile(
 	void);
 void tag_multiplayer_game_profile_set(
 	long profile);
+/* the same for a co-op game: the campaign profile it plays (port_tag_mp_profiles'
+campaign profiles' index, else NONE), kept for every level of the game; and
+of either kind, the profile (port_tag_profiles' index) the game's profile
+plays, NONE for none */
+long tag_multiplayer_game_campaign_profile(
+	void);
+void tag_multiplayer_game_campaign_profile_set(
+	long profile);
+/* ... or the profile (port_tag_profiles' index) a co-op game plays in the
+randomizer's pools (NONE: none, or not this machine's game) */
+long tag_multiplayer_game_randomizer_profile(
+	void);
+void tag_multiplayer_game_randomizer_profile_set(
+	long profile);
+long tag_multiplayer_game_base_profile(
+	void);
 /* whether a game on this level plays a multiplayer profile: one of the
 game's own multiplayer maps (not a campaign level, nor a Custom Edition
 map) */
 boolean tag_multiplayer_map_takes(
+	char const *level_name);
+/* whether a co-op game on this level plays a campaign profile: one of the
+campaign's ten levels (not a Custom Edition map) */
+boolean tag_multiplayer_campaign_takes(
 	char const *level_name);
 
 /* every frame (main.c): the host's share made (once its profile is chosen)
@@ -67,6 +90,14 @@ for it, on one of the game's own multiplayer maps, whether or not its share
 could be made): a modded game, which builds without the mod cannot play
 (halo_port_limits.h), and its advertisement's flag set */
 boolean tag_multiplayer_hosted(
+	void);
+/* ... a co-op game, playing a campaign profile (the randomizer is not
+played, nor advertised) */
+boolean tag_multiplayer_campaign_hosted(
+	void);
+/* whether the co-op game plays a profile in the randomizer's pools: the
+host's chosen for it, a client's told by the host (its share's kind) */
+boolean tag_multiplayer_randomizer_shared(
 	void);
 void tag_multiplayer_advertisement(
 	unsigned char *reserved);
@@ -103,6 +134,13 @@ level adds the tags of (opened: port_tag_profiles' index, else NONE); then
 the weapons it added (the tags they were taken out for, and their indices in
 the profile) for the host to swap and give; and the level let go */
 long tag_multiplayer_level_profile(
+	char const *scenario_name);
+/* ... and a co-op game's campaign level's (tag_campaign.c plays it: the
+host's campaign profile on the host, nothing to swap on a client) */
+long tag_multiplayer_campaign_level_profile(
+	char const *scenario_name);
+/* ... and the share a co-op game's randomizer adds to its pools (opened) */
+long tag_multiplayer_randomizer_level_profile(
 	char const *scenario_name);
 void tag_multiplayer_level_loaded(
 	long profile,

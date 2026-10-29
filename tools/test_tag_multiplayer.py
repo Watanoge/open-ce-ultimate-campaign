@@ -120,7 +120,7 @@ def test_settings_values():
         read_values = re.findall(r'"([a-z]+)"', game.split(f"static char const *const {read} =", 1)[1]
                                  .split(";", 1)[0])
         assert menu_values == read_values, setting
-        assert f'option_index("{setting}")], MAXIMUM_VALUE_LENGTH, "{read_values[0]}")' in store
+        assert f'"{setting}", "{read_values[0]}"' in store.split("mp_defaults[] =", 1)[1].split(";", 1)[0]
 
 
 def test_stock_weapons():
@@ -191,7 +191,51 @@ def test_engine_hooks():
     assert len(own) == 2 and "menu_tags_loaded(" in own[1]
 
 
+def test_cooperative():
+    """A co-op game's campaign profile (docs/tag_injector.md "In co-op"):
+    the TAG PROFILE screen between the difficulty and Server Setup, the
+    share of all the profile's tags with its campaign.toml (copied as a
+    client's own), every machine adding it where a level played alone adds
+    its campaign profile's, the host alone swapping, and the randomizer
+    neither played nor advertised in its place; the mod version raised."""
+    functions = FUNCTIONS.read_text()
+    chosen = functions.split("static boolean map_list_choose(", 1)[1].split("\n}\n", 1)[0]
+    level = chosen.split("if (map_list.step == MAP_STEP_DIFFICULTIES)\n\t{", 1)[1].split("\n\t}\n", 1)[0]
+    assert level.index("ui_widget_port_cooperative_level_choose(") < level.index("tag_profile_asked()") < \
+        level.index("TAG_PROFILE_SCREEN_NAME") < level.index("SERVER_SETUP_NAME")
+    asked = functions.split("static boolean tag_profile_asked(void)\n{", 1)[1].split("\n}\n", 1)[0]
+    assert "port_tag_campaign_profiles_scan()" in asked and "community_challenge_running()" in asked
+    choose = functions.split("static boolean tag_profile_choose(", 1)[1].split("\n}\n", 1)[0]
+    assert "tag_multiplayer_game_campaign_profile_set(campaign_profile)" in choose
+    share = TAG_MULTIPLAYER.read_text()
+    assert "return kind == _played_multiplayer ? WEAPON_DEFINITION_TAG : 0;" in share
+    assert "tag_multiplayer_game_campaign_profile_set(tag_campaign_profile_chosen())" in share
+    profiles = (ROOT / "port/linux/src/port_tag_profiles.c").read_text()
+    assert '#define SHARED_CAMPAIGN_FILE "campaign.toml"' in profiles
+    assert "port_tag_campaign_profiles_import(played, SHARED_COPY_SUFFIX, folder)" in profiles
+    randomizer = (GAME / "randomizer.c").read_text()
+    loaded = randomizer.split("void randomizer_tags_loaded(char const *scenario_name)", 1)[1].split("\n}\n", 1)[0]
+    assert loaded.index("campaign_leaf(") < loaded.index("tag_multiplayer_campaign_level_profile(scenario_name)") < \
+        loaded.index("tag_campaign_level_loaded(")
+    assert "network_game_distributed_client() ? NONE : tag_multiplayer_game_campaign_profile()" in loaded
+    advertised = randomizer.split("void randomizer_advertisement(unsigned char *reserved)", 1)[1].split("\n}\n", 1)[0]
+    assert advertised.index("tag_multiplayer_campaign_hosted()") < advertised.index("placement_roll_new(")
+    limits = (ROOT / "port/linux/include/halo_port_limits.h").read_text()
+    assert int(re.search(r"#define HALO_PORT_MOD_NETWORK_VERSION (\d+)", limits).group(1)) >= 5
+    # (a profile the randomizer plays, listed after the campaign profiles:
+    # its share told as the randomizer's, its pools and custom types
+    # advertised, a client keeping them only with that share)
+    assert "tag_multiplayer_game_randomizer_profile_set(randomizer_profile)" in choose
+    assert "config_boolean(\"game.randomizer\") ? port_tag_profiles_count() : 0" in functions
+    assert "message.share.kind = (byte)hosted->kind;" in share
+    assert "(setup.custom_type ? 32 : 0)" in advertised
+    remote = randomizer.split("static void setup_from_remote(struct setup *setup)", 1)[1].split("\n}\n", 1)[0]
+    assert "int custom = tag_multiplayer_randomizer_shared();" in remote and "POOL_TAG_INJECTOR" in remote
+    assert loaded.index("tag_multiplayer_randomizer_level_profile(scenario_name)") < loaded.index("gather_begin()")
+
+
 def test_documented():
     docs = (ROOT / "docs/tag_injector.md").read_text()
     assert "## In multiplayer" in docs and "**MULTIPLAYER PROFILES**" in docs
+    assert "### In co-op" in docs
     assert "_map_share_file_tags" in (ROOT / "port/linux/NETCODE.md").read_text()

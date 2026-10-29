@@ -33,6 +33,7 @@
         <a href="#play-panel" class="menu-current">Play</a>
         <a href="#data-panel">Game data</a>
         <a href="#mods-panel">Mods</a>
+        <a href="#profiles-panel">Tag profiles</a>
         <a href="#room-panel">Play together</a>
         <a href="#servers-panel">Servers</a>
         <a href="#checks-panel">This browser</a>
@@ -86,11 +87,16 @@
           </div>
           <p class="help">A custom_maps folder: Halo Custom Edition maps, in it or in its subfolders (each a category
             in the game's map lists), with Custom Edition's bitmaps.map, sounds.map and loc.map in the folder itself.
-            Its maps are added to those already here.</p>
+            Or maps chosen alone, or a zip of them or of a custom_maps folder (as Export makes). They are added to
+            those already here, the maps downloaded from hosts among them.</p>
           <div class="button-bar">
             <label class="button" id="custom-label">Add a custom_maps folder…
               <input type="file" id="custom-input" webkitdirectory multiple hidden>
             </label>
+            <label class="button" id="custom-files-label">Add maps or a zip…
+              <input type="file" id="custom-files-input" accept=".map,.zip,.bmp,.txt" multiple hidden>
+            </label>
+            <button id="custom-export" disabled>Export the Custom Edition maps</button>
             <button id="custom-remove" class="danger" disabled>Remove the Custom Edition maps</button>
           </div>
         </section>
@@ -108,6 +114,27 @@
             <label class="button" id="mod-label">Add a mod folder…
               <input type="file" id="mod-input" webkitdirectory multiple hidden>
             </label>
+          </div>
+        </section>
+
+        <section class="screen" id="profiles-panel" aria-labelledby="profiles-title">
+          <h2 id="profiles-title">Tag profiles</h2>
+          <div class="rows">
+            <p id="profiles-status" class="row status">No tag profiles yet.</p>
+            <ul id="profiles-list" class="mods"></ul>
+          </div>
+          <p class="help">The Tag Injector's profiles (the game's Settings, Gameplay, Tag Injector), with their tags,
+            so that they play without the maps their tags came from. A profile's export has the multiplayer and
+            campaign profiles that play it; Export all has every one. Import takes such a zip, or a profile's folder
+            or the tag_injector folder of another build's data, and replaces a profile of the same name.</p>
+          <div class="button-bar">
+            <label class="button" id="profiles-zip-label">Import a zip…
+              <input type="file" id="profiles-zip-input" accept=".zip,application/zip" multiple hidden>
+            </label>
+            <label class="button" id="profiles-folder-label">Import a folder…
+              <input type="file" id="profiles-folder-input" webkitdirectory multiple hidden>
+            </label>
+            <button id="profiles-export" disabled>Export all</button>
           </div>
         </section>
 
@@ -238,6 +265,7 @@
   <button id="update-button">Update</button>
 </div>
 
+<script src="archive.js"></script>
 <script src="touch.js"></script>
 <script src="net.js"></script>
 <script src="p2p.js"></script>

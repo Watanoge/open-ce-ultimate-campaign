@@ -87,7 +87,10 @@ the menus show it before joining it (hosts built before then never set it) */
 /* ... the game randomizes a campaign level (0x20: 0x04 is the dedicated flag,
 above). The next three reserved bytes are which swaps are on (bit 0 enemies, bit 1 weapon pickups, bit 2 the
 weapons actors carry, bit 3 the player's allies with the enemies, bit 4
-go crazy), the pool (0 any, 1 covenant, 2 flood, 3 human, 4 one type) and
+go crazy; bits 5 to 7 the enemies', the pickups' and the actors' weapons'
+one type a custom type of the Tag Injector profile a co-op host shares for
+its pools: tag_multiplayer.c), the pool (0 any, 1 covenant, 2 flood, 3
+human, 4 one type; 5 the shared profile's, with such a share) and
 that type (0 grunt, 1 elite, 2 jackal, 3 hunter, 4 flood combat, 5 flood
 carrier, 6 marine, 8 engineer, 9 sentinel). The next four bytes are the placement roll, a
 little-endian unsigned long, so a client lays out the level the host did.
@@ -127,10 +130,11 @@ by the host's rules (a modded game) */
 multiplayer profile (port/linux/game/tag_multiplayer.c): every machine adds
 the host's shared weapons to the level, a client downloading them first
 (map sharing), and the host swaps the map's weapons for them (a modded
-game) */
+game); or a co-op game plays the AI and weapons of its campaign profile,
+shared the same way, which the host swaps the level's for */
 #define HALO_PORT_ADVERTISED_TAG_SHARE_FLAG 0x40
-/* ... a modded game (randomized, a campaign with skulls, or a multiplayer
-game playing a Tag Injector multiplayer profile), which builds
+/* ... a modded game (randomized, a campaign with skulls, or a game playing
+a Tag Injector multiplayer or campaign profile), which builds
 without the mod cannot play: its host advertises in the version's place
 HALO_PORT_ADVERTISED_MODDED_VERSION, which no build without the mod is on
 (it tells its player the host is on a newer version), and its own version
@@ -147,8 +151,9 @@ modded signature sent 1 as their capability (network_client_manager.c); 3
 drops skulls in co-op (_distributed_message_skulls_state) and plays Outbreak
 there (_distributed_message_skulls_outbreak_burst); 4 plays the Tag Injector's
 multiplayer profiles (_distributed_message_tag_share, and map sharing's
-shared weapons) */
-#define HALO_PORT_MOD_NETWORK_VERSION 4
+shared weapons); 5 its campaign profiles in co-op (the same share, of a
+campaign level) */
+#define HALO_PORT_MOD_NETWORK_VERSION 5
 #define HALO_PORT_MODDED_VERSION_MARK 0xFF00
 #define HALO_PORT_ADVERTISED_MODDED_VERSION (HALO_PORT_MODDED_VERSION_MARK | HALO_PORT_MOD_NETWORK_VERSION)
 
