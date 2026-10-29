@@ -1,5 +1,24 @@
 # Changelog
 
+## Build 127
+
+- Replays: you can watch through any player's eyes, not only your own; in a replay you recorded as a client, the other players' aim is smoothed between the host's updates and the top line says EYES (SMOOTHED). (thelinkin3000)
+- Replays: the view through a player's eyes turns smoothly between the game's ticks and glides over the host's corrections instead of jumping. (thelinkin3000)
+- Replays: the d-pad's right skips to the next 10-second mark at 50 times speed, holding a dimmed frame with SKIPPING and pausing the sound until it gets there, then plays on at normal speed. (thelinkin3000)
+- Replays: a seek bar at the bottom of the screen shows where the replay is, with the time on its left and the replay's length on its right. (thelinkin3000)
+- Replays: the free camera moves slowly with a slight tilt of the left stick, speeds up and stops smoothly, and the Switch's ZL and ZR raise and lower it in small steps when tapped. (thelinkin3000)
+- Replays: the free camera no longer flickers into a wall when it flies against one. (thelinkin3000)
+- Replays: L slows a replay down even when it is bound to push-to-talk. (thelinkin3000)
+- Theater: RECORD says ON when replays are being recorded; it always said OFF. (thelinkin3000)
+- Android (Vulkan) and Switch: a light's glow no longer shows or hides with another light's visibility. (thelinkin3000)
+
+### From OpenCE
+
+- Vehicles' headlights light again with Smooth Motion on: the Warthog's, the Ghost's and the Scorpion's went dark while their guns were idle. (Alastair)
+- Parts of a level no longer flash out of view where a portal's corner lies on the view's edge. (PeterRichardsonGolf)
+- Split screen: each player's window keeps its own fog. (PeterRichardsonGolf)
+- The updater refuses a release with more files than it can install, instead of installing it partly. (PeterRichardsonGolf)
+
 ## Build 126
 
 - Hotfix: Android: the touch controls' General settings scroll, so every one of them can be reached in portrait or on a short screen; the last ones were cut off, with no way to scroll to them. (thelinkin3000)
