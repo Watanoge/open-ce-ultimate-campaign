@@ -71,6 +71,7 @@ symbols in this file:
 #include "effects/player_effects.h"
 #include "structures/structure_visibility.h"
 #include "rasterizer.h"
+#include "network_replay.h" /* port: port/linux/game/network_replay_playback.c */
 #include "rasterizer/rasterizer_lights.h"
 #include "profile.h"
 #include "progress_bar.h"
@@ -340,7 +341,11 @@ static void render_window(
 	rasterizer_window_begin(&parameters);
 	halo_render_marker("window");
 
-	if (!bink_playback_in_progress())
+	/* port: a replay's skip ahead: its held frame in place of the view, the
+	replay's lines drawn over it after (port/linux/game/network_replay_playback.c) */
+	if (rasterizer_target == _render_target_primary && network_replay_frozen())
+		rasterizer_port_hold_draw();
+	else if (!bink_playback_in_progress())
 	{
 		build_sprite_prepare_for_window();
 		halo_render_marker("sky");
@@ -462,6 +467,10 @@ static void render_window(
 				rasterizer_camera->viewport_bounds.y0,
 				rasterizer_camera->viewport_bounds.x1,
 				rasterizer_camera->viewport_bounds.y1);
+			/* port: a replay's skip ahead asked for this frame: its view held
+			(port/linux/game/network_replay_playback.c) */
+			if (network_replay_hold_wanted())
+				network_replay_hold_taken(rasterizer_port_hold_capture());
 		}
 		halo_render_marker("screen effect");
 		interface_draw_screen();
