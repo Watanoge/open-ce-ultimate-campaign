@@ -104,7 +104,6 @@ void unit_network_forget_weapon(long unit_index, short slot);
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
 
 /* ---------- constants */
 
@@ -1754,7 +1753,7 @@ static boolean range_map_is(
 	char const *range_leaf = strrchr(range_map_name, '\\') + 1;
 
 	leaf = leaf ? leaf + 1 : scenario_name;
-	return leaf && !strcasecmp(leaf, range_leaf);
+	return leaf && !csstrcasecmp(leaf, range_leaf);
 }
 
 /* ---------- private code: the weapons */

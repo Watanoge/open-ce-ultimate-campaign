@@ -113,9 +113,14 @@ void first_person_weapons_initialize_for_new_map(void);
 boolean hud_hires_prompt_draw(char const *name, real x, real y, real size, pixel32 color, boolean draw);
 
 /* the simulation's and the netcode's variables outside the game state, all
-together (port/android/guest/guest.ld's .replay_data and .replay_bss) */
+together (port/android/guest/guest.ld's .replay_data and .replay_bss): only
+the guest images linked with that script have them, so elsewhere (Windows,
+the web) a playback takes no keyframes, and the d-pad does not skip */
+#if defined(HALO_GUEST) && !defined(HALO_GUEST_MACHO)
+#define REPLAY_KEYFRAMES
 extern byte __replay_data_start[], __replay_data_end[];
 extern byte __replay_bss_start[], __replay_bss_end[];
+#endif
 
 /* a keyframe: the game's tick it was taken at, where the file's records
 were then, and the game state and those variables, compressed */
@@ -706,11 +711,15 @@ static short playback_keyframe_regions(
 	sizes[0] = (unsigned long)cpu_size;
 	regions[1] = (byte *)gpu;
 	sizes[1] = (unsigned long)gpu_size;
+#ifdef REPLAY_KEYFRAMES
 	regions[2] = __replay_data_start;
 	sizes[2] = (unsigned long)(__replay_data_end - __replay_data_start);
 	regions[3] = __replay_bss_start;
 	sizes[3] = (unsigned long)(__replay_bss_end - __replay_bss_start);
 	return 4;
+#else
+	return 2;
+#endif
 }
 
 /* the keyframes' compressor: a thread of its own, so that the game goes on
@@ -833,6 +842,11 @@ static boolean playback_keyframe_take(
 	short count = playback_keyframe_regions(regions, sizes);
 	short index;
 
+#ifndef REPLAY_KEYFRAMES
+	/* (none without the variables beside the game state: above) */
+	playback.keyframes_full = TRUE;
+	return FALSE;
+#endif
 	if (playback.keyframe_count >= REPLAY_MAXIMUM_KEYFRAMES || playback.keyframe_memory >= REPLAY_KEYFRAME_MEMORY)
 	{
 		if (!playback.keyframes_full)
