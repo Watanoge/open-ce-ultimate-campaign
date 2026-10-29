@@ -1,0 +1,26 @@
+# The campaign randomizer's pack (port/linux/game/randomizer.c): every
+# campaign map's tags, and the pixels and samples of their actors, weapons
+# and effects. A randomized level copies the actors and weapons its pools
+# want from here, the Tag Injector the stock HUDs its weapons are drawn
+# with, and the Tag Injector's menus ask which campaign map has a tag.
+# See port/linux/TAG_INJECTION.md.
+
+name = "watanoge_randomizer"
+version = 1
+legacy_file_names = ["randomizer.pack"]
+maps = ["a10", "a30", "a50", "b30", "b40", "c10", "c20", "c40", "d20", "d40"]
+minimum_bitmaps = 20
+minimum_sounds = 20
+wanted = ["setting:game.randomizer", "setting:game.daily_challenge"]
+
+# level geometry, menus, music and ambience are not actors or weapons, and
+# the same character tags would otherwise carry them in every map
+[keep]
+exclude_bitmap_prefixes = ["levels\\", "sky\\", "ui\\", "rasterizer\\", "scenery\\", "cinematics\\"]
+exclude_sound_prefixes = ["sound\\music\\", "sound\\sfx\\ambience\\"]
+
+[text]
+notice = "The randomizer needs to build\nits data from the campaign maps:\na few minutes and about 500 MB,\nonce. It starts when this closes."
+building = "Building the randomizer's data\nfrom the campaign maps: "
+ready = "The randomizer's data is ready."
+failed = "The randomizer's data could not\nbe built (is the card full?).\nRandomized levels cannot load\nits tags until it is."

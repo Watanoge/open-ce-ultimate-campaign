@@ -393,6 +393,8 @@ symbols in this file:
 #include "text/unicode.h"
 #include "map_share.h" /* port: port/linux/game/map_share.c */
 #include "custom_edition_cache.h" /* port: port/linux/game/custom_edition_cache.c */
+#include "randomizer.h" /* port: port/linux/game/randomizer.c */
+#include "tag_pack.h" /* port: port/linux/game/tag_pack.c */
 
 /* ---------- constants */
 
@@ -3336,8 +3338,8 @@ netcode was removed may play that). A modded game (randomized, or a campaign
 with skulls) advertises HALO_PORT_ADVERTISED_MODDED_VERSION in the version's
 place, and its host's version after the mod's bytes: it is joined when that
 version and the mod's are this machine's, and a randomized one's pack is
-written, and a game with Outbreak or Scarab's skulls.pack (else asked for:
-written at the main menu). If not the player
+written, and a game with Outbreak or Scarab's the skulls' pack (else asked
+for: written at the main menu, port/linux/game/tag_pack.c). If not the player
 is told why (when tell), and nothing is joined. */
 boolean network_game_client_advertised_game_compatible(
 	struct network_game_client *client,
@@ -3369,20 +3371,16 @@ boolean network_game_client_advertised_game_compatible(
 	}
 	if (theirs == ours && distributed && their_mod == HALO_PORT_MOD_NETWORK_VERSION)
 	{
-		extern int randomizer_pack_ready(void);
-		extern void randomizer_pack_request(void);
-		extern int skulls_pack_ready(void);
-		extern void skulls_pack_request(void);
 		/* (a randomized level copies in tags from the other maps, and
 		Outbreak's Flood, Scarab's projectiles and the skull the enemies drop
 		from Wizard's and c40: the packs have them) */
 		boolean randomizer_pack_missing =
 			(network_game_client_advertised_versions[game_index].flags & HALO_PORT_ADVERTISED_RANDOMIZER_FLAG) &&
-			!randomizer_pack_ready();
+			!tag_pack_ready(RANDOMIZER_PACK);
 		boolean skulls_pack_missing =
 			skulls_advertised_need_pack(network_game_client_advertised_versions[game_index].flags,
 				network_game_client_advertised_versions[game_index].skulls) &&
-			!skulls_pack_ready();
+			!tag_pack_ready(SKULLS_PACK);
 
 		if (!randomizer_pack_missing && !skulls_pack_missing)
 		{
@@ -3394,21 +3392,22 @@ boolean network_game_client_advertised_game_compatible(
 			char message[400];
 
 			network_event("not joining a modded host: %s%s%s is not written",
-				randomizer_pack_missing ? "maps/randomizer.pack" : "",
+				randomizer_pack_missing ? "maps/" RANDOMIZER_PACK ".pack" : "",
 				randomizer_pack_missing && skulls_pack_missing ? " and " : "",
-				skulls_pack_missing ? "maps/skulls.pack" : "");
+				skulls_pack_missing ? "maps/" SKULLS_PACK ".pack" : "");
 			csprintf(message,
 				"This game uses the %s, whose data (%s) is not ready on this machine.\n\n"
 				"It is written now, at the main menu: join again once it is done.",
 				randomizer_pack_missing && skulls_pack_missing ? "randomizer and skulls" :
 					randomizer_pack_missing ? "randomizer" : "skulls",
-				randomizer_pack_missing && skulls_pack_missing ? "maps/randomizer.pack and maps/skulls.pack" :
-					randomizer_pack_missing ? "maps/randomizer.pack" : "maps/skulls.pack");
+				randomizer_pack_missing && skulls_pack_missing ?
+					"maps/" RANDOMIZER_PACK ".pack and maps/" SKULLS_PACK ".pack" :
+					randomizer_pack_missing ? "maps/" RANDOMIZER_PACK ".pack" : "maps/" SKULLS_PACK ".pack");
 			platform_show_message("Halo: cannot join this game", message);
 			if (randomizer_pack_missing)
-				randomizer_pack_request();
+				tag_pack_request(RANDOMIZER_PACK);
 			if (skulls_pack_missing)
-				skulls_pack_request();
+				tag_pack_request(SKULLS_PACK);
 		}
 		return FALSE;
 	}

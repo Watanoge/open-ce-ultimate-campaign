@@ -267,6 +267,7 @@ The decompilation's upstream, punpckhdq/halo, is AGPL 3.0 from 17 October
 | [README.md](README.md) | Downloads, game data, building, build options, profiling builds |
 | [port/linux/README.md](port/linux/README.md) | The Linux build, controls, menus, every setting, updates, frame rate, field of view, system link, internet play, voice chat, the server browser, map sharing, security, map checks, how the port operates, the game source changes |
 | [port/linux/NETCODE.md](port/linux/NETCODE.md) | The distributed netcode, network versions, joining a game in progress, map sharing, transport, testing |
+| [port/linux/TAG_INJECTION.md](port/linux/TAG_INJECTION.md) | Tag packs and the tag importer: copying other maps' tags into a level, making a pack's manifest, asking for packs, network rules, the pack format |
 | [port/windows/README.md](port/windows/README.md) | The Windows build, its headers, inline functions, crash reports |
 | [port/android/README.md](port/android/README.md) | The Android build, the guest and host, touch controls, Android settings, finding problems |
 | [port/ps5/README.md](port/ps5/README.md) | The PS5 title: installing it, its updates and settings, how it runs on the console, building and developing it; `port/ps5/PS5.md` is its plan and record |

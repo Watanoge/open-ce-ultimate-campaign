@@ -141,8 +141,8 @@ HALO_PORT_ADVERTISED_MODDED_VERSION, which no build without the mod is on
 in the last two reserved bytes (little-endian). A game without either keeps
 the plain version, and any build of it joins. A modded build joins either
 kind: a modded game of its version and mod version, with the packs it
-copies tags from written (randomizer.pack; skulls.pack for Outbreak, Scarab
-and the skulls dropped)
+copies tags from written (watanoge_randomizer.pack; watanoge_skulls.pack
+for Outbreak, Scarab and the skulls dropped: port/linux/game/tag_pack.c)
 (port/linux/NETCODE.md, "Modded games") */
 #define HALO_PORT_ADVERTISED_BASE_VERSION_OFFSET 24
 /* the mod's own version: raised with any change to what modded games'

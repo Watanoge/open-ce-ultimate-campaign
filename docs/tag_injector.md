@@ -454,10 +454,10 @@ for a pool of the profile's alone):
   bundle adds it) is a stock one names that HUD instead of its own (which is added, and not drawn). A level without that HUD gets it
   from the first campaign map that has it (the sniper rifle's from a30, the
   rocket launcher's from b30, the shotgun's from c10, the flamethrower's
-  from c20, the needler's from a30, the others' from a10), as the
-  randomizer copies its weapons; `randomizer.pack` keeps no HUD bitmaps, so
-  their pixels are read from that map as the level loads (16 MB of them at
-  most). The profile's bundles are read before the randomizer copies its
+  from c20, the needler's from a30, the others' from a10), from
+  `maps/watanoge_stock_huds.pack`, which the game writes at start-up
+  (`port/linux/TAG_INJECTION.md`); a HUD pixel the pack has not got is read
+  from that map as the level loads (16 MB of them at most). The profile's bundles are read before the randomizer copies its
   tags, so that it knows the HUDs to copy. Without the HUD (its map is not
   there), the weapon keeps its own, and the log says so;
 - a gbxmodel is made this build's model, as a Custom Edition map's are

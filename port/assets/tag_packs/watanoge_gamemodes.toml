@@ -1,0 +1,23 @@
+# This fork's multiplayer modes' pack: Floodfection's carrier burst and
+# flood bits (port/linux/game/infection.c) and its zombies' Flood combat
+# forms, models and animations (floodfection_forms.c), all Two Betrayals'.
+# Written at start-up whatever is set: any multiplayer game joined may be
+# one. See port/linux/TAG_INJECTION.md.
+
+name = "watanoge_gamemodes"
+version = 1
+legacy_file_names = ["gamemodes.pack"]
+maps = ["c40"]
+minimum_bitmaps = 1
+minimum_sounds = 0
+wanted = ["always"]
+
+[keep]
+include_contains = ["flood"]
+include_prefixes = ["effects\\"]
+
+[text]
+notice = "The multiplayer game modes need\nsome data from other maps.\nIt takes a moment."
+building = "Building game mode data:\n"
+ready = "The game mode data is ready."
+failed = "The game mode data could not\nbe built. Is the card full?"

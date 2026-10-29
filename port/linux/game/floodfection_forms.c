@@ -13,7 +13,8 @@ Only the drawing is changed, as first_person_legs.c changes it: the Spartan
 is the game's unit as ever, its hit boxes, markers and physics the
 Spartan's, so the game plays alike on every machine and with a build
 without this. The forms' models and animations are Two Betrayals' (c40),
-copied into the level as it loads (randomizer.c, from gamemodes.pack); a
+copied into the level as it loads (infection_tag_import, from
+watanoge_gamemodes.pack); a
 level without them draws its zombies as Spartans.
 
 Each tick picks a form's animation by what its Spartan does and plays it

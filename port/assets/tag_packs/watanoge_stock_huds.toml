@@ -1,0 +1,22 @@
+# The Tag Injector's stock weapon HUDs (port/linux/game/tag_injector.c's
+# stock_huds: keep its maps here): a weapon of a profile drawn with a
+# campaign weapon's HUD copies that HUD into a level without it, from the
+# first campaign map that has it. Only the HUDs' pixels are kept. Written
+# at start-up whatever is set: a multiplayer or co-op game joined may share
+# a profile. See port/linux/TAG_INJECTION.md.
+
+name = "watanoge_stock_huds"
+version = 1
+maps = ["a10", "a30", "b30", "c10", "c20"]
+minimum_bitmaps = 1
+minimum_sounds = 0
+wanted = ["always"]
+
+[keep]
+include_prefixes = ["ui\\hud\\"]
+
+[text]
+notice = "The Tag Injector needs the\ncampaign's weapon HUDs\nfrom the maps.\nIt takes a moment."
+building = "Building the weapon HUDs:\n"
+ready = "The weapon HUDs are ready."
+failed = "The weapon HUDs could not\nbe built. Is the card full?"

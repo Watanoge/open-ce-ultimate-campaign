@@ -155,7 +155,7 @@ void skulls_shared_tags(long *count, unsigned long *hash);
 /* whether the game this machine hosts is a campaign game with skulls, or
 whose enemies drop skulls (one skulls_advertisement marks) */
 int skulls_hosted(void);
-/* whether an advertisement's skulls take tags from skulls.pack: the skull
+/* whether an advertisement's skulls take tags from the skulls' pack: the skull
 the enemies drop, Outbreak's Flood, Scarab's projectiles */
 int skulls_advertised_need_pack(unsigned char flags, unsigned char const *bytes);
 
@@ -211,7 +211,7 @@ void skulls_unit_died(long unit_index);
 
 /* the skull the enemies carry, to be found (unlocking by playing): a
 multiplayer map's oddball, copied into the level as it loads
-(port/linux/game/randomizer.c, from skulls.pack). Whether a level loading
+(skulls_tag_import, from watanoge_skulls.pack). Whether a level loading
 wants it: the skulls on, unlocking by playing, a campaign game (a co-op
 client's: the host's drops, by its advertisement) */
 #define SKULLS_CARRIED_TAG "weapons\\ball\\ball"
@@ -222,7 +222,7 @@ void skulls_tick(void);
 /* Outbreak (port/linux/game/skulls_outbreak.c): a player's kill may let
 loose Flood spores that run to the bodies about and raise them as Flood.
 The Flood's tags come from Two Betrayals (c40), copied into the level as it
-loads (randomizer.c, from skulls.pack): the roots below, and what they need.
+loads (skulls_tag_import, from watanoge_skulls.pack): the roots below, and what they need.
 Whether a level loading wants them: Outbreak on, or to be found (in co-op,
 by the host's advertisement alone, so every machine copies the same) */
 #define SKULLS_FLOOD_DONOR "c40"
@@ -238,9 +238,17 @@ by the host's advertisement alone, so every machine copies the same) */
 	"characters\\floodcombat_human\\floodcombat_human assault rifle", \
 	"characters\\floodcombat_human\\floodcombat_human pistol"
 int skulls_outbreak_wanted(void);
-/* whether skulls.pack is wanted: skulls to be found, or Outbreak's Flood
+/* the skulls' tag pack (port/assets/tag_packs/watanoge_skulls.toml), and
+the map it has the skull the enemies carry from (and Scarab's rocket) */
+#define SKULLS_PACK "watanoge_skulls"
+#define SKULLS_CARRIED_DONOR "wizard"
+/* whether its pack is wanted: skulls to be found, or Outbreak's Flood
 (game.skulls_active's, the skulls on) */
 int skulls_pack_wanted(void);
+/* the tags of the skulls on (carried: the skull the enemies carry to be
+found; Outbreak's Flood; Scarab's projectiles) added to the level's import
+(randomizer_tags_loaded: tag_import.c) */
+void skulls_tag_import(int carried, int outbreak, int scarab);
 /* the Outbreak's part of the game state (its spores and the Flood they
 raised), made with the game's, and new with each map */
 void skulls_outbreak_initialize(void);
@@ -265,7 +273,7 @@ machine keeps for itself (Floodfection's burst and bits, played by each
 machine of a multiplayer game for itself: infection.c) */
 extern int skulls_effect_no_objects;
 /* Floodfection's bits, thrown where a zombie dies (Two Betrayals', copied in
-from gamemodes.pack with the burst: randomizer.c, infection.c) */
+from watanoge_gamemodes.pack with the burst: infection_tag_import) */
 #define FLOODFECTION_BITS_TAGS \
 	"effects\\flood bit limb explode", \
 	"effects\\flood bit h-head explode", \

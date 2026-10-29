@@ -27,7 +27,7 @@ speed and health) whatever the options say, a headshot not killing them
 outright, bleeding the Flood's green and throwing its bits as they die, its humans each in their own
 colour (as free for all's) instead of red, every map under a green murk that hides the sky and
 all past some 55 world units (16 under a roof), and a Flood carrier's burst
-where a human turns or a zombie dies (its tags from gamemodes.pack). A
+where a human turns or a zombie dies (its tags from watanoge_gamemodes.pack). A
 build without it plays the same round, its zombies blue and its maps
 clear. The rules and much of the code follow the Infection of pull
 request #420 by arisson2001rojas-design.
@@ -58,6 +58,7 @@ request #420 by arisson2001rojas-design.
 #include "game_modes.h"
 #include "infection.h"
 #include "network_infection.h"
+#include "tag_import.h"
 
 void platform_log(char const *format, ...);
 
@@ -367,7 +368,7 @@ boolean infection_fog(
 #define FLOODFECTION_BITS_HEIGHT 0.5f
 
 /* the Flood's burst (Two Betrayals' carrier's, copied into the level from
-gamemodes.pack: randomizer.c) where a player turned or a zombie died, and
+watanoge_gamemodes.pack: infection_tag_import) where a player turned or a zombie died, and
 where a zombie died the Flood's bits too (its limbs, head, skin and
 innards thrown). Each machine plays its own, as it sees the turn (the
 host's state) or the death (the unit's): no message, and nothing of the
@@ -383,6 +384,39 @@ static long floodfection_bits_definitions[NUMBEROF(floodfection_bits_tags)];
 /* by absolute player index: the role last seen, and the unit last burst */
 static short floodfection_seen_role[HALO_PORT_MAXIMUM_NETWORK_PLAYERS];
 static long floodfection_burst_unit[HALO_PORT_MAXIMUM_NETWORK_PLAYERS];
+
+/* Floodfection's tags of Two Betrayals, copied into a multiplayer level as
+it loads (randomizer_tags_loaded: tag_import.c), from its pack (its
+manifest: port/assets/tag_packs/watanoge_gamemodes.toml). The game's mode,
+as every machine of the game has it, says whether, so each copies alike */
+boolean infection_tag_import_wanted(
+	void)
+{
+	struct network_game *game = network_game_get_game();
+
+	return game && game_modes_variant_mode_variant(&game->variant, &game->variant_options) ==
+		_game_mode_variant_floodfection;
+}
+
+void infection_tag_import(
+	void)
+{
+	static struct tag_import_root const roots[] =
+	{
+		{ 'effe', SKULLS_OUTBREAK_BURST_TAG },
+		/* (its bits where a zombie dies) */
+		{ 'effe', "effects\\flood bit limb explode" },
+		{ 'effe', "effects\\flood bit h-head explode" },
+		{ 'effe', "effects\\flood bit skin explode" },
+		/* (its zombies' forms: floodfection_forms.c) */
+		{ 'mode', "characters\\floodcombat_human\\floodcombat_human" },
+		{ 'antr', "characters\\floodcombat_human\\floodcombat_human" },
+		{ 'mode', "characters\\floodcombat elite\\floodcombat elite" },
+		{ 'antr', "characters\\floodcombat elite\\floodcombat elite" },
+	};
+
+	tag_import_roots(GAME_MODES_PACK, SKULLS_FLOOD_DONOR, roots, (int)NUMBEROF(roots));
+}
 
 static void floodfection_burst_reset(
 	void)

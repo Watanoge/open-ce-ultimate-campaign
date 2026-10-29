@@ -127,6 +127,8 @@ their handlers open opens.
 #include "custom_edition_cache.h"
 #include "custom_edition_maps.h"
 #include "tag_injector.h"
+#include "tag_pack.h"
+#include "randomizer.h"
 #include "firing_range.h"
 #include "tag_multiplayer.h"
 #include "tag_campaign.h"
@@ -485,8 +487,6 @@ static boolean setting_write(char const *name, char const *value)
 }
 
 static void setting_written(char const *name, char const *value);
-extern void randomizer_pack_request(void);
-extern void skulls_pack_request(void);
 
 static boolean setting_load(struct widget_instance *widget)
 {
@@ -3013,7 +3013,7 @@ static boolean skulls_unlock_choose(struct widget_instance *widget, boolean play
 		error(_error_silent, "skulls: could not write game.skulls_unlock_mode");
 	}
 	if (play && skulls_drop())
-		skulls_pack_request();
+		tag_pack_request(SKULLS_PACK);
 	ui_play_audio_feedback_sound(SOUND_FORWARD);
 	if (skulls_setup.open)
 	{
@@ -3201,10 +3201,10 @@ static boolean skulls_start(struct widget_instance *widget, boolean *widget_dele
 	skulls_text_from_set(skull_set_intersection(skulls_menu_set, skulls_unlocked_set()), text, sizeof(text));
 	if (!config_write("game.skulls_active", text))
 		error(_error_silent, "skulls: could not write game.skulls_active");
-	/* (Outbreak's Flood, from skulls.pack: written at the main menu after
-	this level, which reads the map until then) */
+	/* (Outbreak's Flood, from the skulls' pack: written at the main menu
+	after this level, which copies none of it until then) */
 	if (skulls_pack_wanted())
-		skulls_pack_request();
+		tag_pack_request(SKULLS_PACK);
 	if (campaign_screens_for_server)
 	{
 		ui_play_audio_feedback_sound(SOUND_FORWARD);
@@ -3724,8 +3724,6 @@ when it is another's */
 static short list_scroll(struct widget_instance *list, short *first, short count, short rows);
 static void daily_connection_want(struct widget_instance *screen);
 static void daily_connection_reset(void);
-extern int randomizer_pack_ready(void);
-extern int skulls_pack_ready(void);
 
 #define DAILY_HISTORY_ROWS 10
 /* the challenge's skulls' icons (tools/port_settings.py's DAILY_SKULL_ICONS) */
@@ -3737,7 +3735,7 @@ static struct
 {
 	/* the day shown: "" for today's */
 	char day[COMMUNITY_DAY_LENGTH];
-	/* the challenge whose packs were asked for (randomizer_pack_request) */
+	/* the challenge whose packs were asked for (tag_pack_request) */
 	char packs_day[COMMUNITY_DAY_LENGTH];
 	short history_first;
 	short history_chosen;
@@ -3802,8 +3800,8 @@ static void daily_update(struct widget_instance *screen)
 		long_text_set(named(screen, "note", 0), L"");
 		return;
 	}
-	/* (its packs written at the main menu, before it is played:
-	randomizer_pack.c; the level plays without them, more slowly) */
+	/* (its packs written at the main menu, before it is played: tag_pack.c;
+	the level copies nothing of a pack not written) */
 	if (strcmp(daily.packs_day, challenge->day))
 	{
 		boolean wants_skulls_pack = FALSE;
@@ -3814,10 +3812,9 @@ static void daily_update(struct widget_instance *screen)
 			wants_skulls_pack |= !strcmp(challenge->skulls[index], "outbreak") ||
 				!strcmp(challenge->skulls[index], "scarab");
 		}
-		if (!randomizer_pack_ready())
-			randomizer_pack_request();
-		if (wants_skulls_pack && !skulls_pack_ready())
-			skulls_pack_request();
+		tag_pack_request(RANDOMIZER_PACK);
+		if (wants_skulls_pack)
+			tag_pack_request(SKULLS_PACK);
 	}
 	community_day_text(challenge->day, FALSE, day, NUMBEROF(day));
 	if (challenge->open)
@@ -4279,11 +4276,11 @@ static struct widget_instance *screen_of(struct widget_instance *widget)
 }
 
 /* a setting just written. The randomizer turned on wants its pack, written
-at the main menu after a notice (randomizer_pack.c) */
+at the main menu after a notice (tag_pack.c) */
 static void setting_written(char const *name, char const *value)
 {
 	if (!strcmp(name, "game.randomizer") && !strcmp(value, "true"))
-		randomizer_pack_request();
+		tag_pack_request(RANDOMIZER_PACK);
 	/* (the skulls turned on, their question asked once the pack is written:
 	skulls_setup_poll) */
 	if (!strcmp(name, "game.skulls") && !strcmp(value, "true"))
@@ -4291,7 +4288,7 @@ static void setting_written(char const *name, char const *value)
 	/* (and the skulls': skulls to be found, carried by the enemies) */
 	if ((!strcmp(name, "game.skulls") || !strcmp(name, "game.skulls_all_unlocked")) && skulls_pack_wanted())
 	{
-		skulls_pack_request();
+		tag_pack_request(SKULLS_PACK);
 	}
 }
 
@@ -11229,18 +11226,17 @@ void daily_menu_poll(void)
 	}
 }
 
-/* (main.c's main loop, each frame, after randomizer_pack_update) the
+/* (main.c's main loop, each frame, after tag_pack_update) the
 question of how the skulls are had not answered (the first start, or after
 RESET SKULL PROGRESS), with SKULLS on or off, as the daily challenge and a
 co-op host's skulls apply either way: once the packs wanted are written
-(randomizer_pack.c), the question, over the main menu, the settings screen
+(tag_pack.c), the question, over the main menu, the settings screen
 or the daily challenge's screen shown, and Back there. Asked once, until
 SKULLS is turned on again; skipped, it is asked before the skulls screen
 still */
 #define SKULLS_UNLOCK_SCREEN_NAME "pc\\main_menu\\difficulty_select\\skulls\\unlock_screen"
 #define SETTINGS_SCREEN_PREFIX "pc\\main_menu\\settings_select\\"
 
-extern int randomizer_pack_busy(void);
 extern struct widget_instance *ui_widget_port_active_screen(void);
 extern char *tag_get_name(long tag_index);
 
@@ -11251,7 +11247,7 @@ void skulls_setup_poll(boolean main_menu)
 
 	if (!main_menu || skulls_setup.asked || skulls_unlock_mode() != _skulls_unlock_unset)
 		return;
-	if (randomizer_pack_busy() || ui_widget_port_error_showing() || text_field_editing(NULL))
+	if (tag_pack_busy() || ui_widget_port_error_showing() || text_field_editing(NULL))
 		return;
 	screen = ui_widget_port_active_screen();
 	name = screen ? tag_get_name(screen->definition_tag_index) : NULL;

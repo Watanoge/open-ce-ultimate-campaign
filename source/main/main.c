@@ -3791,16 +3791,16 @@ static boolean main_loop_iteration(
 			}
 			/* port: the campaign randomizer's profile being named (and the
 			Tag Injector's), and its pack, written at the main menu when it
-			is wanted (port/linux/game/menu_functions.c, randomizer_pack.c) */
+			is wanted (port/linux/game/menu_functions.c, tag_pack.c) */
 			{
-				extern void randomizer_pack_update(boolean main_menu);
+				extern void tag_pack_update(boolean main_menu);
 				extern void randomizer_profiles_poll(void);
 				extern void tag_injector_profiles_poll(void);
 				extern void skulls_setup_poll(boolean main_menu);
 
 				randomizer_profiles_poll();
 				tag_injector_profiles_poll();
-				randomizer_pack_update(main_globals.main_menu_scenario_loaded);
+				tag_pack_update(main_globals.main_menu_scenario_loaded);
 				/* (then the skulls' question, once their pack is written) */
 				skulls_setup_poll(main_globals.main_menu_scenario_loaded);
 			}

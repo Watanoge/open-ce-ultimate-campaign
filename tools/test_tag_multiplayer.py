@@ -231,7 +231,7 @@ def test_cooperative():
     assert "(setup.custom_type ? 32 : 0)" in advertised
     remote = randomizer.split("static void setup_from_remote(struct setup *setup)", 1)[1].split("\n}\n", 1)[0]
     assert "int custom = tag_multiplayer_randomizer_shared();" in remote and "POOL_TAG_INJECTOR" in remote
-    assert loaded.index("tag_multiplayer_randomizer_level_profile(scenario_name)") < loaded.index("gather_begin()")
+    assert loaded.index("tag_multiplayer_randomizer_level_profile(scenario_name)") < loaded.rindex("tag_import_begin()")
 
 
 def test_documented():

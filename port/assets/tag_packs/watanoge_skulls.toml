@@ -1,0 +1,23 @@
+# The skulls' pack (port/linux/game/skulls.c): what no campaign map has, or
+# not every one. Wizard's oddball, the skull the enemies carry, and its
+# HUD, and Scarab's rocket; Two Betrayals' Flood (Outbreak's spores,
+# carriers, combat forms and the carrier's burst) and Scarab's fuel rod.
+# About 40 MB. See port/linux/TAG_INJECTION.md.
+
+name = "watanoge_skulls"
+version = 1
+legacy_file_names = ["skulls.pack"]
+maps = ["wizard", "c40"]
+minimum_bitmaps = 1
+minimum_sounds = 0
+wanted = ["setting:game.daily_challenge", "condition:skulls"]
+
+[keep]
+include_contains = ["ball", "flood", "rocket", "fuel rod"]
+include_prefixes = ["ui\\hud\\", "effects\\", "characters\\"]
+
+[text]
+notice = "The skulls need some data\nfrom other maps.\nIt takes a moment."
+building = "Building skull data:\n"
+ready = "The skull data is ready."
+failed = "The skull data could not\nbe built. Is the card full?"

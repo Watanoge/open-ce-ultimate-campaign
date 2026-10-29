@@ -6,8 +6,8 @@ kill of an enemy may let loose Flood spores, which run to the bodies about
 and raise each as the Flood its body makes. An elite's body (a combat
 form's too) an elite combat form, a marine's or a crewman's a human combat
 form, a grunt's, a jackal's or a hunter's a carrier. The Flood's tags are
-Two Betrayals' (c40), copied into the level as it loads (randomizer.c's
-gather_outbreak, from skulls.pack); a level of the Flood has its own.
+Two Betrayals' (c40), copied into the level as it loads (skulls.c's
+skulls_tag_import, from watanoge_skulls.pack); a level of the Flood has its own.
 
 A kill lets loose spores half the time, one to four (rolled), one for each
 body within three frag grenades' reach (as many as there are bodies), never

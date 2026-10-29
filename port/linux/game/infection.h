@@ -26,6 +26,11 @@ boolean infection_floodfection_enabled(void);
 (projectiles.c), and a headshot does not kill it outright (damage.c) */
 boolean infection_floodfection_zombie(long object_index);
 boolean infection_fog(short local_player_index, boolean indoors, struct render_fog *fog);
+/* the level loading is a Floodfection game's, and its tags of Two Betrayals
+(the burst, the flood bits, the zombies' forms) added to the level's import
+(randomizer_tags_loaded, tag_import.c) */
+boolean infection_tag_import_wanted(void);
+void infection_tag_import(void);
 
 /* a living zombie's unit */
 boolean infection_unit_is_zombie(long unit_index);

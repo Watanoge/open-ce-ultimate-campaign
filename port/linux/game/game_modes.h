@@ -46,6 +46,9 @@ short game_modes_variant_mode(struct game_variant const *variant, struct game_va
 of Infection, Tag Gun Game of Gun Game), else none */
 short game_modes_variant_mode_variant(struct game_variant const *variant,
 	struct game_variant_options const *options);
+/* the tag pack this fork's modes copy their tags from (infection.c's
+Floodfection: port/assets/tag_packs/watanoge_gamemodes.toml) */
+#define GAME_MODES_PACK "watanoge_gamemodes"
 /* the name the menus show for its kind of game ("INFECTION", "HARDCORE
 CTF", "FLOODFECTION"), NULL for a game engine's own ("SLAYER") */
 wchar_t const *game_modes_variant_kind_name(struct game_variant const *variant,

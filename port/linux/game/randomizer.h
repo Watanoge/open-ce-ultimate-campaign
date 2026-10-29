@@ -2,22 +2,22 @@
 RANDOMIZER.H
 
 The campaign randomizer (randomizer.c). A level swaps actors and weapons
-in memory; tags it does not have are read from the other campaign maps.
+in memory; tags it does not have are copied in from the other campaign
+maps' (tag_import.h), of the randomizer's tag pack.
 */
 
 #ifndef __RANDOMIZER_H
 #define __RANDOMIZER_H
 
-void randomizer_tags_loaded(char const *scenario_name);
-/* the level's tag table: how many tags, and a hash of each one's group and
-name in order, which a co-op game's machines must have alike (the
-randomizer's and the skulls' copies at the same indices on each) */
-void randomizer_tag_table_fingerprint(long *count, unsigned long *hash);
-void randomizer_tags_unloaded(void);
+/* the randomizer's tag pack (port/assets/tag_packs/watanoge_randomizer.toml):
+the ten campaign maps' tags, their actors' and weapons' pixels and samples */
+#define RANDOMIZER_PACK "watanoge_randomizer"
 
-/* a bitmap's or sound's bytes of an imported tag, from the map they were
-copied from. 0: this tag is the open map's, and the caller reads that */
-int randomizer_donor_read(long tag_index, long offset, long size, void *buffer);
+/* a level loading: every tag it copies in, in one order on every machine
+(the randomizer's, the skulls', the Tag Injector's stock HUDs, the game
+mode's), then the Tag Injector's profile's; and the level going */
+void randomizer_tags_loaded(char const *scenario_name);
+void randomizer_tags_unloaded(void);
 
 /* the actor, weapon or carried weapon a placement uses. each returns the
 index it was given when the randomizer is not swapping that */
@@ -92,38 +92,5 @@ wchar_t const *randomizer_level_title_text(void *widget, wchar_t const *string);
 
 /* whether the game this machine is in, or is hosting, is randomized */
 int randomizer_show_prefix(void);
-
-/* maps/randomizer.pack, written from the campaign maps (randomizer_pack.c),
-behind the loading screen's bar. 1 when it was */
-int randomizer_pack_build(void);
-
-/* the pack is there and matches the maps */
-int randomizer_pack_ready(void);
-
-/* the pack is wanted (game.randomizer turned on): a notice, then, at the
-main menu, the pack written. Nothing when it is ready */
-void randomizer_pack_request(void);
-/* maps/skulls.pack, the skull the enemies carry (skulls.c), the same way:
-wanted once skulls are to be found (game.skulls on, unlocking by playing) */
-void skulls_pack_request(void);
-/* skulls.pack is there and matches its map */
-int skulls_pack_ready(void);
-/* maps/gamemodes.pack, the multiplayer modes' tags from other maps
-(Floodfection's burst, Two Betrayals'), the same way: written at start-up
-once, when Two Betrayals is there; and it is there and matches its map */
-int game_modes_pack_ready(void);
-/* what a pack holds: the version word's upper half, after its format's
-(1) in the lower; 0 for randomizer.pack and skulls.pack. gamemodes.pack's is
-raised whenever what it holds changes (its maps, or the tags whose pixels
-and samples it keeps: randomizer_pack.c's game_modes_keep_bytes, for the
-roots randomizer.c's gather_game_modes copies), and one of another is
-written again at start-up, and not read until it is */
-#define PACK_FORMAT_VERSION 1
-#define GAME_MODES_PACK_CONTENT 2
-
-/* a campaign map's header, as the pack records it. 0 when the map is not
-there or is not an Xbox map */
-int randomizer_pack_map_header(char const *leaf, long *file_length, long *tag_offset, long *tag_size,
-	int *compressed);
 
 #endif /* __RANDOMIZER_H */

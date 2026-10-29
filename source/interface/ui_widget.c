@@ -4442,9 +4442,8 @@ void display_error_text_deferred(
 	return;
 }
 
-/* port: whether an error dialog is up, or waiting to be: the campaign
-randomizer's pack is written once its notice has been read
-(port/linux/game/randomizer_pack.c) */
+/* port: whether an error dialog is up, or waiting to be: a tag pack is
+written once its notice has been read (port/linux/game/tag_pack.c) */
 boolean ui_widget_port_error_showing(
 	void)
 {

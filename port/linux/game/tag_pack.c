@@ -1,43 +1,34 @@
 /*
-RANDOMIZER_PACK.C
+TAG_PACK.C
 
-maps/randomizer.pack, written by the game itself at the main menu: when
-game.randomizer is turned on in Settings > Gameplay, or at start-up with it
-on, and the pack is not there or no longer matches the campaign maps. A
-notice says so first; the pack is written once it is dismissed, behind the
-loading bar, and kept. A level never writes it: without it a level reads
-the maps instead (randomizer.c), which is slower. It is
-the file tools/randomizer_pack.py writes, and randomizer.c reads either:
-'rpak', version 1, one 32-byte record per map, then each map's inflated tag
-section, its table of bitmap and sound ranges (twelve bytes each: the
-offset in the inflated map, the size, where the bytes are in the pack), and
-the pixels and samples those ranges name, each distinct blob once. Every
-place is an offset in the file, so the parts may come in any order: here
-each map's pixels and samples, then its tags and its table.
+The tag packs (tag_pack.h): maps/<name>.pack, one for each manifest in
+port/assets/tag_packs (port/linux/src/port_tag_packs.c), written by the game
+itself at the main menu from the maps the manifest names, and read by the
+tag importer (tag_import.c) as a level loads, which never reads a map for
+its tags. tools/tag_pack.py writes the same file on a computer.
+
+At start-up the main menu renames each pack's legacy files (a pack once
+called otherwise: randomizer.pack is watanoge_randomizer.pack now), then
+asks for each pack its manifest wants then ("always", a setting on, or a
+condition of tag_pack_conditions.c's) that is not there, is stale (its
+header's content hash is not its manifest's) or no longer matches its maps;
+code asks for one later with tag_pack_request (a setting turned on, a game
+joined that wants it). A notice says so first; the pack is written once it
+is dismissed, behind a dialog whose text each frame drawn brings up to
+date, and kept. A pack none of whose maps is there is not asked for.
+
+A pack is 'rpak', format 2 (TAG_PACK_FORMAT_VERSION), its content hash and
+how many maps, then a 56-byte record per map (tag_pack.h); then each map's
+pixels and samples, its inflated tag section and its table of ranges.
+Every place is an offset in the file, so the parts may come in any order.
+Each distinct blob of pixels or samples is kept once.
 
 A disc map is a plain 0x800-byte header and a zlib stream, and its tag
 section is at the end, so each map is inflated twice: once for its tags,
 which say which ranges to keep, and again to copy those ranges as the
-stream passes them. That is a few minutes, once, and about 500 MB. The
-file is written as randomizer.pack.partial and renamed when it is whole, so
-a stop part-way leaves no pack that looks complete.
-
-maps/skulls.pack is the same file of one multiplayer map, Wizard's, keeping
-the pixels and samples of its oddball (the skull the enemies carry when
-skulls are to be found, skulls.c) and of the HUD: about 9 MB, a few
-seconds, written the same way once game.skulls is on with the skulls
-unlocked by playing, or their question not answered yet. At start-up both
-are written too with game.daily_challenge on, as its levels have both. A record names a map in seven letters, which
-Blood Gulch's name is too long for; Wizard's oddball is the same.
-
-maps/gamemodes.pack is the same file again for this fork's multiplayer
-modes: Two Betrayals' (c40) Flood carrier's burst, which Floodfection plays
-where a human turns or a zombie dies (infection.c), keeping the pixels and
-samples of the Flood's and the effects'. It is written at start-up once,
-whatever is set, as a game of one may be joined at any time; not when c40
-is not there. Its version word says what it holds, after the format's
-(randomizer.h's GAME_MODES_PACK_CONTENT): one of an older build is written
-again at start-up.
+stream passes them. The randomizer's ten maps take a few minutes and about
+500 MB, once. The file is written as <name>.pack.partial and renamed when it
+is whole, so a stop part-way leaves no pack that looks complete.
 */
 
 #include <stdio.h>
@@ -53,7 +44,8 @@ again at start-up.
 #include "tag_files/tag_files.h"
 
 #include "halo_port_limits.h"
-#include "randomizer.h"
+#include "tag_pack.h"
+#include "../src/port_tag_packs.h"
 
 #include <xtl.h>
 /* the port's zlib, the same one that unpacks a map while precaching it */
@@ -62,8 +54,6 @@ again at start-up.
 /* the addresses a map file gives its tag pointers (halo_port_window.h) */
 #define PACK_WINDOW 0x803A6000UL
 #define MAP_HEADER_SIZE 0x800
-#define PACK_MAPS 10
-#define PACK_DIRECTORY_SIZE (12 + PACK_MAPS * 32)
 #define PACK_LIMIT 0x7F000000L
 #define RANGE_LIMIT (64L * 1024L * 1024L)
 #define IO_CHUNK 0x40000
@@ -98,7 +88,7 @@ struct pack_range
 
 struct pack_record
 {
-	char leaf[8];
+	char leaf[TAG_PACK_MAP_NAME_SIZE];
 	long file_length;
 	long tag_offset;
 	long tag_size;
@@ -125,31 +115,10 @@ struct pack_seen
 	long data_at;
 };
 
-/* a pack and what it is made of: randomizer.pack, the campaign maps'
-actors and weapons; skulls.pack, the skull the enemies carry (skulls.c),
-which no campaign map has. Each its maps, the bitmaps and sounds whose
-pixels and samples it keeps, the least of those a map of it has, and its
-words */
-struct pack_kind
-{
-	char const *file_name;
-	int (*map_count)(void);
-	char const *(*map)(int index);
-	int (*keep)(unsigned long group, char const *name);
-	long minimum_bitmaps;
-	long minimum_sounds;
-	/* what it holds (randomizer.h's GAME_MODES_PACK_CONTENT), in its version
-	word's upper half */
-	unsigned long content;
-	wchar_t const *notice;
-	wchar_t const *building;
-	wchar_t const *ready;
-	wchar_t const *failed;
-};
-
 static struct
 {
-	struct pack_kind const *kind;
+	/* the manifest being written (port_tag_packs.h) */
+	long pack;
 	HANDLE out;
 	long cursor;
 	unsigned char *chunk;
@@ -193,20 +162,25 @@ static void write_u32(unsigned char *bytes, unsigned long value)
 
 /* ---------- the screen
 
-The build's dialog (randomizer_pack_update) shows this text, which each
+The build's dialog (tag_pack_update) shows this text, which each
 frame drawn here brings up to date. The loading screen's bar is not used: it
 is drawn for a loop that renders every frame, and from near nothing it stays
 black for minutes */
 
-static wchar_t status_text[160];
-static char status_map[8];
+static wchar_t status_text[200];
+static char status_map[TAG_PACK_MAP_NAME_SIZE];
+/* the manifest's words, as the dialogs take them (lines split by \r\n) */
+static wchar_t notice_text[300];
+static wchar_t building_text[160];
+static wchar_t ready_text[160];
+static wchar_t failed_text[200];
 
 static void status_set(wchar_t const *first, int percent, char const *map)
 {
 	int out = 0;
 	int index;
 
-	for (index = 0; first[index] && out < (int)NUMBEROF(status_text) - 24; index++)
+	for (index = 0; first[index] && out < (int)NUMBEROF(status_text) - 48; index++)
 		status_text[out++] = first[index];
 	if (percent >= 0)
 	{
@@ -221,7 +195,7 @@ static void status_set(wchar_t const *first, int percent, char const *map)
 	{
 		status_text[out++] = L' ';
 		status_text[out++] = L'(';
-		for (index = 0; map[index] && index < 7; index++)
+		for (index = 0; map[index] && index < TAG_PACK_MAP_NAME_SIZE - 1; index++)
 			status_text[out++] = (wchar_t)(unsigned char)map[index];
 		status_text[out++] = L')';
 	}
@@ -239,7 +213,7 @@ static void progress_show(int force)
 	percent = build.total > 0.0 ? (int)(build.done * 100.0 / build.total) : 0;
 	if (percent > 99)
 		percent = 99;
-	status_set(build.kind->building, percent, status_map);
+	status_set(building_text, percent, status_map);
 	main_pregame_render();
 	main_present_frame();
 }
@@ -283,7 +257,7 @@ static int pack_write(void const *buffer, unsigned long size)
 
 	if ((unsigned long)build.cursor + size > (unsigned long)PACK_LIMIT)
 	{
-		error(_error_silent, "randomizer pack: past what a 32-bit offset can name");
+		error(_error_silent, "tag pack: past what a 32-bit offset can name");
 		build.failed = 1;
 		return 0;
 	}
@@ -296,7 +270,7 @@ static int pack_write(void const *buffer, unsigned long size)
 			chunk = IO_CHUNK;
 		if (!WriteFile(build.out, (char const *)buffer + done, chunk, &wrote, NULL) || wrote == 0)
 		{
-			error(_error_silent, "randomizer pack: could not write (error %lu; is the card full?)",
+			error(_error_silent, "tag pack: could not write (error %lu; is the card full?)",
 				(unsigned long)GetLastError());
 			build.failed = 1;
 			return 0;
@@ -308,8 +282,7 @@ static int pack_write(void const *buffer, unsigned long size)
 	return 1;
 }
 
-int randomizer_pack_map_header(char const *leaf, long *file_length, long *tag_offset, long *tag_size,
-	int *compressed)
+int tag_pack_map_header(char const *leaf, long *file_length, long *tag_offset, long *tag_size, int *compressed)
 {
 	char path[512];
 	unsigned char header[0x18];
@@ -445,35 +418,6 @@ static char const *tag_name(unsigned char const *blob, long blob_size, long inst
 		return "";
 
 	return (char const *)blob + at;
-}
-
-/* level geometry, menus, music and ambience are not actors or weapons, and
-the same character tags would otherwise carry them in every map */
-static int randomizer_keep_bytes(unsigned long group, char const *name)
-{
-	static char const *const bitmap_skips[] = { "levels\\", "sky\\", "ui\\", "rasterizer\\", "scenery\\", "cinematics\\" };
-	static char const *const sound_skips[] = { "sound\\music\\", "sound\\sfx\\ambience\\" };
-	char const *const *skips;
-	int count;
-	int index;
-
-	if (group == 'bitm')
-	{
-		skips = bitmap_skips;
-		count = (int)NUMBEROF(bitmap_skips);
-	}
-	else
-	{
-		skips = sound_skips;
-		count = (int)NUMBEROF(sound_skips);
-	}
-	for (index = 0; index < count; index++)
-	{
-		if (!strncmp(name, skips[index], strlen(skips[index])))
-			return 0;
-	}
-
-	return 1;
 }
 
 static long bitmap_bytes(short width, short height, short depth, short kind, short format, unsigned short flags,
@@ -645,7 +589,7 @@ static int collect(struct range_list *list, unsigned char const *blob, long blob
 
 		if (base < 0 || (group != 'bitm' && group != 'snd!'))
 			continue;
-		if (!build.kind->keep(group, tag_name(blob, blob_size, instance)))
+		if (!port_tag_packs_keep(build.pack, group, tag_name(blob, blob_size, instance)))
 			continue;
 		if (group == 'bitm')
 		{
@@ -660,7 +604,7 @@ static int collect(struct range_list *list, unsigned char const *blob, long blob
 			sound_ranges(list, blob, blob_size, base, file_length, &ok);
 		}
 	}
-	if (!ok || bitmaps < build.kind->minimum_bitmaps || sounds < build.kind->minimum_sounds)
+	if (!ok || bitmaps < port_tag_packs_minimum_bitmaps(build.pack) || sounds < port_tag_packs_minimum_sounds(build.pack))
 		return 0;
 	qsort(list->ranges, (unsigned long)list->count, sizeof(*list->ranges), range_less);
 	kept = 0;
@@ -822,9 +766,9 @@ static int pack_map(char const *leaf, struct pack_record *record)
 	memset(&list, 0, sizeof(list));
 	memset(&stream, 0, sizeof(stream));
 	snprintf(status_map, sizeof(status_map), "%s", leaf);
-	if (!randomizer_pack_map_header(leaf, &file_length, &tag_offset, &tag_size, &compressed))
+	if (!tag_pack_map_header(leaf, &file_length, &tag_offset, &tag_size, &compressed))
 	{
-		error(_error_silent, "randomizer pack: no usable %s.map", leaf);
+		error(_error_silent, "tag pack: no usable %s.map", leaf);
 		return 0;
 	}
 	map_path(path, sizeof(path), leaf);
@@ -839,13 +783,14 @@ static int pack_map(char const *leaf, struct pack_record *record)
 		!stream_take(&stream, tag_offset - MAP_HEADER_SIZE, NULL) ||
 		!stream_take(&stream, tag_size, blob))
 	{
-		error(_error_silent, "randomizer pack: %s.map ends early (a half-copied map?)", leaf);
+		error(_error_silent, "tag pack: %s.map ends early (a half-copied map?)", leaf);
 		goto done;
 	}
 	stream_end(&stream);
 	if (!collect(&list, blob, tag_size, file_length))
 	{
-		error(_error_silent, "randomizer pack: %s.map's tags are not the map %s wants", leaf, build.kind->file_name);
+		error(_error_silent, "tag pack: %s.map's tags are not the map %s wants", leaf,
+			port_tag_packs_name(build.pack));
 		goto done;
 	}
 	/* the pixels and samples, from the start again */
@@ -856,7 +801,7 @@ static int pack_map(char const *leaf, struct pack_record *record)
 	{
 		if (!copy_range(&stream, header, list.ranges + index))
 		{
-			error(_error_silent, "randomizer pack: could not copy %s.map's range at %ld", leaf,
+			error(_error_silent, "tag pack: could not copy %s.map's range at %ld", leaf,
 				list.ranges[index].offset);
 			goto done;
 		}
@@ -883,7 +828,7 @@ static int pack_map(char const *leaf, struct pack_record *record)
 		if (!pack_write(entry, sizeof(entry)))
 			goto done;
 	}
-	error(_error_silent, "randomizer pack: %s.map, %ld ranges, %ld resource bytes, pack now %ld bytes",
+	error(_error_silent, "tag pack: %s.map, %ld ranges, %ld resource bytes, pack now %ld bytes",
 		leaf, list.count, resource_bytes, build.cursor);
 	ok = 1;
 done:
@@ -898,53 +843,69 @@ done:
 	return ok;
 }
 
-static int pack_finish(struct pack_record const *records, int count)
+static int pack_finish(struct pack_record const *records, int count, long directory_size)
 {
-	unsigned char directory[PACK_DIRECTORY_SIZE];
+	unsigned char *directory = malloc((unsigned long)directory_size);
 	int index;
+	int ok;
 
-	memset(directory, 0, sizeof(directory));
+	if (!directory)
+		return 0;
+	memset(directory, 0, (unsigned long)directory_size);
 	write_u32(directory, 'rpak');
-	write_u32(directory + 4, PACK_FORMAT_VERSION | (build.kind->content << 16));
-	write_u32(directory + 8, (unsigned long)count);
+	write_u32(directory + 4, TAG_PACK_FORMAT_VERSION);
+	write_u32(directory + 8, port_tag_packs_content(build.pack));
+	write_u32(directory + 12, (unsigned long)count);
 	for (index = 0; index < count; index++)
 	{
-		unsigned char *entry = directory + 12 + index * 32;
+		unsigned char *entry = directory + TAG_PACK_HEADER_SIZE + index * TAG_PACK_RECORD_SIZE;
 
-		memcpy(entry, records[index].leaf, 7);
-		write_u32(entry + 8, (unsigned long)records[index].file_length);
-		write_u32(entry + 12, (unsigned long)records[index].tag_offset);
-		write_u32(entry + 16, (unsigned long)records[index].tag_size);
-		write_u32(entry + 20, (unsigned long)records[index].tags_at);
-		write_u32(entry + 24, (unsigned long)records[index].range_count);
-		write_u32(entry + 28, (unsigned long)records[index].ranges_at);
+		memcpy(entry, records[index].leaf, TAG_PACK_MAP_NAME_SIZE - 1);
+		write_u32(entry + 32, (unsigned long)records[index].file_length);
+		write_u32(entry + 36, (unsigned long)records[index].tag_offset);
+		write_u32(entry + 40, (unsigned long)records[index].tag_size);
+		write_u32(entry + 44, (unsigned long)records[index].tags_at);
+		write_u32(entry + 48, (unsigned long)records[index].range_count);
+		write_u32(entry + 52, (unsigned long)records[index].ranges_at);
 	}
 	/* a copy written over at the end leaves bytes past it */
-	if (!file_at(build.out, build.cursor) || !SetEndOfFile(build.out) || !file_at(build.out, 0))
-		return 0;
+	ok = file_at(build.out, build.cursor) && SetEndOfFile(build.out) && file_at(build.out, 0);
 	build.cursor = 0;
+	ok = ok && pack_write(directory, (unsigned long)directory_size);
+	free(directory);
 
-	return pack_write(directory, sizeof(directory));
+	return ok;
 }
 
-static int pack_build(struct pack_kind const *kind)
+static char const *pack_path(long pack, char *path, unsigned int size)
+{
+	snprintf(path, size, "%s%s.pack", cache_files_map_directory(), port_tag_packs_name(pack));
+	return path;
+}
+
+static int pack_build(long pack)
 {
 	char path[512];
 	char partial[520];
-	struct pack_record records[PACK_MAPS];
+	struct pack_record records[TAG_PACK_MAPS];
+	long map_count = port_tag_packs_map_count(pack);
+	long directory_size;
 	int count = 0;
 	int level;
 	int ok = 0;
 
-	snprintf(path, sizeof(path), "%s%s", cache_files_map_directory(), kind->file_name);
+	if (map_count > TAG_PACK_MAPS)
+		map_count = TAG_PACK_MAPS;
+	directory_size = TAG_PACK_HEADER_SIZE + map_count * TAG_PACK_RECORD_SIZE;
+	pack_path(pack, path, sizeof(path));
 	snprintf(partial, sizeof(partial), "%s.partial", path);
 	memset(&build, 0, sizeof(build));
-	build.kind = kind;
-	for (level = 0; level < kind->map_count() && level < PACK_MAPS; level++)
+	build.pack = pack;
+	for (level = 0; level < map_count; level++)
 	{
 		long file_length, tag_offset, tag_size;
 
-		if (randomizer_pack_map_header(kind->map(level), &file_length, &tag_offset, &tag_size, NULL))
+		if (tag_pack_map_header(port_tag_packs_map(pack, level), &file_length, &tag_offset, &tag_size, NULL))
 			build.total += 2.0 * (double)file_length;
 	}
 	build.chunk = malloc(IO_CHUNK);
@@ -955,23 +916,33 @@ static int pack_build(struct pack_kind const *kind)
 	build.out = CreateFileA(partial, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL);
 	if (build.out == INVALID_HANDLE_VALUE)
 	{
-		error(_error_silent, "randomizer pack: could not write %s (error %lu)", partial, (unsigned long)GetLastError());
+		error(_error_silent, "tag pack: could not write %s (error %lu)", partial, (unsigned long)GetLastError());
 		build.out = NULL;
 		goto done;
 	}
-	error(_error_silent, "randomizer pack: writing %s (once)", path);
+	error(_error_silent, "tag pack: writing %s (once)", path);
 	progress_show(1);
 	memset(records, 0, sizeof(records));
-	if (!pack_write(records, PACK_DIRECTORY_SIZE))
-		goto done;
-	for (level = 0; level < kind->map_count() && level < PACK_MAPS; level++)
 	{
-		if (pack_map(kind->map(level), records + count))
+		unsigned char *blank = malloc((unsigned long)directory_size);
+
+		if (!blank)
+			goto done;
+		memset(blank, 0, (unsigned long)directory_size);
+		ok = pack_write(blank, (unsigned long)directory_size);
+		free(blank);
+		if (!ok)
+			goto done;
+		ok = 0;
+	}
+	for (level = 0; level < map_count; level++)
+	{
+		if (pack_map(port_tag_packs_map(pack, level), records + count))
 			count++;
 		else if (build.failed)
 			goto done;
 	}
-	ok = count > 0 && pack_finish(records, count);
+	ok = count > 0 && pack_finish(records, count, directory_size);
 done:
 	if (build.out)
 		CloseHandle(build.out);
@@ -981,12 +952,12 @@ done:
 		DeleteFileA(path);
 		ok = MoveFileA(partial, path);
 		if (!ok)
-			error(_error_silent, "randomizer pack: could not rename %s (error %lu)", partial, (unsigned long)GetLastError());
+			error(_error_silent, "tag pack: could not rename %s (error %lu)", partial, (unsigned long)GetLastError());
 	}
 	if (!ok)
 		DeleteFileA(partial);
 	else
-		error(_error_silent, "randomizer pack: wrote %s (%d maps, %ld distinct pixel and sample blobs)",
+		error(_error_silent, "tag pack: wrote %s (%d maps, %ld distinct pixel and sample blobs)",
 			path, count, build.seen_count);
 	status_map[0] = 0;
 	if (build.chunk)
@@ -1000,135 +971,78 @@ done:
 
 /* ---------- the packs */
 
-static int campaign_map_count(void)
+/* a manifest's words as a dialog takes them: each line ended \r\n */
+static void text_widen(wchar_t *text, int size, char const *source)
 {
-	return PACK_MAPS;
+	int out = 0;
+
+	for (; *source && out < size - 2; source++)
+	{
+		if (*source == '\n')
+			text[out++] = L'\r';
+		text[out++] = (wchar_t)(unsigned char)*source;
+	}
+	text[out] = 0;
 }
 
-static char const *campaign_map(int index)
+static void texts_load(long pack)
 {
-	return tag_name_strip_path(main_get_solo_level_name((short)index));
+	text_widen(notice_text, (int)NUMBEROF(notice_text), port_tag_packs_text(pack, "notice"));
+	text_widen(building_text, (int)NUMBEROF(building_text), port_tag_packs_text(pack, "building"));
+	text_widen(ready_text, (int)NUMBEROF(ready_text), port_tag_packs_text(pack, "ready"));
+	text_widen(failed_text, (int)NUMBEROF(failed_text), port_tag_packs_text(pack, "failed"));
+	if (!notice_text[0])
+		text_widen(notice_text, (int)NUMBEROF(notice_text), "Some data needs to be built\nfrom the maps.\nIt takes a moment.");
+	if (!building_text[0])
+		text_widen(building_text, (int)NUMBEROF(building_text), "Building data:\n");
+	if (!ready_text[0])
+		text_widen(ready_text, (int)NUMBEROF(ready_text), "The data is ready.");
+	if (!failed_text[0])
+		text_widen(failed_text, (int)NUMBEROF(failed_text), "The data could not\nbe built. Is the card full?");
 }
 
-/* (the skull's map: one of seven letters at most, as a pack's record names
-it, that has the oddball; randomizer.c's SKULL_DONOR) */
-static int skull_map_count(void)
+/* whether any map of the pack is there to write it from */
+static int pack_buildable(long pack)
 {
-	return 2;
+	long level;
+
+	for (level = 0; level < port_tag_packs_map_count(pack); level++)
+	{
+		long file_length, tag_offset, tag_size;
+
+		if (tag_pack_map_header(port_tag_packs_map(pack, level), &file_length, &tag_offset, &tag_size, NULL))
+			return 1;
+	}
+	return 0;
 }
 
-/* (and Outbreak's Flood, Two Betrayals': skulls_outbreak.c) */
-static char const *skull_map(int index)
-{
-	return index == 0 ? "wizard" : SKULLS_FLOOD_DONOR;
-}
-
-/* the skull's pixels and samples, and the HUD's it shows held; the Flood's
-(named so), and the effects and characters' they share (blood, gibs, the
-carrier's burst), and Scarab's rocket and fuel rod: about 40 MB, against
-260 of Two Betrayals' own */
-static int skull_keep_bytes(unsigned long group, char const *name)
-{
-	char lower[256];
-	int index;
-
-	(void)group;
-	for (index = 0; name[index] && index + 1 < (int)sizeof(lower); index++)
-		lower[index] = (char)tolower((unsigned char)name[index]);
-	lower[index] = 0;
-	return strstr(lower, "ball") != NULL || !strncmp(lower, "ui\\hud\\", 7) || strstr(lower, "flood") != NULL ||
-		!strncmp(lower, "effects\\", 8) || !strncmp(lower, "characters\\", 11) ||
-		strstr(lower, "rocket") != NULL || strstr(lower, "fuel rod") != NULL;
-}
-
-static struct pack_kind const randomizer_kind =
-{
-	"randomizer.pack", campaign_map_count, campaign_map, randomizer_keep_bytes, 20, 20, 0,
-	L"The randomizer needs to build\r\nits data from the campaign maps:\r\n"
-	L"a few minutes and about 500 MB,\r\nonce. It starts when this closes.",
-	L"Building the randomizer's data\r\nfrom the campaign maps: ",
-	L"The randomizer's data is ready.",
-	L"The randomizer's data could not\r\nbe built (is the card full?).\r\n"
-	L"Randomized levels will load\r\nmore slowly.",
-};
-
-static struct pack_kind const skulls_kind =
-{
-	"skulls.pack", skull_map_count, skull_map, skull_keep_bytes, 1, 0, 0,
-	L"The skulls need some data\r\nfrom other maps.\r\nIt takes a moment.",
-	L"Building skull data:\r\n",
-	L"The skull data is ready.",
-	L"The skull data could not\r\nbe built. Is the card full?",
-};
-
-/* (this fork's multiplayer modes': Floodfection's burst, Two Betrayals') */
-static int game_modes_map_count(void)
-{
-	return 1;
-}
-
-static char const *game_modes_map(int index)
-{
-	(void)index;
-	return SKULLS_FLOOD_DONOR;
-}
-
-/* the Flood's pixels and samples, and the effects' (the burst's particles
-and their bitmaps) */
-static int game_modes_keep_bytes(unsigned long group, char const *name)
-{
-	char lower[256];
-	int index;
-
-	(void)group;
-	for (index = 0; name[index] && index + 1 < (int)sizeof(lower); index++)
-		lower[index] = (char)tolower((unsigned char)name[index]);
-	lower[index] = 0;
-	return strstr(lower, "flood") != NULL || !strncmp(lower, "effects\\", 8);
-}
-
-static struct pack_kind const game_modes_kind =
-{
-	"gamemodes.pack", game_modes_map_count, game_modes_map, game_modes_keep_bytes, 1, 0, GAME_MODES_PACK_CONTENT,
-	L"The multiplayer game modes need\r\nsome data from other maps.\r\nIt takes a moment.",
-	L"Building game mode data:\r\n",
-	L"The game mode data is ready.",
-	L"The game mode data could not\r\nbe built. Is the card full?",
-};
-
-int randomizer_pack_build(void)
-{
-	return pack_build(&randomizer_kind);
-}
-
-/* ---------- when it is written */
-
-/* the pack is there, and each map it has is the one in maps/ */
-static int pack_ready(struct pack_kind const *kind)
+/* the pack is there, of this format and content, and each map it has is
+the one in maps/ */
+static int pack_ready(long pack)
 {
 	char path[512];
-	unsigned char head[12];
+	unsigned char head[TAG_PACK_HEADER_SIZE];
+	char leaves[TAG_PACK_MAPS][TAG_PACK_MAP_NAME_SIZE];
 	HANDLE file;
 	unsigned long count;
 	unsigned long index;
+	long level;
 	int ready;
-	char leaves[PACK_MAPS][8];
-	int level;
 
+	if (pack < 0)
+		return 0;
 	memset(leaves, 0, sizeof(leaves));
-	snprintf(path, sizeof(path), "%s%s", cache_files_map_directory(), kind->file_name);
-	file = CreateFileA(path, GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
+	file = CreateFileA(pack_path(pack, path, sizeof(path)), GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
 	if (file == INVALID_HANDLE_VALUE)
 		return 0;
 	ready = file_read(file, head, sizeof(head)) && read_u32(head) == 'rpak' &&
-		read_u32(head + 4) == (PACK_FORMAT_VERSION | (kind->content << 16));
-	count = ready ? read_u32(head + 8) : 0;
-	if (!count || count > PACK_MAPS)
+		read_u32(head + 4) == TAG_PACK_FORMAT_VERSION && read_u32(head + 8) == port_tag_packs_content(pack);
+	count = ready ? read_u32(head + 12) : 0;
+	if (!count || count > TAG_PACK_MAPS)
 		ready = 0;
 	for (index = 0; ready && index < count; index++)
 	{
-		unsigned char record[32];
-		char leaf[8];
+		unsigned char record[TAG_PACK_RECORD_SIZE];
 		long file_length, tag_offset, tag_size;
 
 		if (!file_read(file, record, sizeof(record)))
@@ -1136,25 +1050,25 @@ static int pack_ready(struct pack_kind const *kind)
 			ready = 0;
 			break;
 		}
-		memcpy(leaf, record, 7);
-		leaf[7] = 0;
-		memcpy(leaves[index], leaf, sizeof(leaves[index]));
+		memcpy(leaves[index], record, TAG_PACK_MAP_NAME_SIZE - 1);
+		leaves[index][TAG_PACK_MAP_NAME_SIZE - 1] = 0;
 		/* (a map no longer there is read from nowhere: the pack's is as good) */
-		if (randomizer_pack_map_header(leaf, &file_length, &tag_offset, &tag_size, NULL) &&
-			(file_length != read_s32(record + 8) || tag_offset != read_s32(record + 12) ||
-				tag_size != read_s32(record + 16)))
+		if (tag_pack_map_header(leaves[index], &file_length, &tag_offset, &tag_size, NULL) &&
+			(file_length != read_s32(record + 32) || tag_offset != read_s32(record + 36) ||
+				tag_size != read_s32(record + 40)))
 			ready = 0;
 	}
 	CloseHandle(file);
-	/* (and each of the kind's maps there is, in it: skulls.pack before
-	Outbreak's Flood was, has not Two Betrayals') */
-	for (level = 0; ready && level < kind->map_count() && level < PACK_MAPS; level++)
+	/* (and each of the manifest's maps there is, in it: a pack written
+	before one of its maps was copied in has not got it) */
+	for (level = 0; ready && level < port_tag_packs_map_count(pack) && level < TAG_PACK_MAPS; level++)
 	{
 		long file_length, tag_offset, tag_size;
+		char const *leaf = port_tag_packs_map(pack, level);
 
-		if (!randomizer_pack_map_header(kind->map(level), &file_length, &tag_offset, &tag_size, NULL))
+		if (!tag_pack_map_header(leaf, &file_length, &tag_offset, &tag_size, NULL))
 			continue;
-		for (index = 0; index < count && _stricmp(leaves[index], kind->map(level)); index++)
+		for (index = 0; index < count && _stricmp(leaves[index], leaf); index++)
 			;
 		if (index == count)
 			ready = 0;
@@ -1174,84 +1088,141 @@ enum
 };
 
 static int pack_step;
-/* the pack being written, and those asked for after it, in turn */
-static struct pack_kind const *pack_current;
-static struct pack_kind const *pack_queue[3];
+/* the pack being written (NONE), and those asked for after it, in turn */
+static long pack_current = NONE;
+static long pack_queue[TAG_PACK_MAPS];
 static int pack_queued;
 
-static void pack_request(struct pack_kind const *kind)
+static void pack_request(long pack)
 {
 	int index;
 
-	if (pack_current == kind)
+	if (pack < 0 || pack_current == pack)
 		return;
 	for (index = 0; index < pack_queued; index++)
 	{
-		if (pack_queue[index] == kind)
+		if (pack_queue[index] == pack)
 			return;
 	}
-	if (pack_queued >= (int)NUMBEROF(pack_queue) || pack_ready(kind))
+	if (pack_queued >= (int)NUMBEROF(pack_queue) || pack_ready(pack) || !pack_buildable(pack))
 		return;
-	pack_queue[pack_queued++] = kind;
-	error(_error_silent, "randomizer pack: %s wanted; written at the main menu, after its notice", kind->file_name);
+	pack_queue[pack_queued++] = pack;
+	error(_error_silent, "tag pack: %s wanted; written at the main menu, after its notice", port_tag_packs_name(pack));
 }
 
-/* a pack's notice or dialog up, or a pack waiting for its turn */
-int randomizer_pack_busy(void)
+/* a pack once called otherwise: renamed to the pack's own name, or, when
+the pack is there already, deleted (it is only ever written again) */
+static void legacy_rename(long pack)
 {
-	return pack_current != NULL || pack_queued > 0;
+	char path[512];
+	long index;
+
+	pack_path(pack, path, sizeof(path));
+	for (index = 0; index < port_tag_packs_legacy_count(pack); index++)
+	{
+		char legacy[512];
+		char partial[520];
+		HANDLE file;
+
+		snprintf(legacy, sizeof(legacy), "%s%s", cache_files_map_directory(), port_tag_packs_legacy(pack, index));
+		snprintf(partial, sizeof(partial), "%s.partial", legacy);
+		DeleteFileA(partial);
+		file = CreateFileA(legacy, GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
+		if (file == INVALID_HANDLE_VALUE)
+			continue;
+		CloseHandle(file);
+		file = CreateFileA(path, GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
+		if (file != INVALID_HANDLE_VALUE)
+		{
+			CloseHandle(file);
+			if (DeleteFileA(legacy))
+				error(_error_silent, "tag pack: deleted %s, which %s.pack is now", legacy, port_tag_packs_name(pack));
+		}
+		else if (MoveFileA(legacy, path))
+			error(_error_silent, "tag pack: renamed %s to %s", legacy, path);
+		else
+			error(_error_silent, "tag pack: could not rename %s to %s (error %lu)", legacy, path,
+				(unsigned long)GetLastError());
+	}
 }
 
-int randomizer_pack_ready(void)
+/* whether a manifest wants its pack at start-up */
+static int pack_wanted(long pack)
 {
-	return pack_ready(&randomizer_kind);
+	long index;
+
+	for (index = 0; index < port_tag_packs_wanted_count(pack); index++)
+	{
+		char const *wanted = port_tag_packs_wanted(pack, index);
+
+		if (!strcmp(wanted, "always"))
+			return 1;
+		if (!strncmp(wanted, "setting:", 8) && config_boolean(wanted + 8))
+			return 1;
+		if (!strncmp(wanted, "condition:", 10))
+		{
+			int condition;
+
+			for (condition = 0; tag_pack_conditions[condition].name; condition++)
+			{
+				if (!strcmp(tag_pack_conditions[condition].name, wanted + 10) &&
+					tag_pack_conditions[condition].wanted())
+					return 1;
+			}
+		}
+	}
+	return 0;
 }
 
-int skulls_pack_ready(void)
+char const *tag_pack_file_name(char const *name)
 {
-	return pack_ready(&skulls_kind);
+	static char path[512];
+	long pack = port_tag_packs_find(name);
+
+	return pack < 0 ? NULL : pack_path(pack, path, sizeof(path));
 }
 
-void randomizer_pack_request(void)
+unsigned long tag_pack_content(char const *name)
 {
-	pack_request(&randomizer_kind);
+	return port_tag_packs_content(port_tag_packs_find(name));
 }
 
-void skulls_pack_request(void)
+int tag_pack_ready(char const *name)
 {
-	pack_request(&skulls_kind);
+	return pack_ready(port_tag_packs_find(name));
 }
 
-int game_modes_pack_ready(void)
+void tag_pack_request(char const *name)
 {
-	return pack_ready(&game_modes_kind);
+	long pack = port_tag_packs_find(name);
+
+	if (pack < 0)
+		error(_error_silent, "tag pack: no manifest is named %s", name ? name : "(none)");
+	pack_request(pack);
 }
 
-void randomizer_pack_update(boolean main_menu)
+int tag_pack_busy(void)
+{
+	return pack_current != NONE || pack_queued > 0;
+}
+
+void tag_pack_update(boolean main_menu)
 {
 	static int checked;
 
 	if (!main_menu)
 		return;
-	/* (at start-up, with the randomizer, or skulls to find, already on; or
-	the daily challenge in the Campaign menu, whose levels are randomized
-	and have skulls whatever those settings say, as a co-op host's choice
-	of one has) */
 	if (!checked)
 	{
-		int daily = config_boolean("game.daily_challenge");
+		long pack;
 
 		checked = 1;
-		if (daily || config_boolean("game.randomizer"))
-			randomizer_pack_request();
-		if (daily || skulls_pack_wanted())
-			skulls_pack_request();
-		/* (Floodfection's burst: any multiplayer game may be one) */
+		for (pack = 0; pack < port_tag_packs_count(); pack++)
+			legacy_rename(pack);
+		for (pack = 0; pack < port_tag_packs_count(); pack++)
 		{
-			long file_length, tag_offset, tag_size;
-
-			if (randomizer_pack_map_header(SKULLS_FLOOD_DONOR, &file_length, &tag_offset, &tag_size, NULL))
-				pack_request(&game_modes_kind);
+			if (pack_wanted(pack))
+				pack_request(pack);
 		}
 	}
 	switch (pack_step)
@@ -1262,13 +1233,14 @@ void randomizer_pack_update(boolean main_menu)
 		pack_current = pack_queue[0];
 		pack_queued--;
 		memmove(pack_queue, pack_queue + 1, (unsigned long)pack_queued * sizeof(*pack_queue));
-		display_error_text_deferred(pack_current->notice, 0);
+		texts_load(pack_current);
+		display_error_text_deferred(notice_text, 0);
 		pack_step = _pack_notice;
 		return;
 	case _pack_notice:
 		if (ui_widget_port_error_showing())
 			return;
-		status_set(pack_current->building, 0, "");
+		status_set(building_text, 0, "");
 		display_error_text_deferred(status_text, 0);
 		pack_step = _pack_dialog_asked;
 		return;
@@ -1280,16 +1252,16 @@ void randomizer_pack_update(boolean main_menu)
 		else if (!ui_widget_port_error_showing())
 		{
 			pack_step = _pack_idle;
-			pack_current = NULL;
+			pack_current = NONE;
 		}
 		return;
 	case _pack_dialog_up:
 		pack_step = _pack_idle;
 		if (pack_build(pack_current))
-			status_set(pack_current->ready, -1, NULL);
+			status_set(ready_text, -1, NULL);
 		else
-			status_set(pack_current->failed, -1, NULL);
-		pack_current = NULL;
+			status_set(failed_text, -1, NULL);
+		pack_current = NONE;
 		return;
 	}
 }

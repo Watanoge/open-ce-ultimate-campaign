@@ -307,8 +307,10 @@ long tag_injector_custom_types(
 
 /* The campaign's weapon HUDs a weapon's "hud" setting can draw it with: how many, and of each, its setting's value ("sniper_rifle"), its
 weapon HUD interface's path, and the campaign map that has it (the first,
-of the levels' order), which the randomizer copies it from into a level
-without it. */
+of the levels' order), which a level without it copies it from (randomizer.c,
+tag_import.c), of the stock HUDs' tag pack (its manifest,
+port/assets/tag_packs/watanoge_stock_huds.toml, names these maps). */
+#define TAG_INJECTOR_STOCK_HUDS_PACK "watanoge_stock_huds"
 short tag_injector_stock_hud_count(
 	void);
 char const *tag_injector_stock_hud_value(

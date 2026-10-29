@@ -1,15 +1,20 @@
-"""Build maps/randomizer.pack from the campaign caches in maps/.
+"""Build tag packs (maps/<name>.pack) from the maps in maps/, as their
+manifests in port/assets/tag_packs say:
 
-The game writes the same file itself at the main menu when the randomizer is
-turned on (port/linux/game/randomizer_pack.c), so this is not needed to play;
-it is kept to build or check a pack on a computer.
+    python3 tools/tag_pack.py                      every manifest's pack
+    python3 tools/tag_pack.py watanoge_gamemodes   these packs
+    python3 tools/tag_pack.py --list               each manifest's maps and content hash
 
-Each map on the disc is a plain header plus a zlib stream. The game used to
-inflate that at level load. This writes one file the game can read instead:
-the inflated tag section of each campaign map, and the bitmap pixels and
-sound samples those tags point at. Identical pixel and sample blobs are
-stored once. The maps themselves are local and are not part of the pack's
-sources in git.
+The game writes the same files itself at the main menu
+(port/linux/game/tag_pack.c), so this is not needed to play; it is kept to
+build or check a pack on a computer. port/linux/TAG_INJECTION.md has the
+manifests' and the packs' format.
+
+Each map on the disc is a plain header plus a zlib stream. This writes one
+file the game reads instead: the inflated tag section of each of the pack's
+maps, and the bitmap pixels and sound samples those tags point at that the
+manifest keeps. Identical pixel and sample blobs are stored once. The maps
+themselves are local and are not part of the pack's sources in git.
 
 A map whose zlib stream does not finish is refused, so a half-copied cache
 is not baked in.
@@ -20,14 +25,25 @@ import hashlib
 import os
 import struct
 import sys
+import tomllib
 import zlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+MANIFESTS = ROOT / "port" / "assets" / "tag_packs"
 WINDOW = 0x803A6000
 HEADER = 0x800
-CAMPAIGN = ("a10", "a30", "a50", "b30", "b40", "c10", "c20", "c40", "d20", "d40")
 TAG_LIMIT = 0x1600000
+# the pack's format (port/linux/game/tag_pack.h): its header, a record per map
+FORMAT = 2
+PACK_HEADER = 16
+RECORD = 56
+MAP_NAME = 32
+MAXIMUM_MAPS = 32
+# a manifest's keep rules, in the order their hash takes them
+# (port/linux/src/port_tag_packs.c)
+RULES = ("include_contains", "include_prefixes", "exclude_contains", "exclude_bitmap_prefixes",
+         "exclude_sound_prefixes")
 PACK_LIMIT = 0x7F000000
 
 BITM = struct.unpack(">I", b"bitm")[0]
@@ -155,16 +171,55 @@ def tag_name(blob, instance):
     return blob[offset:end].decode("latin1")
 
 
-def keep_bytes(group, name):
-    """Level geometry, menus, music and ambience are not actors or weapons,
-    and the same character tags would otherwise carry them in every map."""
-    if group == BITM:
-        return not name.startswith((
-            "levels\\", "sky\\", "ui\\", "rasterizer\\", "scenery\\", "cinematics\\"))
-    if group == SND:
-        return not name.startswith((
-            "sound\\music\\", "sound\\sfx\\ambience\\"))
-    return True
+class Manifest:
+    """A tag pack's manifest (port_tag_packs.c reads the same)."""
+
+    def __init__(self, path):
+        data = tomllib.loads(path.read_text())
+        self.name = data.get("name", "")
+        if self.name != path.stem:
+            raise RuntimeError("%s: its name is not its file's" % path)
+
+        def integer(key, otherwise):
+            value = data.get(key)
+            return value if isinstance(value, int) and 0 <= value < 0x7FFFFFFF else otherwise
+
+        self.version = integer("version", 1)
+        self.minimum_bitmaps = integer("minimum_bitmaps", 0)
+        self.minimum_sounds = integer("minimum_sounds", 0)
+        self.maps = [name.lower() for name in data.get("maps", [])]
+        if not self.maps or len(self.maps) > MAXIMUM_MAPS or any(len(name) >= MAP_NAME for name in self.maps):
+            raise RuntimeError("%s: 1 to %d maps of at most %d letters" % (path, MAXIMUM_MAPS, MAP_NAME - 1))
+        keep = data.get("keep", {})
+        self.rules = {key: [rule.lower() for rule in keep.get(key, [])] for key in RULES}
+
+    def content(self):
+        """What the pack holds, hashed (port_tag_packs.c's content_hash)."""
+        text = "rpak2\nversion=%d\n" % self.version
+        text += "".join("map=%s\n" % name for name in self.maps)
+        text += "minimum_bitmaps=%d\nminimum_sounds=%d\n" % (self.minimum_bitmaps, self.minimum_sounds)
+        for key in RULES:
+            text += "".join("%s=%s\n" % (key, rule) for rule in self.rules[key])
+        value = 0x811C9DC5
+        for byte in text.encode("utf-8"):
+            value = ((value ^ byte) * 16777619) & 0xFFFFFFFF
+        return value or 1
+
+    def keep(self, group, name):
+        """Whether the pack keeps this bitmap's pixels or sound's samples."""
+        lower = name.lower()
+        includes = self.rules["include_contains"] or self.rules["include_prefixes"]
+        if includes and not (any(rule in lower for rule in self.rules["include_contains"]) or
+                             lower.startswith(tuple(self.rules["include_prefixes"]))):
+            return False
+        if any(rule in lower for rule in self.rules["exclude_contains"]):
+            return False
+        prefixes = self.rules["exclude_bitmap_prefixes" if group == BITM else "exclude_sound_prefixes"]
+        return not (prefixes and lower.startswith(tuple(prefixes)))
+
+
+def manifests():
+    return {path.stem: path for path in sorted(MANIFESTS.glob("*.toml"))}
 
 
 def add_range(ranges, file_length, offset, size):
@@ -175,7 +230,7 @@ def add_range(ranges, file_length, offset, size):
     ranges.append((offset, size))
 
 
-def collect(blob, file_length):
+def collect(blob, file_length, manifest):
     if len(blob) < 36 or u32(blob, 0x20) != TAGS:
         raise RuntimeError("tag section signature is not 'tags'")
     count = i32(blob, 0x0C)
@@ -193,7 +248,7 @@ def collect(blob, file_length):
         base = locate(blob, u32(blob, inst + 0x14))
         if base is None:
             continue
-        if not keep_bytes(group, tag_name(blob, inst)):
+        if group not in (BITM, SND) or not manifest.keep(group, tag_name(blob, inst)):
             continue
         if group == BITM:
             if base + BITMAPS_ADDRESS + 4 > len(blob):
@@ -240,7 +295,7 @@ def collect(blob, file_length):
                 for perm in range(perm_count):
                     sample = perm_at + perm * PERM_SIZE
                     add_range(ranges, file_length, i32(blob, sample + SAMPLE_OFFSET), i32(blob, sample + SAMPLE_SIZE))
-    if bitmaps < 20 or sounds < 20:
+    if bitmaps < manifest.minimum_bitmaps or sounds < manifest.minimum_sounds:
         raise RuntimeError("only %d bitmaps and %d sounds; the tag layout was not read" % (bitmaps, sounds))
     ranges.sort()
     merged = []
@@ -266,17 +321,18 @@ def hash_span(handle, offset, size):
     return digest.digest()
 
 
-def build(maps_dir, names, output):
-    work = maps_dir / ".randomizer_pack_work"
+def build(maps_dir, manifest, output):
+    work = output.parent / (".%s_work" % manifest.name)
     work.mkdir(exist_ok=True)
     resources = open(work / "resources.bin", "wb")
     known = {}
     prepared = []
     try:
-        for name in names:
+        for name in manifest.maps:
             source = maps_dir / (name + ".map")
             if not source.is_file():
-                raise RuntimeError("missing %s" % source)
+                print("  no %s: the pack has not got it" % source, flush=True)
+                continue
             file_length, tag_offset, tag_size = read_header(source)
             print("inflating %s (%d byte map)" % (name, file_length), flush=True)
             raw_path = work / (name + ".raw")
@@ -284,7 +340,7 @@ def build(maps_dir, names, output):
             with open(raw_path, "rb") as raw:
                 raw.seek(tag_offset)
                 blob = raw.read(tag_size)
-                count, bitmaps, sounds, spans = collect(blob, file_length)
+                count, bitmaps, sounds, spans = collect(blob, file_length, manifest)
                 listed = []
                 total = 0
                 for offset, size in spans:
@@ -322,7 +378,9 @@ def build(maps_dir, names, output):
                 name, count, bitmaps, sounds, len(listed), total), flush=True)
         resources.close()
         resources = None
-        directory = 12 + len(prepared) * 32
+        if not prepared:
+            raise RuntimeError("none of %s's maps is in %s" % (manifest.name, maps_dir))
+        directory = PACK_HEADER + len(manifest.maps) * RECORD
         body = 0
         for item in prepared:
             body += item["tag_size"] + len(item["spans"]) * 12
@@ -334,19 +392,19 @@ def build(maps_dir, names, output):
         cursor = directory
         temporary = Path(str(output) + ".tmp")
         with open(temporary, "wb") as out:
-            out.write(struct.pack("<III", struct.unpack(">I", b"rpak")[0], 1, len(prepared)))
+            out.write(struct.pack("<IIII", struct.unpack(">I", b"rpak")[0], FORMAT, manifest.content(), len(prepared)))
             for item in prepared:
                 tags_at = cursor
                 resources_at = cursor + item["tag_size"]
                 name = item["name"].encode("ascii")
-                if len(name) >= 8:
-                    raise RuntimeError(item["name"])
-                out.write(name + b"\0" * (8 - len(name)))
+                out.write(name + b"\0" * (MAP_NAME - len(name)))
                 out.write(struct.pack("<IIIIII", item["file_length"], item["tag_offset"], item["tag_size"],
                     tags_at, len(item["spans"]), resources_at))
                 item["tags_at"] = tags_at
                 item["resources_at"] = resources_at
                 cursor = resources_at + len(item["spans"]) * 12
+            # (the records of maps it has not got, blank, as the game leaves them)
+            out.write(b"\0" * ((len(manifest.maps) - len(prepared)) * RECORD))
             if cursor != resource_at:
                 raise RuntimeError("directory does not meet the resource bytes")
             for item in prepared:
@@ -371,15 +429,25 @@ def build(maps_dir, names, output):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Build the campaign randomizer pack.")
-    parser.add_argument("--maps", nargs="*", default=list(CAMPAIGN))
+    parser = argparse.ArgumentParser(description="Build tag packs from their manifests.")
+    parser.add_argument("packs", nargs="*", help="manifests' names (default: every one)")
     parser.add_argument("--maps-dir", type=Path, default=ROOT / "maps")
-    parser.add_argument("--output", type=Path, default=ROOT / "maps" / "randomizer.pack")
+    parser.add_argument("--output-dir", type=Path, help="where the packs are written (default: the maps' folder)")
+    parser.add_argument("--list", action="store_true", help="each manifest's maps and content hash")
     args = parser.parse_args()
+    found = manifests()
     try:
-        build(args.maps_dir, args.maps, args.output)
-    except (OSError, RuntimeError, zlib.error) as error:
-        print("randomizer pack: %s" % error, file=sys.stderr)
+        for name in args.packs or list(found):
+            if name not in found:
+                raise RuntimeError("no manifest %s in %s" % (name, MANIFESTS))
+            manifest = Manifest(found[name])
+            if args.list:
+                print("%-24s %08x  %s" % (manifest.name, manifest.content(), " ".join(manifest.maps)))
+                continue
+            print("%s (content %08x)" % (manifest.name, manifest.content()), flush=True)
+            build(args.maps_dir, manifest, (args.output_dir or args.maps_dir) / (manifest.name + ".pack"))
+    except (OSError, RuntimeError, zlib.error, tomllib.TOMLDecodeError) as error:
+        print("tag pack: %s" % error, file=sys.stderr)
         return 1
     return 0
 

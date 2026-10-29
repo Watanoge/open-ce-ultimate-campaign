@@ -321,7 +321,7 @@ is told apart by a signature of its own instead (`halo_port_limits.h`):
   finds no version of its own there, and tells its player the host is on a
   newer one; a build with it joins when the network version and the mod
   version are its own, and the packs the game copies tags from are written:
-  `maps/randomizer.pack` for a randomized game, `maps/skulls.pack` for one
+  `maps/watanoge_randomizer.pack` for a randomized game, `maps/watanoge_skulls.pack` for one
   with Outbreak (its Flood) or Scarab (its projectiles), or whose enemies
   drop skulls (the skull they carry, Wizard's oddball). A pack missing is
   asked for, written at the main menu, and the player joins again then.

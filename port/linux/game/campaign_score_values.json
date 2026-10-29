@@ -12,7 +12,7 @@
     "'match' lists words looked for in a tag's name (any case: an actor variant's",
     "for enemies and allies, a vehicle's for vehicles); the first entry with a",
     "word in the name gives the points, else the actor's 'default'.",
-    "python3 tools/campaign_score_values.py --pack maps/randomizer.pack lists every",
+    "python3 tools/campaign_score_values.py --pack maps/watanoge_randomizer.pack lists every",
     "actor variant and vehicle of the campaign's maps (their names, to match) with",
     "the points this file gives each.",
     "Values are from Halo 3's (Halopedia's Campaign scoring) where it has them."

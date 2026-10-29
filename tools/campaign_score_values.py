@@ -4,7 +4,7 @@ from port/linux/game/campaign_score_values.json, as
 port/linux/game/campaign_score_values.c:
 
     python3 tools/campaign_score_values.py [--check]
-    python3 tools/campaign_score_values.py --pack maps/randomizer.pack
+    python3 tools/campaign_score_values.py --pack maps/watanoge_randomizer.pack
 
 configure.py runs it (write()) and lists the JSON among its inputs, so that
 ninja reruns configure.py, and so this, when a value changes. --check fails
@@ -15,8 +15,8 @@ its skulls skulls.c's keys (iron, black_eye, ...): a name of neither is an
 error, not a value that never scores.
 
 --pack lists every actor variant (with its actor's type) and vehicle of the
-campaign's maps, from a randomizer.pack (port/linux/game/randomizer_pack.c's,
-which the game writes in maps/), with the base points the JSON gives each and
+campaign's maps, from the randomizer's tag pack (port/linux/game/tag_pack.c's,
+format 2, which the game writes in maps/, or tools/tag_pack.py), with the base points the JSON gives each and
 the rule that gives them: the words to match are the tags' names it shows."""
 import json
 import re
@@ -329,17 +329,17 @@ def _fourcc(text: bytes) -> int:
 
 
 def pack_tags(path: Path) -> tuple:
-    """a randomizer.pack's actor variants ({(actor type, tag name): levels})
+    """a tag pack's actor variants ({(actor type, tag name): levels})
     and vehicles ({tag name: levels})"""
     types = actor_types()
     variants, vehicles = {}, {}
     with open(path, "rb") as pack:
-        magic, _version, count = struct.unpack("<III", pack.read(12))
-        if magic != _fourcc(b"rpak"):
-            raise ValuesError(f"{path}: not a randomizer.pack")
+        magic, version, _content, count = struct.unpack("<IIII", pack.read(16))
+        if magic != _fourcc(b"rpak") or version != 2:
+            raise ValuesError(f"{path}: not a tag pack of format 2")
         maps = []
         for _ in range(count):
-            name = pack.read(8).rstrip(b"\0").decode("ascii")
+            name = pack.read(32).split(b"\0")[0].decode("ascii")
             _length, _offset, tag_size, tags_at, _spans, _resources = struct.unpack("<6I", pack.read(24))
             maps.append((name, tag_size, tags_at))
         for level, tag_size, tags_at in maps:
@@ -422,7 +422,7 @@ def main() -> int:
         if "--pack" in sys.argv[1:]:
             arguments = sys.argv[1:]
             index = arguments.index("--pack")
-            list_pack(Path(arguments[index + 1]) if index + 1 < len(arguments) else ROOT / "maps/randomizer.pack")
+            list_pack(Path(arguments[index + 1]) if index + 1 < len(arguments) else ROOT / "maps/watanoge_randomizer.pack")
             return 0
         if "--check" in sys.argv[1:]:
             if not C_PATH.exists() or C_PATH.read_text() != generate():

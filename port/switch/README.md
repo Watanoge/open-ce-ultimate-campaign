@@ -107,9 +107,10 @@ sdmc:/switch/halo/maps/
 
 The game checks for `sdmc:/switch/halo/maps/ui.map` and, with no image
 either, refuses to start and says so. The campaign randomizer writes
-`randomizer.pack` into that same folder itself, from the campaign maps: when
-it is turned on in Settings > Gameplay, or at start-up with it on, and the
-file is missing or no longer matches the maps. A notice says so, and once it
+`watanoge_randomizer.pack` into that same folder itself, from the campaign
+maps: when it is turned on in Settings > Gameplay, or at start-up with it
+on, and the file is missing or no longer matches the maps (the other tag
+packs, smaller, the same way: `port/linux/TAG_INJECTION.md`). A notice says so, and once it
 is dismissed the file is written behind the loading bar: a few minutes,
 once, and about 500 MB of the card. It is kept. Saves go in `sdmc:/switch/halo/save/`,
 and the settings file `config.toml` goes in `sdmc:/switch/halo/`.

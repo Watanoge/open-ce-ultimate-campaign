@@ -64,6 +64,7 @@ has is not kept again.
 #include "custom_edition_cache.h"
 #include "randomizer.h"
 #include "network_distributed.h"
+#include "tag_import.h"
 
 void platform_log(char const *format, ...);
 
@@ -445,6 +446,59 @@ int skulls_scarab_wanted(void)
 	return skull_tags_wanted(_skull_scarab);
 }
 
+/* the skulls' tags no campaign map has, or not every one, added to the
+level's import (randomizer_tags_loaded: tag_import.c) from their pack
+(port/assets/tag_packs/watanoge_skulls.toml): the skull the enemies carry
+to be found, a multiplayer map's oddball (Wizard's), and Scarab's rocket,
+Wizard's too; Outbreak's Flood (its spore, carrier and combat forms, and
+the carrier's burst: skulls_outbreak.c) and Scarab's fuel rod, Two
+Betrayals' (c40). A level that has a root keeps its own; the randomizer's
+copy of one from c40 too (the importer's aliases) */
+void skulls_tag_import(int carried, int outbreak, int scarab)
+{
+	static struct tag_import_root const flood_roots[] =
+	{
+		{ 'bipd', SKULLS_OUTBREAK_SPORE_TAG },
+		{ 'actv', SKULLS_OUTBREAK_CARRIER_TAG },
+		{ 'effe', SKULLS_OUTBREAK_BURST_TAG },
+		{ 'actv', "characters\\floodcombat elite\\floodcombat elite unarmed" },
+		{ 'actv', "characters\\floodcombat elite\\floodcombat elite plasma rifle" },
+		{ 'actv', "characters\\floodcombat elite\\floodcombat elite needler" },
+		{ 'actv', "characters\\floodcombat_human\\floodcombat_human unarmed" },
+		{ 'actv', "characters\\floodcombat_human\\floodcombat_human assault rifle" },
+		{ 'actv', "characters\\floodcombat_human\\floodcombat_human pistol" },
+	};
+	struct tag_import_root roots[NUMBEROF(flood_roots) + 2];
+	int count = 0;
+	int index;
+
+	if (carried)
+	{
+		roots[count].group = WEAPON_DEFINITION_TAG;
+		roots[count++].name = SKULLS_CARRIED_TAG;
+	}
+	if (scarab)
+	{
+		roots[count].group = 'proj';
+		roots[count++].name = SKULLS_SCARAB_ROCKET_TAG;
+	}
+	if (count)
+		tag_import_roots(SKULLS_PACK, SKULLS_CARRIED_DONOR, roots, count);
+	count = 0;
+	if (outbreak)
+	{
+		for (index = 0; index < (int)NUMBEROF(flood_roots); index++)
+			roots[count++] = flood_roots[index];
+	}
+	if (scarab)
+	{
+		roots[count].group = 'proj';
+		roots[count++].name = SKULLS_SCARAB_FUEL_ROD_TAG;
+	}
+	if (count)
+		tag_import_roots(SKULLS_PACK, SKULLS_FLOOD_DONOR, roots, count);
+}
+
 int skulls_pack_wanted(void)
 {
 	struct skull_set chosen;
@@ -525,7 +579,7 @@ void skulls_level_loaded(long scenario_tag_index)
 	skulls_custom_level_loaded();
 	/* (the tags shared with a co-op game's other machines, all there now:
 	the menus' and the mods' come after, cache_files.c) */
-	randomizer_tag_table_fingerprint(&shared_tag_count, &shared_tag_hash);
+	tag_import_tag_table_fingerprint(&shared_tag_count, &shared_tag_hash);
 	error(_error_silent, "skulls: the level's shared tags: %ld, fingerprint %08lx", shared_tag_count, shared_tag_hash);
 }
 
