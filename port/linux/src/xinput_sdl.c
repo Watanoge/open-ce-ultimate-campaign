@@ -1009,7 +1009,10 @@ int halo_push_to_talk_held(void)
 		if (input_held(&input, gamepad, bindings[HALO_KEYBOARD_PUSH_TO_TALK][slot]))
 			return 1;
 	}
-	return 0;
+	/* (and the first controller's D-pad Down, the touch controls' too, in
+	the game: as its D-pad Up opens the text chat's keyboard, not a binding,
+	and the game still gets it, network_chat.c) */
+	return !input.menus && (chat_pad & (1UL << HALO_CHAT_PAD_DOWN)) != 0;
 }
 
 /* A scroll of the wheel switches weapons once: it holds Y for WHEEL_PRESS_MS
