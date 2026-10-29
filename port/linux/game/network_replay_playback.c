@@ -85,6 +85,9 @@ at the fastest speed when it is not yet taken.
 #include "camera/observer.h"
 #include "network_distributed.h"
 #include "network_replay.h"
+#include "tag_multiplayer.h"
+#include "halo_skulls.h"
+#include "halo_port_limits.h"
 
 #include <math.h>
 #include <pthread.h>
@@ -118,6 +121,8 @@ int halo_linux_mouse_look(short gamepad_index, float *yaw, float *pitch);
 int halo_replay_keyboard_last(void);
 void halo_binding_shown_name(char const *setting, char *shown, size_t size);
 void halo_input_shown_name(char const *binding, char *shown, size_t size);
+/* randomizer.c's: the host's randomizer setup, as a client joining has it */
+void randomizer_set_remote(int on, unsigned char const *setup, unsigned char crazy);
 
 /* the simulation's and the netcode's variables outside the game state, all
 together (port/android/guest/guest.ld's .replay_data and .replay_bss): only
@@ -257,6 +262,11 @@ static struct
 	boolean synchronized;
 	/* the player watched (a datum index), NONE before one is */
 	long watched;
+	/* (format 5) the level's tags every machine had alike as it was
+	recorded (0 tags: not known), and whether this one's differ */
+	long tag_count;
+	unsigned long tag_hash;
+	boolean tags_differ;
 	/* a client's recording, and its own players (by absolute index): only
 	theirs is a view through the eyes, the others' it never had */
 	boolean client;
@@ -413,6 +423,11 @@ static void playback_free(
 	playback.leaving = FALSE;
 	playback.synchronized = FALSE;
 	playback.watched = NONE;
+	playback.tag_count = 0;
+	playback.tag_hash = 0;
+	playback.tags_differ = FALSE;
+	/* (the recording's level setup let go: the next game's is its host's) */
+	tag_multiplayer_replay_share_set(NULL, 0, 0);
 	playback.client = FALSE;
 	csmemset(playback.recorders, 0, sizeof(playback.recorders));
 	playback.view = _replay_view_behind;
@@ -481,6 +496,12 @@ boolean network_replay_watch(
 	long size;
 	unsigned long format, network_version, header_size;
 	struct network_game game;
+	struct network_replay_level_setup setup;
+	boolean has_setup = FALSE;
+	/* (an export: the share's archive after the replay, and its trailer) */
+	unsigned long archive_size = 0;
+	long file_size = 0;
+	boolean bundled = network_replay_bundle_trailer(path, &file_size, &archive_size, NULL);
 
 	why[0] = 0;
 	playback_free();
@@ -490,7 +511,9 @@ boolean network_replay_watch(
 		snprintf(why, (size_t)why_size, "The replay cannot be opened.");
 		return FALSE;
 	}
-	if (fseek(file, 0, SEEK_END) != 0 || (size = ftell(file)) <= 0 || size > REPLAY_MAXIMUM_FILE_SIZE ||
+	if (fseek(file, 0, SEEK_END) != 0 || (size = ftell(file)) <= 0 ||
+		(bundled && (size = file_size - NETWORK_REPLAY_BUNDLE_TRAILER_SIZE - (long)archive_size) <= 0) ||
+		size > REPLAY_MAXIMUM_FILE_SIZE ||
 		fseek(file, 0, SEEK_SET) != 0 || !(playback.data = (byte *)malloc((size_t)size)) ||
 		fread(playback.data, (size_t)size, 1, file) != 1)
 	{
@@ -542,6 +565,32 @@ boolean network_replay_watch(
 	csmemcpy(&game, playback.data + header_size + REPLAY_RECORD_HEADER_SIZE, sizeof(game));
 	playback.start_tick = (long)replay_get_long(playback.data + 24);
 	playback.next = (long)(header_size + REPLAY_RECORD_HEADER_SIZE + sizeof(game));
+	/* (format 5: how the level was made, the record after it) */
+	if (playback.next + REPLAY_RECORD_HEADER_SIZE <= playback.size &&
+		playback.data[playback.next] == _network_replay_level_setup)
+	{
+		long setup_size = playback.data[playback.next + 2] | playback.data[playback.next + 3] << 8;
+
+		if (playback.next + REPLAY_RECORD_HEADER_SIZE + setup_size <= playback.size)
+		{
+			has_setup = network_replay_level_setup_read(playback.data + playback.next + REPLAY_RECORD_HEADER_SIZE,
+				setup_size, &setup);
+			playback.next += REPLAY_RECORD_HEADER_SIZE + setup_size;
+		}
+	}
+	/* (the Tag Injector share its level played: this machine's, or the one
+	its export carries, taken out of it) */
+	if (has_setup && setup.share_active && !tag_multiplayer_replay_share_ready(setup.share_hash, setup.share_size,
+		bundled ? path : NULL, bundled ? size : -1))
+	{
+		char id[TAG_MULTIPLAYER_ID_DIGITS + 1];
+
+		tag_multiplayer_share_name(setup.share_hash, id);
+		snprintf(why, (size_t)why_size, "Its Tag Injector tags (%s) are not on this machine: export it from the "
+			"one that recorded it, which carries them.", id);
+		playback_free();
+		return FALSE;
+	}
 	playback_find_recorders(format, header_size);
 	/* (as a client joins a game: none of this machine's own network game is
 	left, benchmark.c's way) */
@@ -557,6 +606,23 @@ boolean network_replay_watch(
 		return FALSE;
 	}
 	playback.setting_up = FALSE;
+	/* (and its level made as the recording's was, as a client joining the
+	game makes it by its host's advertisement and share: the client's reset
+	above forgot those) */
+	if (has_setup)
+	{
+		randomizer_set_remote(setup.randomizer_on, setup.randomizer_setup, setup.randomizer_crazy);
+		skulls_set_remote(setup.skulls_flags,
+			(setup.skulls_flags & HALO_PORT_ADVERTISED_SKULLS_FLAG) ? setup.skulls : NULL);
+		tag_multiplayer_replay_share_set(setup.share_active ? setup.share_hash : NULL, setup.share_size,
+			setup.share_kind);
+		playback.tag_count = setup.tag_count;
+		playback.tag_hash = setup.tag_hash;
+		error(_error_log, "replay: its level: randomizer %s, skulls %s%s, %s, %ld shared tags (%08lx)",
+			setup.randomizer_on ? "on" : "off", (setup.skulls_flags & HALO_PORT_ADVERTISED_SKULLS_FLAG) ? "on" : "off",
+			(setup.skulls_flags & HALO_PORT_ADVERTISED_SKULL_DROPS_FLAG) ? " (dropped)" : "",
+			setup.share_active ? "a Tag Injector share" : "no Tag Injector share", setup.tag_count, setup.tag_hash);
+	}
 	playback.starting = TRUE;
 	error(_error_log, "replay: playing %s (%s), from tick %ld", path, game.map.name, playback.start_tick);
 	return TRUE;
@@ -586,6 +652,24 @@ void network_replay_playback_started(
 	playback.starting = FALSE;
 	playback.playing = TRUE;
 	game_time_set_distributed(playback.start_tick);
+	/* (the level's tags as the recording's were: else its objects name
+	others, or none) */
+	if (playback.tag_count)
+	{
+		long count;
+		unsigned long hash;
+
+		skulls_shared_tags(&count, &hash);
+		playback.tags_differ = count != playback.tag_count || hash != playback.tag_hash;
+		if (playback.tags_differ)
+		{
+			error(_error_log, "replay: the level's tags differ from the recording's: %ld tags, %08lx here; %ld, "
+				"%08lx recorded. Its enemies, weapons and skulls will not match", count, hash, playback.tag_count,
+				playback.tag_hash);
+		}
+		else
+			error(_error_log, "replay: the level's tags are the recording's (%ld, %08lx)", count, hash);
+	}
 	error(_error_log, "replay: the game is loaded; playing from tick %ld", playback.start_tick);
 }
 
@@ -1908,6 +1992,14 @@ void network_replay_playback_draw(
 	bounds.y1 = (short)(bounds.y0 + height + 4);
 	draw_string_set_draw_mode(font_index, NONE, 2, 0, &color);
 	rasterizer_draw_unicode_string(&bounds, NULL, NULL, 0, text);
+	/* (a level whose tags are not the recording's: what is seen is not what
+	was played) */
+	if (playback.tags_differ)
+	{
+		bounds.y0 = bounds.y1;
+		bounds.y1 = (short)(bounds.y0 + height + 4);
+		rasterizer_draw_unicode_string(&bounds, NULL, NULL, 0, L"THIS LEVEL LOADED DIFFERENTLY FROM THE RECORDING'S");
+	}
 	if (playback.ended)
 		return;
 	for (index = 0; index < (short)NUMBEROF(hints); index++)

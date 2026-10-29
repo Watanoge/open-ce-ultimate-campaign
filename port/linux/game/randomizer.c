@@ -5011,6 +5011,16 @@ int randomizer_remote_on(void)
 	return remote_on;
 }
 
+int randomizer_remote_get(unsigned char *setup, unsigned char *crazy)
+{
+	if (remote_on)
+	{
+		memcpy(setup, remote_setup, sizeof(remote_setup));
+		*crazy = remote_crazy;
+	}
+	return remote_on;
+}
+
 int randomizer_show_prefix(void)
 {
 	return host_randomized();

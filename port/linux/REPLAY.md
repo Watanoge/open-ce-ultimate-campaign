@@ -121,14 +121,14 @@ tick to the host's work and nothing to the network.
 
 ### The file
 
-Little-endian. A header of 384 bytes (format 4; formats 1 to 3's ended at
+Little-endian. A header of 384 bytes (formats 4 and 5; formats 1 to 3's ended at
 280, after the version text; format 0's was 216, its version text 32
 bytes, too few for `OpenCE Android | local build (<commit>)`):
 
 | Offset | Size | What |
 | --- | --- | --- |
 | 0 | 8 | `OCREPLAY` |
-| 8 | 4 | The format, 4 (3 had no length, server or player; 2's records were not compressed; 1 had no game record; 0 a 216-byte header) |
+| 8 | 4 | The format, 5 (4 had no level setup record; 3 had no length, server or player; 2's records were not compressed; 1 had no game record; 0 a 216-byte header) |
 | 12 | 4 | The network version (`HALO_PORT_NETWORK_VERSION`) |
 | 16 | 4 | The build's number |
 | 20 | 4 | Ticks a second (30) |
@@ -157,6 +157,45 @@ tick) and its entries. A datagram is a batch (`_distributed_message_batch`),
 whose messages each follow as their length (16 bits), their header past
 the message header, and their entries. A game message is bit-packed by
 `network_messages.c`.
+
+From format 5 the second record is the level's setup (kind 7, 80 bytes):
+how the level was made, which a playback makes its own by as a client
+joining the game would, before the level loads. A host's is its
+advertisement's (`randomizer_advertisement`, `skulls_advertisement`), a
+client's what it heard from its host (`randomizer_remote_get`,
+`skulls_remote_get`):
+
+| Offset | Size | What |
+| --- | --- | --- |
+| 0 | 1 | 1 |
+| 1 | 1 | The randomizer is on |
+| 2 | 1 | The randomizer's crazy byte (`HALO_PORT_ADVERTISED_RANDOMIZER_CRAZY_OFFSET`'s) |
+| 3 | 1 | The skulls' flags: `HALO_PORT_ADVERTISED_SKULLS_FLAG`, `..._SKULL_DROPS_FLAG` |
+| 4 | 12 | The randomizer's setup and roll, as advertised |
+| 16 | 8 | The skulls on, as advertised |
+| 24 | 1 | The level played a Tag Injector share (`tag_multiplayer.c`) |
+| 25 | 1 | Its kind: 0 a profile's, 1 the randomizer's pools |
+| 28 | 32 | Its hash (its id: the first 16 hex digits) |
+| 60 | 4 | Its archive's size |
+| 64 | 8 | The count and fingerprint of the level's tags every machine had alike (`skulls_shared_tags`), 0 if not known |
+
+A playback sets the randomizer and skulls as the client's join would
+(`randomizer_set_remote`, `skulls_set_remote`), and plays the share in the
+host's place (`tag_multiplayer_replay_share_set`): its folder
+(`tag_injector/.shared/<id>`), else its archive here (`<id>.tagshare`,
+unpacked), else the one an export carries. As the game starts it compares
+the level's shared tags with the recording's, and says so at the top of
+the screen when they differ. A replay whose share this machine has not
+got and does not carry is not playable (the Theater says why).
+
+**Exports.** A replay names its share alone where it was recorded. An
+export (Android's EXPORT, the Switch's and the PS5's replay page) is the
+replay, then the share's archive, then a 48-byte trailer: `OCRSHARE`, the
+archive's size (32 bits), its hash (32 bytes), 1 (32 bits). A playback reads
+the replay before it, and takes the archive out (checked against its hash)
+when it needs it. Android's EXPORT writes the list of the replays to carry
+their shares to `replays/.export` (name, archive path, trailer in hex),
+which the app's copy reads (`HaloActivity.copyReplays`).
 
 The file is written through a 64 KB buffer, and flushed every five seconds:
 a crash loses no more, and `tools/replay_stats.py` reads a file cut short.

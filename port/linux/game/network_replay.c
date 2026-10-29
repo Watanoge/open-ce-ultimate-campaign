@@ -43,6 +43,8 @@ as a recording starts).
 #include "game/players.h"
 #include "network_distributed.h"
 #include "network_replay.h"
+#include "tag_multiplayer.h"
+#include "halo_port_limits.h"
 #include "../src/posix.h" /* port: port/linux/src/posix.c */
 
 #include <stdio.h>
@@ -56,13 +58,22 @@ int config_boolean(char const *name);
 long config_integer(char const *name);
 const char *platform_data_root(void);
 FILE *platform_fopen_host(char const *path, char const *mode);
+int platform_remove_host(char const *path);
+/* randomizer.c's, skulls.c's and port_tag_profiles.c's: the level's setup
+(the host's as it advertises it, a client's as it heard it) */
+void randomizer_advertisement(unsigned char *reserved);
+int randomizer_remote_get(unsigned char *setup, unsigned char *crazy);
+void skulls_advertisement(unsigned char *reserved);
+void skulls_remote_get(unsigned char *flags, unsigned char *bytes);
+void skulls_shared_tags(long *count, unsigned long *hash);
+int port_tag_profiles_shared_present(char const *id);
 void platform_log(char const *format, ...);
 void main_build_identity(long *number, char *flavor, size_t flavor_size, char *repository, size_t repository_size,
 	char *version, size_t version_size);
 
 /* the file's header (REPLAY.md, "The file"): its first bytes, and its format */
 #define REPLAY_MAGIC "OCREPLAY"
-#define REPLAY_FORMAT 4
+#define REPLAY_FORMAT 5
 #define REPLAY_HEADER_SIZE 384
 /* the build's version text, at the header's end (format 0's 32 bytes cut
 "OpenCE Android | local build (<commit>)" short) */
@@ -78,6 +89,8 @@ recording player's, in UTF-8 */
 #define REPLAY_PLAYER_OFFSET 352
 #define REPLAY_PLAYER_SIZE 32
 #define REPLAY_FLAG_CLIENT 1
+/* (format 5) the level's setup, the second record (network_replay.h) */
+#define REPLAY_LEVEL_SETUP_FORMAT 5
 /* a message's type (message_header.h): the distributed netcode's, and the
 game's own */
 #define REPLAY_MESSAGE_TYPE_DATA 2
@@ -173,7 +186,7 @@ boolean network_replay_delete(
 		return FALSE;
 	network_replay_folder(path, REPLAY_PATH_SIZE);
 	snprintf(path + strlen(path), sizeof(path) - strlen(path), "/%s", name);
-	return DeleteFileA(path) != 0;
+	return platform_remove_host(path) == 0;
 }
 
 static unsigned long replay_get_long(
@@ -272,6 +285,57 @@ static void replay_write_duration(
 	fseek(replay.file, 0, SEEK_END);
 }
 
+/* the level's setup (format 5): the host's randomizer and skulls as its
+advertisement has them (network_server_message_handler.c's), a client's as
+it heard them from its host (network_client_manager.c's); the share the
+level played; and the tags every machine has alike */
+static void replay_level_setup_build(
+	boolean client,
+	byte *record)
+{
+	byte reserved[32];
+	byte share_hash[TAG_MULTIPLAYER_HASH_BYTES];
+	unsigned long share_size = 0;
+	short share_kind = 0;
+	long tag_count;
+	unsigned long tag_hash;
+
+	csmemset(record, 0, NETWORK_REPLAY_LEVEL_SETUP_SIZE);
+	record[0] = 1;
+	if (client)
+	{
+		record[1] = randomizer_remote_get(record + 4, &record[2]) ? 1 : 0;
+		skulls_remote_get(&record[3], record + 16);
+	}
+	else
+	{
+		csmemset(reserved, 0, sizeof(reserved));
+		randomizer_advertisement(reserved);
+		skulls_advertisement(reserved);
+		record[1] = (reserved[HALO_PORT_ADVERTISED_FLAGS_OFFSET] & HALO_PORT_ADVERTISED_RANDOMIZER_FLAG) ? 1 : 0;
+		if (record[1])
+		{
+			csmemcpy(record + 4, reserved + HALO_PORT_ADVERTISED_RANDOMIZER_SETUP_OFFSET,
+				HALO_PORT_ADVERTISED_RANDOMIZER_SETUP_SIZE);
+			record[2] = reserved[HALO_PORT_ADVERTISED_RANDOMIZER_CRAZY_OFFSET];
+		}
+		record[3] = (byte)(reserved[HALO_PORT_ADVERTISED_FLAGS_OFFSET] &
+			(HALO_PORT_ADVERTISED_SKULLS_FLAG | HALO_PORT_ADVERTISED_SKULL_DROPS_FLAG));
+		if (record[3] & HALO_PORT_ADVERTISED_SKULLS_FLAG)
+			csmemcpy(record + 16, reserved + HALO_PORT_ADVERTISED_SKULLS_OFFSET, HALO_PORT_ADVERTISED_SKULLS_SIZE);
+	}
+	if (tag_multiplayer_game_share(share_hash, &share_size, &share_kind))
+	{
+		record[24] = 1;
+		record[25] = (byte)share_kind;
+		csmemcpy(record + 28, share_hash, TAG_MULTIPLAYER_HASH_BYTES);
+		replay_put_long(record + 60, share_size);
+	}
+	skulls_shared_tags(&tag_count, &tag_hash);
+	replay_put_long(record + 64, (unsigned long)tag_count);
+	replay_put_long(record + 68, tag_hash);
+}
+
 static boolean replay_start(
 	boolean client)
 {
@@ -356,6 +420,20 @@ static boolean replay_start(
 	replay.total_bytes = REPLAY_HEADER_SIZE;
 	/* (format 2: the game itself first, which a playback loads) */
 	network_replay_record(_network_replay_game, game, sizeof(*game));
+	/* (format 5: how the level was made, which a playback makes its own by) */
+	{
+		byte setup[NETWORK_REPLAY_LEVEL_SETUP_SIZE];
+
+		replay_level_setup_build(client, setup);
+		network_replay_record(_network_replay_level_setup, setup, sizeof(setup));
+		if (setup[24])
+		{
+			char id[TAG_MULTIPLAYER_ID_DIGITS + 1];
+
+			tag_multiplayer_share_name(setup + 28, id);
+			error(_error_log, "replay: its level plays the Tag Injector share %s", id);
+		}
+	}
 	if (!replay.file)
 		return FALSE;
 	error(_error_log, "replay: recording %s (%s) to %s", map, variant, replay.path);
@@ -441,6 +519,201 @@ long network_replay_list(
 	return count;
 }
 
+boolean network_replay_level_setup_read(
+	unsigned char const *bytes,
+	long size,
+	struct network_replay_level_setup *setup)
+{
+	csmemset(setup, 0, sizeof(*setup));
+	if (!bytes || size != NETWORK_REPLAY_LEVEL_SETUP_SIZE || bytes[0] != 1)
+		return FALSE;
+	setup->randomizer_on = bytes[1] != 0;
+	setup->randomizer_crazy = bytes[2];
+	setup->skulls_flags = bytes[3];
+	csmemcpy(setup->randomizer_setup, bytes + 4, sizeof(setup->randomizer_setup));
+	csmemcpy(setup->skulls, bytes + 16, sizeof(setup->skulls));
+	setup->share_active = bytes[24] != 0;
+	setup->share_kind = bytes[25];
+	csmemcpy(setup->share_hash, bytes + 28, sizeof(setup->share_hash));
+	setup->share_size = replay_get_long(bytes + 60);
+	setup->tag_count = (long)replay_get_long(bytes + 64);
+	setup->tag_hash = replay_get_long(bytes + 68);
+	return TRUE;
+}
+
+boolean network_replay_bundle_trailer(
+	char const *path,
+	long *file_size,
+	unsigned long *archive_size,
+	unsigned char *hash)
+{
+	FILE *file = platform_fopen_host(path, "rb");
+	byte trailer[NETWORK_REPLAY_BUNDLE_TRAILER_SIZE];
+	long size = 0;
+	boolean bundled;
+
+	if (!file)
+		return FALSE;
+	bundled = fseek(file, 0, SEEK_END) == 0 && (size = ftell(file)) > NETWORK_REPLAY_BUNDLE_TRAILER_SIZE &&
+		fseek(file, size - NETWORK_REPLAY_BUNDLE_TRAILER_SIZE, SEEK_SET) == 0 &&
+		fread(trailer, sizeof(trailer), 1, file) == 1 && !memcmp(trailer, NETWORK_REPLAY_BUNDLE_MAGIC, 8);
+	fclose(file);
+	if (file_size)
+		*file_size = size;
+	/* (its archive after a replay's header at least) */
+	if (!bundled || replay_get_long(trailer + 8) == 0 ||
+		replay_get_long(trailer + 8) > (unsigned long)(size - NETWORK_REPLAY_BUNDLE_TRAILER_SIZE - REPLAY_HEADER_SIZE))
+	{
+		return FALSE;
+	}
+	if (archive_size)
+		*archive_size = replay_get_long(trailer + 8);
+	if (hash)
+		csmemcpy(hash, trailer + 12, NETWORK_REPLAY_SHARE_HASH_BYTES);
+	return TRUE;
+}
+
+/* a replay's level setup (format 5), from the first of its records: its
+stream inflated only as far as them; FALSE for none */
+static boolean replay_file_level_setup(
+	char const *path,
+	long replay_size,
+	struct network_replay_level_setup *setup)
+{
+	enum { RECORDS_SIZE = 2 * REPLAY_RECORD_HEADER_SIZE + sizeof(struct network_game) + NETWORK_REPLAY_LEVEL_SETUP_SIZE };
+	static byte records[RECORDS_SIZE];
+	byte header[REPLAY_HEADER_SIZE];
+	byte input[0x1000];
+	FILE *file = platform_fopen_host(path, "rb");
+	z_stream stream;
+	unsigned long header_size;
+	long left;
+	int result = Z_OK;
+	byte const *second;
+
+	csmemset(setup, 0, sizeof(*setup));
+	if (!file)
+		return FALSE;
+	if (fread(header, sizeof(header), 1, file) != 1 || memcmp(header, REPLAY_MAGIC, 8) ||
+		replay_get_long(header + 8) < REPLAY_LEVEL_SETUP_FORMAT ||
+		(header_size = replay_get_long(header + 28)) < REPLAY_HEADER_SIZE || (long)header_size >= replay_size ||
+		fseek(file, (long)header_size, SEEK_SET) != 0)
+	{
+		fclose(file);
+		return FALSE;
+	}
+	csmemset(&stream, 0, sizeof(stream));
+	if (inflateInit(&stream) != Z_OK)
+	{
+		fclose(file);
+		return FALSE;
+	}
+	stream.next_out = records;
+	stream.avail_out = sizeof(records);
+	left = replay_size - (long)header_size;
+	while (stream.avail_out && left > 0 && result == Z_OK)
+	{
+		size_t read = fread(input, 1, (size_t)MIN(left, (long)sizeof(input)), file);
+
+		if (!read)
+			break;
+		left -= (long)read;
+		stream.next_in = input;
+		stream.avail_in = (uInt)read;
+		while (stream.avail_in && stream.avail_out && result == Z_OK)
+			result = inflate(&stream, Z_NO_FLUSH);
+	}
+	inflateEnd(&stream);
+	fclose(file);
+	second = records + REPLAY_RECORD_HEADER_SIZE + sizeof(struct network_game);
+	return !stream.avail_out && records[0] == _network_replay_game && second[0] == _network_replay_level_setup &&
+		network_replay_level_setup_read(second + REPLAY_RECORD_HEADER_SIZE, second[2] | second[3] << 8, setup);
+}
+
+boolean network_replay_bundle_of(
+	char const *path,
+	struct network_replay_bundle *bundle)
+{
+	struct network_replay_level_setup setup;
+	unsigned long archive_size;
+	long file_size = 0;
+	FILE *file;
+
+	csmemset(bundle, 0, sizeof(*bundle));
+	bundle->bundled = network_replay_bundle_trailer(path, &file_size, &archive_size, NULL);
+	if (!(file = platform_fopen_host(path, "rb")))
+		return FALSE;
+	if (!file_size && fseek(file, 0, SEEK_END) == 0)
+		file_size = ftell(file);
+	fclose(file);
+	if (file_size <= 0)
+		return FALSE;
+	bundle->replay_size = bundle->bundled ?
+		file_size - NETWORK_REPLAY_BUNDLE_TRAILER_SIZE - (long)archive_size : file_size;
+	if (!replay_file_level_setup(path, bundle->replay_size, &setup) || !setup.share_active)
+		return TRUE;
+	bundle->needs_share = TRUE;
+	csmemcpy(bundle->share_hash, setup.share_hash, sizeof(bundle->share_hash));
+	bundle->share_size = setup.share_size;
+	tag_multiplayer_share_local_path(setup.share_hash, bundle->archive_path, sizeof(bundle->archive_path));
+	if ((file = platform_fopen_host(bundle->archive_path, "rb")) != NULL)
+	{
+		long size = fseek(file, 0, SEEK_END) == 0 ? ftell(file) : -1;
+
+		bundle->archive_here = size > 0 && (unsigned long)size == setup.share_size;
+		fclose(file);
+	}
+	csmemcpy(bundle->trailer, NETWORK_REPLAY_BUNDLE_MAGIC, 8);
+	replay_put_long(bundle->trailer + 8, setup.share_size);
+	csmemcpy(bundle->trailer + 12, setup.share_hash, NETWORK_REPLAY_SHARE_HASH_BYTES);
+	replay_put_long(bundle->trailer + 44, 1);
+	return TRUE;
+}
+
+long network_replay_export_manifest(
+	void)
+{
+	static char names[256][NETWORK_REPLAY_NAME_SIZE];
+	char folder[REPLAY_PATH_SIZE];
+	char path[REPLAY_PATH_SIZE + NETWORK_REPLAY_NAME_SIZE];
+	FILE *manifest;
+	long count;
+	long index;
+	long listed = 0;
+
+	network_replay_folder(folder, sizeof(folder));
+	snprintf(path, sizeof(path), "%s/.export", folder);
+	if (!(manifest = platform_fopen_host(path, "wb")))
+	{
+		error(_error_log, "replay: the export's list cannot be written to %s", path);
+		return 0;
+	}
+	count = network_replay_list(names, NUMBEROF(names));
+	for (index = 0; index < count; index++)
+	{
+		struct network_replay_bundle bundle;
+		short byte_index;
+
+		snprintf(path, sizeof(path), "%s/%s", folder, names[index]);
+		if (!network_replay_bundle_of(path, &bundle) || !bundle.needs_share || bundle.bundled)
+			continue;
+		if (!bundle.archive_here)
+		{
+			error(_error_log, "replay: %s is exported without its Tag Injector tags, which are not here (%s)",
+				names[index], bundle.archive_path);
+			continue;
+		}
+		fprintf(manifest, "%s\t%s\t", names[index], bundle.archive_path);
+		for (byte_index = 0; byte_index < NETWORK_REPLAY_BUNDLE_TRAILER_SIZE; byte_index++)
+			fprintf(manifest, "%02x", bundle.trailer[byte_index]);
+		fprintf(manifest, "\n");
+		listed++;
+	}
+	fclose(manifest);
+	error(_error_log, "replay: %ld replays exported with their Tag Injector tags", listed);
+	return listed;
+}
+
 boolean network_replay_info(
 	char const *name,
 	struct network_replay_info *info)
@@ -520,6 +793,24 @@ boolean network_replay_info(
 			network_version, HALO_PORT_NETWORK_VERSION);
 		return FALSE;
 	}
+	/* (format 5: the Tag Injector share its level played, which this
+	machine has, or the replay carries) */
+	{
+		struct network_replay_bundle bundle;
+
+		if (format >= REPLAY_LEVEL_SETUP_FORMAT && network_replay_bundle_of(path, &bundle) && bundle.needs_share)
+		{
+			info->has_share = TRUE;
+			tag_multiplayer_share_name(bundle.share_hash, info->share_id);
+			info->share_here = bundle.bundled || bundle.archive_here || port_tag_profiles_shared_present(info->share_id);
+			if (!info->share_here)
+			{
+				snprintf(info->why, sizeof(info->why), "Its Tag Injector tags (%s) are not on this machine: export "
+					"it from the one that recorded it.", info->share_id);
+				return FALSE;
+			}
+		}
+	}
 	info->playable = TRUE;
 	return TRUE;
 }
@@ -549,6 +840,8 @@ void network_replay_info_text(
 		else
 			snprintf(text + strlen(text), (size_t)size - strlen(text), "\nRecorded by the server");
 	}
+	if (info->has_share)
+		snprintf(text + strlen(text), (size_t)size - strlen(text), "\nTag Injector tags: %s", info->share_id);
 	snprintf(text + strlen(text), (size_t)size - strlen(text), "\n%llu KB", info->bytes / 1024);
 	if (info->why[0])
 		snprintf(text + strlen(text), (size_t)size - strlen(text), "\n%s", info->why);
@@ -700,7 +993,7 @@ void network_replay_stop(
 		/* (a game of a few seconds, left at once, is no replay) */
 		if (ticks < REPLAY_MINIMUM_TICKS)
 		{
-			DeleteFileA(replay.path);
+			platform_remove_host(replay.path);
 			error(_error_log, "replay: %s was %ld ticks long, under %d seconds: deleted", replay.path, ticks,
 				REPLAY_MINIMUM_TICKS / TICKS_PER_SECOND);
 			replay.considered = FALSE;

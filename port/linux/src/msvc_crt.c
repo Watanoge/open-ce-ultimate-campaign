@@ -644,6 +644,21 @@ FILE *platform_fopen_host(const char *path, const char *mode)
 	return fopen(path, mode);
 }
 
+/* ... and one deleted, and one renamed (to a name no file has), so: 0 when done */
+int platform_remove_host(const char *path)
+{
+	return remove(path);
+}
+
+int platform_rename_host(const char *old_path, const char *new_path)
+{
+	struct posix_file_information information;
+
+	if (posix_stat(new_path, &information) == 0)
+		return -1;
+	return rename(old_path, new_path);
+}
+
 FILE *halo_linux_freopen(const char *path, const char *mode, FILE *stream)
 {
 	char host_path[1024];

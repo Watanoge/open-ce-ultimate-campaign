@@ -129,6 +129,40 @@ boolean tag_multiplayer_share_downloaded(
 	char const *path,
 	unsigned char const *hash);
 
+/* ---------- replays (network_replay.c, network_replay_playback.c) */
+
+/* the share the game this machine plays plays (the host's, or the host's
+this client has): its hash, its archive's size and its kind; FALSE for
+none. A recording keeps it, and its playback plays it */
+boolean tag_multiplayer_game_share(
+	unsigned char *hash,
+	unsigned long *size,
+	short *kind);
+/* the archive's path, as the platform has it, of a share's hash (an export
+of a replay carries it), and its id (TAG_MULTIPLAYER_ID_DIGITS + 1 bytes) */
+void tag_multiplayer_share_local_path(
+	unsigned char const *hash,
+	char *path,
+	unsigned long path_size);
+void tag_multiplayer_share_name(
+	unsigned char const *hash,
+	char *id);
+/* (a playback) whether this machine has the share a replay played, to play
+it: its folder, or its archive here (unpacked), or the archive the replay's
+export carries at bundle_offset of the file at bundle_path (NULL, or -1:
+none), taken out and unpacked once it is the share of that hash */
+boolean tag_multiplayer_replay_share_ready(
+	unsigned char const *hash,
+	unsigned long size,
+	char const *bundle_path,
+	long bundle_offset);
+/* (a playback) the share its level plays, in the host's place (NULL:
+none), of the kind the recording kept */
+void tag_multiplayer_replay_share_set(
+	unsigned char const *hash,
+	unsigned long size,
+	short kind);
+
 /* randomizer.c's, as a level loads: the shared profile a multiplayer
 level adds the tags of (opened: port_tag_profiles' index, else NONE); then
 the weapons it added (the tags they were taken out for, and their indices in

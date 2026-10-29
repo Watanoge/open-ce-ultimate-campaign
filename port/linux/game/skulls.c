@@ -625,6 +625,19 @@ void skulls_set_remote(unsigned char flags, unsigned char const *bytes)
 	remote_set = remote_on ? skull_set_from_bytes(bytes) : skull_set_none();
 }
 
+void skulls_remote_get(unsigned char *flags, unsigned char *bytes)
+{
+	*flags = (unsigned char)((remote_on ? HALO_PORT_ADVERTISED_SKULLS_FLAG : 0) |
+		(remote_drops ? HALO_PORT_ADVERTISED_SKULL_DROPS_FLAG : 0));
+	skull_set_to_bytes(remote_set, bytes);
+}
+
+void skulls_shared_tags(long *count, unsigned long *hash)
+{
+	*count = shared_tag_count;
+	*hash = shared_tag_hash;
+}
+
 int skulls_team_is_enemy(short team_index)
 {
 	/* (not an object of no team, an empty vehicle's: game_team_is_enemy

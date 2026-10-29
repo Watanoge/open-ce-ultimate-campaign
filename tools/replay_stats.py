@@ -34,7 +34,7 @@ MAGIC = b"OCREPLAY"
 RECORD_HEADER = struct.Struct("<BBHi")
 # network_replay.h's record kinds
 KINDS = {1: "datagram", 2: "reliable", 3: "reliable to the recorder", 4: "game message", 5: "the game",
-         6: "own input (a client's)"}
+         6: "own input (a client's)", 7: "the level's setup"}
 DATAGRAM, RELIABLE, RELIABLE_TO_MACHINE, GAME_MESSAGE, GAME = 1, 2, 3, 4, 5
 # a distributed message's header: the message header (16 bits), its type,
 # its count, its tick; a batch's message: its length (16 bits), then the

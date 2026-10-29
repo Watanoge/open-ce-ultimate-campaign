@@ -80,6 +80,10 @@ void randomizer_advertisement(unsigned char *reserved);
 /* the setup of the game this machine is joining, or none, and its Go
 Crazy's parts (HALO_PORT_ADVERTISED_RANDOMIZER_CRAZY_OFFSET's byte) */
 void randomizer_set_remote(int on, unsigned char const *setup, unsigned char crazy);
+/* ... and a client's, as it was set (a replay a client records keeps it:
+network_replay.c): whether the host's game is randomized, and its setup
+(HALO_PORT_ADVERTISED_RANDOMIZER_SETUP_SIZE bytes) and crazy byte */
+int randomizer_remote_get(unsigned char *setup, unsigned char *crazy);
 int randomizer_remote_on(void);
 
 /* the lobby's map line, prefixed while the game is randomized */

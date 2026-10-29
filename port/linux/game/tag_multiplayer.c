@@ -76,6 +76,7 @@ one, as chosen, so a game listed for every build stays so.
 #include "tag_injector.h"
 #include "tag_campaign.h"
 #include "tag_multiplayer.h"
+#include "network_replay.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -293,6 +294,9 @@ static struct
 	char game_profile[256];
 	short game_kind;
 	boolean game_profile_set;
+	/* (a replay's playback) the share its level played, which it plays in
+	the host's place (network_replay_playback.c) */
+	struct share replayed;
 } tag_multiplayer;
 
 /* the level played with a share: its settings, as the host's multiplayer
@@ -391,6 +395,14 @@ static void share_host_path(
 
 	snprintf(name, sizeof(name), "%s%s", id, TAG_SHARE_EXTENSION);
 	port_tag_profiles_shared_path(name, path, size);
+}
+
+/* (a client) the host's share, or a replay's played back: the one its
+recording's level played */
+static struct share const *client_share(
+	void)
+{
+	return network_replay_playing() ? &tag_multiplayer.replayed : &tag_multiplayer.remote;
 }
 
 /* an archive hashed as map sharing hashes a file (its pieces', then
@@ -822,8 +834,8 @@ static void client_update(
 	struct share *remote = &tag_multiplayer.remote;
 
 	/* (not while this machine plays a game: a share the host made since is
-	for its next) */
-	if (!remote->active || !game_takes(game) ||
+	for its next; nor a replay's, which has no host to download from) */
+	if (!remote->active || !game_takes(game) || network_replay_playing() ||
 		playing() || port_tag_profiles_shared_present(remote->id) ||
 		!strcmp(tag_multiplayer.asked_id, remote->id))
 		return;
@@ -1072,7 +1084,7 @@ boolean tag_multiplayer_randomizer_shared(
 {
 	if (hosting())
 		return tag_multiplayer_game_randomizer_profile() != NONE;
-	return tag_multiplayer.remote.active && tag_multiplayer.remote.kind == _share_randomizer;
+	return client_share()->active && client_share()->kind == _share_randomizer;
 }
 
 void tag_multiplayer_advertisement(
@@ -1193,6 +1205,150 @@ boolean tag_multiplayer_share_downloaded(
 	return TRUE;
 }
 
+boolean tag_multiplayer_game_share(
+	unsigned char *hash,
+	unsigned long *size,
+	short *kind)
+{
+	struct network_game *game = network_game_get_game();
+	struct share const *share;
+
+	if (hosting())
+	{
+		share = &tag_multiplayer.hosted;
+		if (!share->active || !host_takes(game) || !port_tag_profiles_shared_present(TAG_SHARE_HOST))
+			return FALSE;
+	}
+	else
+	{
+		share = &tag_multiplayer.remote;
+		if (!network_game_distributed_client() || !share->active || !game_takes(game) ||
+			!port_tag_profiles_shared_present(share->id))
+			return FALSE;
+	}
+	csmemcpy(hash, share->hash, TAG_MULTIPLAYER_HASH_BYTES);
+	*size = share->size;
+	*kind = share->kind;
+	return TRUE;
+}
+
+void tag_multiplayer_share_local_path(
+	unsigned char const *hash,
+	char *path,
+	unsigned long path_size)
+{
+	char id[TAG_MULTIPLAYER_ID_DIGITS + 1];
+
+	share_id(hash, id);
+	share_host_path(id, path, path_size);
+}
+
+void tag_multiplayer_share_name(
+	unsigned char const *hash,
+	char *id)
+{
+	share_id(hash, id);
+}
+
+/* whether this machine has the share of that hash as a folder to play,
+unpacked from its archive here if it has only that */
+static boolean share_ready(
+	unsigned char const *hash)
+{
+	char id[TAG_MULTIPLAYER_ID_DIGITS + 1];
+	char archive[1024];
+	FILE *file;
+
+	share_id(hash, id);
+	if (port_tag_profiles_shared_present(id))
+		return TRUE;
+	share_host_path(id, archive, sizeof(archive));
+	if (!(file = platform_fopen_host(archive, "rb")))
+		return FALSE;
+	fclose(file);
+	if (!port_tag_profiles_shared_unpack(archive, id))
+	{
+		error(_error_silent, "tag multiplayer: the share %s's archive here is not a share", id);
+		return FALSE;
+	}
+	error(_error_silent, "tag multiplayer: unpacked the share %s from its archive", id);
+	return TRUE;
+}
+
+boolean tag_multiplayer_replay_share_ready(
+	unsigned char const *hash,
+	unsigned long size,
+	char const *bundle_path,
+	long bundle_offset)
+{
+	char id[TAG_MULTIPLAYER_ID_DIGITS + 1];
+	char archive[1024];
+	char building[1024];
+	byte found[TAG_MULTIPLAYER_HASH_BYTES];
+	unsigned long found_size = 0;
+	byte *piece_hashes = NULL;
+	long piece_count = 0;
+	FILE *from;
+	FILE *to;
+	byte *chunk;
+	unsigned long left = size;
+	boolean copied;
+
+	if (share_ready(hash))
+		return TRUE;
+	if (!bundle_path || bundle_offset < 0 || !size || !port_tag_profiles_shared_folder_make())
+		return FALSE;
+	/* (out of the replay's export, which carries its archive after it: into
+	the archive's place, once it is the share it says) */
+	share_id(hash, id);
+	share_host_path(id, archive, sizeof(archive));
+	share_host_path(TAG_SHARE_BUILDING, building, sizeof(building));
+	from = platform_fopen_host(bundle_path, "rb");
+	to = from ? platform_fopen_host(building, "wb") : NULL;
+	chunk = to ? malloc(MAP_SHARE_PIECE_BYTES) : NULL;
+	copied = chunk && fseek(from, bundle_offset, SEEK_SET) == 0;
+	while (copied && left)
+	{
+		unsigned long bytes = MIN(left, (unsigned long)MAP_SHARE_PIECE_BYTES);
+
+		copied = fread(chunk, 1, bytes, from) == bytes && fwrite(chunk, 1, bytes, to) == bytes;
+		left -= bytes;
+	}
+	free(chunk);
+	if (to && fclose(to) != 0)
+		copied = FALSE;
+	if (from)
+		fclose(from);
+	copied = copied && share_hash(building, found, &found_size, &piece_hashes, &piece_count) &&
+		found_size == size && !csmemcmp(found, hash, sizeof(found));
+	free(piece_hashes);
+	if (!copied || !port_tag_profiles_file_replace(building, archive))
+	{
+		error(_error_silent, "tag multiplayer: the share %s the replay carries cannot be taken out of it", id);
+		port_tag_profiles_shared_remove(TAG_SHARE_BUILDING TAG_SHARE_EXTENSION);
+		return FALSE;
+	}
+	error(_error_silent, "tag multiplayer: took the share %s out of the replay", id);
+	return share_ready(hash);
+}
+
+void tag_multiplayer_replay_share_set(
+	unsigned char const *hash,
+	unsigned long size,
+	short kind)
+{
+	struct share *replayed = &tag_multiplayer.replayed;
+
+	csmemset(replayed, 0, sizeof(*replayed));
+	if (!hash || kind < 0 || kind >= NUMBER_OF_SHARE_KINDS)
+		return;
+	replayed->active = TRUE;
+	replayed->kind = kind;
+	csmemcpy(replayed->hash, hash, sizeof(replayed->hash));
+	replayed->size = size;
+	share_id(hash, replayed->id);
+}
+
 /* the share a level loading plays (opened), of a game that takes it, as
 the kind given (_share_*) */
 static long level_share_open(
@@ -1209,7 +1365,7 @@ static long level_share_open(
 		error(_error_silent, "tag multiplayer: the game started before its tags were shared: sharing them now");
 		host_build();
 	}
-	share = hosting() ? &tag_multiplayer.hosted : network_game_distributed_client() ? &tag_multiplayer.remote : NULL;
+	share = hosting() ? &tag_multiplayer.hosted : network_game_distributed_client() ? client_share() : NULL;
 	if (!share || !share->active || share->kind != kind)
 		return NONE;
 	folder = hosting() ? TAG_SHARE_HOST : share->id;

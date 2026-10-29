@@ -31,9 +31,84 @@ enum
 	never sends it: for each, its tick (32 bits) and the action as the host
 	relays a player's (network_distributed.c's network_distributed_own_actions) */
 	_network_replay_own_actions,
+	/* (format 5, the second record) how the level was made, which a
+	playback makes its own by as a client joining the game would: struct
+	network_replay_level_setup, NETWORK_REPLAY_LEVEL_SETUP_SIZE bytes
+	(network_replay.c) */
+	_network_replay_level_setup,
 
 	NUMBER_OF_NETWORK_REPLAY_RECORDS
 };
+
+/* (format 5) the level's setup: the host's randomizer and skulls, as its
+advertisement had them (halo_port_limits.h; a client's recording, as it
+heard them), the Tag Injector share its level played (tag_multiplayer.c),
+and the count and fingerprint of the level's tags every machine had alike
+(skulls.c's), which a playback's level should have too */
+#define NETWORK_REPLAY_LEVEL_SETUP_SIZE 80
+#define NETWORK_REPLAY_SHARE_HASH_BYTES 32
+
+struct network_replay_level_setup
+{
+	boolean randomizer_on;
+	unsigned char randomizer_setup[12];
+	unsigned char randomizer_crazy;
+	unsigned char skulls_flags;
+	unsigned char skulls[8];
+	boolean share_active;
+	short share_kind;
+	unsigned char share_hash[NETWORK_REPLAY_SHARE_HASH_BYTES];
+	unsigned long share_size;
+	long tag_count;
+	unsigned long tag_hash;
+};
+
+/* the record's bytes read; FALSE if they are not one */
+boolean network_replay_level_setup_read(unsigned char const *bytes, long size,
+	struct network_replay_level_setup *setup);
+
+/* ---------- a replay's export: the replay as it was, then the archive of
+the share its level played (tag_injector/.shared/<id>.tagshare), then
+NETWORK_REPLAY_BUNDLE_TRAILER_SIZE bytes saying so ("OCRSHARE", the
+archive's size, its hash). On the machine that recorded it a replay names
+its share alone; an export carries it, and a playback takes it out when
+this machine has not got it (tag_multiplayer.c) */
+#define NETWORK_REPLAY_BUNDLE_MAGIC "OCRSHARE"
+#define NETWORK_REPLAY_BUNDLE_TRAILER_SIZE 48
+
+/* whether the file (the host's path) ends in an export's trailer: its
+size, the archive's size and hash */
+boolean network_replay_bundle_trailer(char const *path, long *file_size, unsigned long *archive_size,
+	unsigned char *hash);
+
+/* what a replay (the host's path) needs to be exported with */
+struct network_replay_bundle
+{
+	/* its bytes before an archive it carries (its file's, if none) */
+	long replay_size;
+	/* it carries its archive already (an export of it, copied in) */
+	boolean bundled;
+	/* its level played a share (format 5), and this machine's archive of
+	it: its path, and whether it is there */
+	boolean needs_share;
+	unsigned char share_hash[NETWORK_REPLAY_SHARE_HASH_BYTES];
+	unsigned long share_size;
+	char archive_path[1024];
+	boolean archive_here;
+	/* the trailer an export writes after the archive */
+	unsigned char trailer[NETWORK_REPLAY_BUNDLE_TRAILER_SIZE];
+};
+
+/* FALSE if it cannot be read. An export of it is the file's replay_size
+bytes, then (needs_share && archive_here && !bundled) the archive's and
+the trailer; else the file as it is */
+boolean network_replay_bundle_of(char const *path, struct network_replay_bundle *bundle);
+
+/* (Android's EXPORT) the replays of the folder an export carries the share
+of, listed in <folder>/.export (a line each: the replay's name, the
+archive's path and the trailer in hex, tab apart) for the app's copy to add
+(port/android: HaloActivity.copyReplays); how many */
+long network_replay_export_manifest(void);
 
 /* (the host) whether a replay is being recorded */
 boolean network_replay_recording(void);
@@ -91,6 +166,11 @@ struct network_replay_info
 	char server[65];
 	char player[33];
 	boolean client;
+	/* (format 5) its level played a Tag Injector share: its id, and whether
+	this machine can play it (it has it, or the replay carries it) */
+	boolean has_share;
+	char share_id[24];
+	boolean share_here;
 	char why[96];
 };
 

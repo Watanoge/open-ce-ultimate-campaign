@@ -30,6 +30,8 @@ int config_boolean(char const *name);
 void platform_log(char const *format, ...);
 unsigned long system_milliseconds(void);
 FILE *platform_fopen_host(char const *path, char const *mode);
+int platform_remove_host(char const *path);
+int platform_rename_host(char const *old_path, char const *new_path);
 
 #if defined(HALO_SWITCH) || defined(HALO_PS5)
 
@@ -101,6 +103,12 @@ static struct
 	int response_sent;
 	FILE *file;
 	long remaining;
+	/* (a download of a replay whose level played a Tag Injector share: its
+	archive after it, then the trailer saying so, network_replay.h's export) */
+	FILE *archive;
+	long archive_remaining;
+	byte trailer[NETWORK_REPLAY_BUNDLE_TRAILER_SIZE];
+	int trailer_length;
 	byte chunk[REPLAY_PAGE_CHUNK_SIZE];
 	int chunk_length;
 	int chunk_sent;
@@ -133,10 +141,15 @@ static void replay_page_close_client(
 		fclose(page.file);
 	page.file = NULL;
 	page.remaining = 0;
+	if (page.archive)
+		fclose(page.archive);
+	page.archive = NULL;
+	page.archive_remaining = 0;
+	page.trailer_length = 0;
 	page.chunk_length = page.chunk_sent = 0;
 	/* (an upload not finished is no replay) */
 	if (page.state == _replay_page_receiving && page.part_path[0])
-		DeleteFileA(page.part_path);
+		platform_remove_host(page.part_path);
 	page.part_path[0] = 0;
 	page.state = _replay_page_reading;
 }
@@ -374,11 +387,25 @@ static void replay_page_download(
 		replay_page_text("404 Not Found", "No such replay.");
 		return;
 	}
+	/* (its level played a Tag Injector share: the export carries it) */
+	{
+		struct network_replay_bundle bundle;
+
+		if (network_replay_bundle_of(file_path, &bundle) && bundle.needs_share && !bundle.bundled &&
+			bundle.archive_here && (page.archive = platform_fopen_host(bundle.archive_path, "rb")) != NULL)
+		{
+			page.archive_remaining = (long)bundle.share_size;
+			memcpy(page.trailer, bundle.trailer, sizeof(page.trailer));
+			page.trailer_length = NETWORK_REPLAY_BUNDLE_TRAILER_SIZE;
+		}
+	}
 	snprintf(headers, sizeof(headers), "Content-Disposition: attachment; filename=\"%s\"\r\n", name);
 	/* (the head now, the file after it) */
-	replay_page_respond("200 OK", "application/octet-stream", NULL, size, headers);
+	replay_page_respond("200 OK", "application/octet-stream", NULL,
+		size + (page.archive ? page.archive_remaining + page.trailer_length : 0), headers);
 	page.remaining = size;
-	platform_log("replay page: sending %s (%ld KB)", name, size / 1024);
+	platform_log("replay page: sending %s (%ld KB%s)", name, size / 1024,
+		page.archive ? ", with its Tag Injector tags" : "");
 }
 
 /* PUT /upload/<name>: its body to <name>.part, then the replay */
@@ -450,14 +477,14 @@ static void replay_page_upload_end(
 	page.state = _replay_page_reading;
 	if (!written || page.first_length < 8 || memcmp(page.first_bytes, "OCREPLAY", 8))
 	{
-		DeleteFileA(page.part_path);
+		platform_remove_host(page.part_path);
 		page.part_path[0] = 0;
 		replay_page_text("400 Bad Request", "That file is not a replay.");
 		return;
 	}
-	if (!MoveFileA(page.part_path, page.final_path))
+	if (platform_rename_host(page.part_path, page.final_path) != 0)
 	{
-		DeleteFileA(page.part_path);
+		platform_remove_host(page.part_path);
 		page.part_path[0] = 0;
 		replay_page_text("500 Internal Server Error", "The replay cannot be kept.");
 		return;
@@ -506,21 +533,41 @@ static void replay_page_send(
 		{
 			if (page.chunk_sent >= page.chunk_length)
 			{
-				if (!page.file || page.remaining <= 0)
+				/* (the replay, then a share's archive, then its trailer) */
+				if ((!page.file || page.remaining <= 0) && page.archive && page.archive_remaining > 0)
+				{
+					if (page.file)
+						fclose(page.file);
+					page.file = page.archive;
+					page.remaining = page.archive_remaining;
+					page.archive = NULL;
+					page.archive_remaining = 0;
+				}
+				if ((!page.file || page.remaining <= 0) && page.trailer_length > 0)
+				{
+					memcpy(page.chunk, page.trailer, (size_t)page.trailer_length);
+					page.chunk_length = page.trailer_length;
+					page.chunk_sent = 0;
+					page.trailer_length = 0;
+				}
+				else if (!page.file || page.remaining <= 0)
 				{
 					/* (all of it sent) */
 					replay_page_close_client();
 					return;
 				}
-				page.chunk_length = (int)fread(page.chunk, 1, (size_t)MIN(page.remaining, (long)sizeof(page.chunk)),
-					page.file);
-				page.chunk_sent = 0;
-				if (page.chunk_length <= 0)
+				else
 				{
-					replay_page_close_client();
-					return;
+					page.chunk_length = (int)fread(page.chunk, 1, (size_t)MIN(page.remaining, (long)sizeof(page.chunk)),
+						page.file);
+					page.chunk_sent = 0;
+					if (page.chunk_length <= 0)
+					{
+						replay_page_close_client();
+						return;
+					}
+					page.remaining -= page.chunk_length;
 				}
-				page.remaining -= page.chunk_length;
 			}
 			data = (char const *)page.chunk + page.chunk_sent;
 			length = page.chunk_length - page.chunk_sent;

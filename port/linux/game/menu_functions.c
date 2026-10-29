@@ -9208,7 +9208,8 @@ static void theater_update(struct widget_instance *list)
 		"RECORD: OFF. Turn it on to record the network games you play, from the next one on.");
 	theater_append_wrapped(text, sizeof(text), " ");
 #if defined(HALO_ANDROID) && !defined(HALO_SWITCH)
-	theater_append_wrapped(text, sizeof(text), "EXPORT copies them to a folder you choose.");
+	theater_append_wrapped(text, sizeof(text), "EXPORT copies them to a folder you choose, with the Tag Injector tags "
+		"they played.");
 #else
 #ifdef LINK_PAGE
 	if (network_replay_page_address()[0])
@@ -9296,6 +9297,9 @@ static boolean theater_export(void)
 	char folder[THEATER_TEXT_LENGTH];
 
 	network_replay_folder(folder, sizeof(folder));
+	/* (the replays whose level played a Tag Injector share, listed for the
+	app's copy to carry it with them: network_replay.h) */
+	network_replay_export_manifest();
 	host_android_export_replays(folder);
 	return TRUE;
 #else

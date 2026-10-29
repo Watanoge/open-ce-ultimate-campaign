@@ -144,6 +144,14 @@ drop skulls to be found; the client's copy of them (the advertisement's
 flags, and its skulls' bytes) */
 void skulls_advertisement(unsigned char *reserved);
 void skulls_set_remote(unsigned char flags, unsigned char const *bytes);
+/* ... a client's, as it was set (a replay a client records keeps it:
+network_replay.c): the flags' skulls bits and the skulls' bytes
+(HALO_PORT_ADVERTISED_SKULLS_SIZE) */
+void skulls_remote_get(unsigned char *flags, unsigned char *bytes);
+/* the level's tags every machine of a co-op game has alike, as it loaded:
+their count and fingerprint (a replay's playback compares them with the
+recording's) */
+void skulls_shared_tags(long *count, unsigned long *hash);
 /* whether the game this machine hosts is a campaign game with skulls, or
 whose enemies drop skulls (one skulls_advertisement marks) */
 int skulls_hosted(void);

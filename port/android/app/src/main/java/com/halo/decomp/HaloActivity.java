@@ -31,7 +31,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 import org.libsdl.app.SDLActivity;
@@ -158,6 +162,33 @@ public class HaloActivity extends SDLActivity {
         return files != null ? files : new File[0];
     }
 
+    /**
+     * the replays an export carries their level's Tag Injector share with (port/linux/game/network_replay.c's
+     * network_replay_export_manifest, written as EXPORT is pressed): by name, the share's archive and the trailer
+     * after it (network_replay.h)
+     */
+    private static Map<String, String[]> replayShares(String folder) {
+        Map<String, String[]> shares = new HashMap<>();
+        try (BufferedReader reader = new BufferedReader(new FileReader(new File(folder, ".export")))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String[] fields = line.split("\t");
+                if (fields.length == 3)
+                    shares.put(fields[0], new String[] { fields[1], fields[2] });
+            }
+        } catch (IOException e) {
+            // (none listed: each replay as it is)
+        }
+        return shares;
+    }
+
+    private static void copyStream(InputStream input, OutputStream output) throws IOException {
+        byte[] buffer = new byte[65536];
+        int size;
+        while ((size = input.read(buffer)) != -1)
+            output.write(buffer, 0, size);
+    }
+
     /** the replays copied into the tree's folder, on a thread of their own; a Toast says how many */
     private void copyReplays(Uri tree, String folder) {
         ContentResolver resolver = getContentResolver();
@@ -173,6 +204,7 @@ public class HaloActivity extends SDLActivity {
         }
         int copied = 0, skipped = 0;
         String failed = null;
+        Map<String, String[]> shares = replayShares(folder);
         for (File replay : replayFiles(folder)) {
             if (present.contains(replay.getName())) {
                 skipped++;
@@ -187,10 +219,18 @@ public class HaloActivity extends SDLActivity {
                      OutputStream output = resolver.openOutputStream(document, "w")) {
                     if (output == null)
                         throw new IOException(replay.getName() + " cannot be written");
-                    byte[] buffer = new byte[65536];
-                    int size;
-                    while ((size = input.read(buffer)) != -1)
-                        output.write(buffer, 0, size);
+                    copyStream(input, output);
+                    // (its level's Tag Injector share after it, then the trailer saying so)
+                    String[] share = shares.get(replay.getName());
+                    if (share != null) {
+                        try (InputStream archive = new FileInputStream(share[0])) {
+                            copyStream(archive, output);
+                        }
+                        byte[] trailer = new byte[share[1].length() / 2];
+                        for (int index = 0; index < trailer.length; index++)
+                            trailer[index] = (byte) Integer.parseInt(share[1].substring(index * 2, index * 2 + 2), 16);
+                        output.write(trailer);
+                    }
                 }
                 copied++;
             } catch (Exception e) {
