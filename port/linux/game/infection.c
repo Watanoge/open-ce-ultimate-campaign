@@ -18,7 +18,11 @@ game_engine_write_network_state), which a client checks whole before taking.
 Each machine then sets each player's team, speed and shields by their role.
 
 Its options are the gametype's (game_engine.h's struct game_variant_options,
-infection_*). The rules and much of the code follow the Infection of pull
+infection_*). Floodfection (the options' mode_variant) is Infection with the
+Flood's look, which each machine of this fork draws for itself: its zombies
+green instead of blue, and every map under a green murk that hides the sky
+and all past some 55 world units. A build without it plays the same round,
+its zombies blue and its maps clear. The rules and much of the code follow the Infection of pull
 request #420 by arisson2001rojas-design.
 */
 
@@ -34,6 +38,7 @@ request #420 by arisson2001rojas-design.
 #include "objects/objects.h"
 #include "objects/object_definitions.h"
 #include "physics/collisions.h"
+#include "render/render_cameras.h"
 #include "text/unicode.h"
 #include "units/units.h"
 #include "units/unit_definitions.h"
@@ -250,6 +255,47 @@ boolean infection_melee_rider_visible(
 		}
 	}
 	return FALSE;
+}
+
+/* ---- Floodfection's look */
+
+/* the Flood's fog: from a few world units off, opaque at its end, which the
+window clears to (the sky not drawn) */
+#define FLOODFECTION_FOG_START_DISTANCE 3.0f
+#define FLOODFECTION_FOG_OPAQUE_DISTANCE 55.0f
+
+static real_rgb_color const floodfection_zombie_color = { { 0.30f, 0.48f, 0.12f } };
+static real_rgb_color const floodfection_fog_color = { { 0.16f, 0.20f, 0.09f } };
+
+static boolean infection_floodfection(
+	void)
+{
+	return infection_enabled() && game_modes_mode_variant() == _game_mode_variant_floodfection;
+}
+
+void infection_change_color(
+	long player_index,
+	real_rgb_color *color)
+{
+	struct distributed_infection_player *role;
+
+	if (!infection_floodfection())
+		return;
+	role = infection_player(player_index);
+	if (role && role->role == _distributed_infection_role_zombie)
+		*color = floodfection_zombie_color;
+}
+
+boolean infection_fog(
+	struct render_fog *fog)
+{
+	if (!infection_floodfection())
+		return FALSE;
+	fog->atmospheric_color = floodfection_fog_color;
+	fog->atmospheric_maximum_density = 1.0f;
+	fog->atmospheric_minimum_distance = FLOODFECTION_FOG_START_DISTANCE;
+	fog->atmospheric_maximum_distance = FLOODFECTION_FOG_OPAQUE_DISTANCE;
+	return TRUE;
 }
 
 /* ---- the host's round */

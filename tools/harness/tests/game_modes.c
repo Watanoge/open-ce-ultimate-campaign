@@ -4,7 +4,8 @@
 /* OpenCE's gametypes (port/linux/game/game_modes.c, infection.c, gun_game.c):
 a gametype's options kept in range, the modes each game engine and teams
 allow, Infection's round result and the state a client takes, and Gun Game's
-list of weapons. */
+list of weapons, Tag Gun Game's with a multiplayer profile's, and this
+fork's takes on the modes (Floodfection, Tag Gun Game). */
 typedef unsigned short word;
 #define VALID_INDEX(index, count) ((index) >= 0 && (index) < (count))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
@@ -20,7 +21,16 @@ static struct game_variant_options options;
 static boolean map_has[NUMBER_OF_LOADOUT_WEAPONS];
 static boolean client;
 static short draws;
-static struct { byte levels[8]; short level_count; } gun_game;
+static struct { long levels[64]; short level_count; } gun_game;
+/* Tag Gun Game's: the weapons the level's share added */
+static long shared_weapons[80];
+static short shared_count;
+static short tag_multiplayer_level_weapons(long *definitions,short maximum)
+{
+ short count=0;
+ for(short index=0;index<shared_count&&count<maximum;index++) definitions[count++]=shared_weapons[index];
+ return count;
+}
 static struct game_variant_options const *game_variant_options_get(void){return &options;}
 static long game_engine_loadout_weapon_definition(byte weapon){return map_has[weapon]?100+weapon:NONE;}
 static boolean network_game_distributed_client(void){return client;}
@@ -185,31 +195,94 @@ int main(int argc,char **argv)
  } else CASE("gun_game_order") {
   map_with_every_weapon();memset(&options,0,sizeof(options));
   options.gun_game_order=_gun_game_order_strongest_first;
-  gun_game_levels_build();
+  gun_game_levels_build(FALSE);
   CHECK(gun_game.level_count==8,"every weapon: %d",gun_game.level_count);
-  CHECK(gun_game.levels[0]==_loadout_weapon_rocket_launcher&&gun_game.levels[7]==_loadout_weapon_pistol,
+  CHECK(gun_game.levels[0]==100+_loadout_weapon_rocket_launcher&&gun_game.levels[7]==100+_loadout_weapon_pistol,
    "the rocket launcher first, the pistol last");
   options.gun_game_order=_gun_game_order_weakest_first;
-  gun_game_levels_build();
-  CHECK(gun_game.levels[0]==_loadout_weapon_pistol&&gun_game.levels[7]==_loadout_weapon_rocket_launcher,
+  gun_game_levels_build(FALSE);
+  CHECK(gun_game.levels[0]==100+_loadout_weapon_pistol&&gun_game.levels[7]==100+_loadout_weapon_rocket_launcher,
    "the pistol first");
  } else CASE("gun_game_missing") {
   map_with_every_weapon();memset(&options,0,sizeof(options));
   map_has[_loadout_weapon_shotgun]=FALSE;map_has[_loadout_weapon_needler]=FALSE;
-  gun_game_levels_build();
+  gun_game_levels_build(FALSE);
   CHECK(gun_game.level_count==6,"the map's weapons only: %d",gun_game.level_count);
   for(int level=0;level<gun_game.level_count;level++)
-   CHECK(gun_game.levels[level]!=_loadout_weapon_shotgun&&gun_game.levels[level]!=_loadout_weapon_needler,"none missing");
+   CHECK(gun_game.levels[level]!=100+_loadout_weapon_shotgun&&gun_game.levels[level]!=100+_loadout_weapon_needler,
+    "none missing");
  } else CASE("gun_game_random") {
   map_with_every_weapon();memset(&options,0,sizeof(options));
   options.gun_game_order=_gun_game_order_random;draws=0;
-  gun_game_levels_build();
+  gun_game_levels_build(FALSE);
   CHECK(draws==7&&gun_game.level_count==8,"the host draws the order");
-  CHECK(gun_game.levels[0]!=_loadout_weapon_rocket_launcher,"in another order");
+  CHECK(gun_game.levels[0]!=100+_loadout_weapon_rocket_launcher,"in another order");
   client=TRUE;draws=0;
-  gun_game_levels_build();
+  gun_game_levels_build(FALSE);
   CHECK(draws==0&&gun_game.level_count==8,"a client draws nothing, its list as long");
   client=FALSE;
+ } else CASE("tag_gun_game") {
+  map_with_every_weapon();memset(&options,0,sizeof(options));
+  options.gun_game_order=_gun_game_order_strongest_first;
+  shared_weapons[0]=500;shared_weapons[1]=501;shared_weapons[2]=100+_loadout_weapon_pistol;shared_weapons[3]=500;
+  shared_count=4;
+  gun_game_levels_build(FALSE);
+  CHECK(gun_game.level_count==8,"Gun Game takes no profile's weapons: %d",gun_game.level_count);
+  draws=0;
+  gun_game_levels_build(TRUE);
+  CHECK(gun_game.level_count==10,"the map's and the profile's, each once: %d",gun_game.level_count);
+  CHECK(draws==9,"drawn whatever the gametype's order: %d",draws);
+  int found=0;
+  for(int level=0;level<gun_game.level_count;level++) found+=gun_game.levels[level]==500||gun_game.levels[level]==501;
+  CHECK(found==2,"the profile's weapons in the list");
+  client=TRUE;draws=0;
+  gun_game_levels_build(TRUE);
+  CHECK(draws==0&&gun_game.level_count==10,"a client's list as long, undrawn");
+  client=FALSE;
+  shared_count=0;
+  gun_game_levels_build(TRUE);
+  CHECK(gun_game.level_count==8,"no profile: the map's weapons");
+ } else CASE("tag_gun_game_full") {
+  map_with_every_weapon();memset(&options,0,sizeof(options));
+  for(int index=0;index<80;index++) shared_weapons[index]=1000+index;
+  shared_count=80;
+  gun_game_levels_build(TRUE);
+  CHECK(gun_game.level_count==64,"no more than the list holds: %d",gun_game.level_count);
+  shared_count=0;
+ } else CASE("mode_variant") {
+  struct game_variant variant;
+  memset(&variant,0,sizeof(variant));
+  game_modes_options_default(&options);
+  CHECK(options.mode_variant==_game_mode_variant_none,"none by default");
+  options.mode=_game_mode_infection;options.mode_variant=_game_mode_variant_floodfection;
+  game_modes_options_sanitize(&options);
+  CHECK(options.mode_variant==_game_mode_variant_floodfection,"Floodfection of Infection kept");
+  options.mode=_game_mode_gun_game;
+  game_modes_options_sanitize(&options);
+  CHECK(options.mode_variant==_game_mode_variant_none,"no Floodfection of Gun Game");
+  options.mode_variant=_game_mode_variant_tag_gun_game;
+  game_modes_options_sanitize(&options);
+  CHECK(options.mode_variant==_game_mode_variant_tag_gun_game,"Tag Gun Game of Gun Game kept");
+  options.mode=_game_mode_swat;
+  game_modes_options_sanitize(&options);
+  CHECK(options.mode_variant==_game_mode_variant_none,"no take on SWAT");
+  options.mode=_game_mode_infection;options.mode_variant=0x7F;
+  game_modes_options_sanitize(&options);
+  CHECK(options.mode_variant==_game_mode_variant_none,"an unknown take is none");
+  variant.game_engine_index=game_engine_slayer;variant.universal_variant.teams=TRUE;
+  options.mode=_game_mode_infection;options.mode_variant=_game_mode_variant_floodfection;
+  CHECK(game_modes_variant_mode_variant(&variant,&options)==_game_mode_variant_floodfection,"Floodfection on teams");
+  options.mode_variant=_game_mode_variant_tag_gun_game;
+  CHECK(game_modes_variant_mode_variant(&variant,&options)==_game_mode_variant_none,"no Tag Gun Game of Infection");
+  options.mode_variant=_game_mode_variant_floodfection;
+  variant.universal_variant.teams=FALSE;
+  CHECK(game_modes_variant_mode_variant(&variant,&options)==_game_mode_variant_none,"none without teams");
+  options.mode=_game_mode_gun_game;options.mode_variant=_game_mode_variant_tag_gun_game;
+  CHECK(game_modes_variant_mode_variant(&variant,&options)==_game_mode_variant_tag_gun_game,"Tag Gun Game");
+  options.mode_variant=_game_mode_variant_floodfection;
+  CHECK(game_modes_variant_mode_variant(&variant,&options)==_game_mode_variant_none,"no Floodfection of Gun Game");
+  variant.game_engine_index=game_engine_ctf;options.mode_variant=_game_mode_variant_tag_gun_game;
+  CHECK(game_modes_variant_mode_variant(&variant,&options)==_game_mode_variant_none,"Slayer's only");
  } else CASE("kind") {
   struct game_variant variant;
   memset(&variant,0,sizeof(variant));memset(&options,0,sizeof(options));

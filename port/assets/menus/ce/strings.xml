@@ -223,6 +223,7 @@
 		<string text="STANDARD" map="0"/>
 		<string text="OPENCE"/>
 		<string text="CUSTOM" map="2"/>
+		<string text="TAG INJECTION"/>
 	</strings>
 	<strings name="main_menu/main_menu_options" map="ui\shell\main_menu\main_menu_options">
 		<string text="NEW CAMPAIGN" map="0"/>

@@ -1570,6 +1570,21 @@ void tag_multiplayer_level_unloaded(
 	csmemset(&tag_multiplayer_level, 0, sizeof(tag_multiplayer_level));
 }
 
+short tag_multiplayer_level_weapons(
+	long *definitions,
+	short maximum)
+{
+	short count = 0;
+	short index;
+
+	for (index = 0; tag_multiplayer_level.active && index < tag_multiplayer_level.shared_count && count < maximum;
+		index++)
+	{
+		definitions[count++] = tag_multiplayer_level.shared[index];
+	}
+	return count;
+}
+
 long tag_multiplayer_netgame_item(
 	long equipment_index,
 	long definition_index)

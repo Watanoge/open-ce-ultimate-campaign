@@ -612,6 +612,11 @@ as its game is hosted.
   taken away, unless it is GAMETYPE'S; grenades are the gametype's. The
   gametype's NO WEAPONS ON MAP spawns none of them. A gametype that gives
   its weapons itself (Gun Game, Infection) keeps its own.
+- **Tag Gun Game** (the OPENCE bank's, or OPENCE OPTIONS' MODE) plays
+  Gun Game with the profile's weapons: its list is the map's eight loadout
+  weapons and every weapon the share added, each once (64 at most), in an
+  order the host draws for each game; its score to win is the list's length.
+  Without a profile it is Gun Game drawn in a random order.
 
 A game playing a multiplayer profile is a modded game
 (`port/linux/NETCODE.md`, "Modded games"): only a build with the mod joins

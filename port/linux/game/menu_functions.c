@@ -9996,14 +9996,16 @@ static boolean gametype_setup_apply(void);
 static void gametype_setup_type(wchar_t *text);
 
 /* ---- the gametype list: its spinner's bank (STANDARD: the Xbox's built-in
-ones, OPENCE: OpenCE's built-in ones, game_modes.c, CUSTOM: those saved) in
-its first row, then the bank's gametypes */
+ones, OPENCE: OpenCE's built-in ones, game_modes.c, CUSTOM: those saved,
+TAG INJECTION: this fork's built-in takes on OpenCE's, Floodfection and Tag
+Gun Game) in its first row, then the bank's gametypes */
 
 enum
 {
 	GAMETYPE_BANK_STANDARD = 0,
 	GAMETYPE_BANK_OPENCE,
 	GAMETYPE_BANK_CUSTOM,
+	GAMETYPE_BANK_TAG_INJECTION,
 	NUMBER_OF_GAMETYPE_BANKS
 };
 
@@ -10015,10 +10017,12 @@ static short gametype_bank(long profile_index)
 
 	if (!((unsigned long)profile_index & PLAYLIST_READ_ONLY_BIT))
 		return GAMETYPE_BANK_CUSTOM;
-	if (playlist_profile_get(profile_index, &variant) && playlist_profile_get_options(profile_index, &options) &&
-		game_modes_variant_is_opence(&variant, &options))
+	if (playlist_profile_get(profile_index, &variant) && playlist_profile_get_options(profile_index, &options))
 	{
-		return GAMETYPE_BANK_OPENCE;
+		if (game_modes_variant_mode_variant(&variant, &options) != _game_mode_variant_none)
+			return GAMETYPE_BANK_TAG_INJECTION;
+		if (game_modes_variant_is_opence(&variant, &options))
+			return GAMETYPE_BANK_OPENCE;
 	}
 	return GAMETYPE_BANK_STANDARD;
 }
@@ -10097,7 +10101,9 @@ static void gametype_rules_text(long profile_index, wchar_t *text, short size)
 			usnprintf(text, size - 1, L"%s\r\nTeams\r\nUntil no human is left", kind);
 		break;
 	case _game_mode_gun_game:
-		usnprintf(text, size - 1, L"%s\r\nFree for all\r\nA kill with each weapon", kind);
+		usnprintf(text, size - 1, game_modes_variant_mode_variant(&variant, &options) == _game_mode_variant_tag_gun_game ?
+			L"%s\r\nFree for all\r\nA kill with each weapon drawn" : L"%s\r\nFree for all\r\nA kill with each weapon",
+			kind);
 		break;
 	default:
 		usnprintf(text, size - 1, L"%s\r\n%s\r\nScore to win: %ld", kind ? kind : engine_names[engine],
@@ -14418,8 +14424,12 @@ enum
 	_option_option_byte,	/* a byte of the options */
 	_option_radar,		/* the options' radar players, and the variant's flag */
 	_option_setting,	/* the host's own (config.toml): Server Setup's copy only */
-	_option_byte_value	/* a byte of the variant, its number (not on or off) */
+	_option_byte_value,	/* a byte of the variant, its number (not on or off) */
+	_option_mode		/* the options' mode, and its take (mode_variant) above its byte */
 };
+
+/* OPENCE OPTIONS' MODE's value of a mode and its take on it (_option_mode) */
+#define GAMETYPE_MODE_VALUE(mode, mode_variant) ((mode) | (mode_variant) << 8)
 
 /* the most values an option has (BOTS': 0 to 33) */
 #define GAMETYPE_OPTION_VALUES 34
@@ -14444,8 +14454,10 @@ struct gametype_option
 static struct gametype_option const gametype_options[] =
 {
 	/* OPENCE OPTIONS (OpenCE's gametypes: game_modes.c) */
-	{ "oce_mode_spinner", _option_option_byte, OPTIONS_FIELD(mode), 0, 4,
-		{ _game_mode_none, _game_mode_swat, _game_mode_infection, _game_mode_gun_game } },
+	{ "oce_mode_spinner", _option_mode, 0, 0, 6,
+		{ _game_mode_none, _game_mode_swat, _game_mode_infection, _game_mode_gun_game,
+			GAMETYPE_MODE_VALUE(_game_mode_infection, _game_mode_variant_floodfection),
+			GAMETYPE_MODE_VALUE(_game_mode_gun_game, _game_mode_variant_tag_gun_game) } },
 	{ "oce_hardcore_spinner", _option_option_byte, OPTIONS_FIELD(hardcore), 0, 2, { FALSE, TRUE } },
 	{ "inf_zombies_spinner", _option_option_byte, OPTIONS_FIELD(infection_initial_zombies), 0, 6, { 1, 2, 3, 4, 8, 16 } },
 	{ "inf_speed_spinner", _option_option_byte, OPTIONS_FIELD(infection_zombie_speed), 0, 6,
@@ -14670,6 +14682,7 @@ static long gametype_option_value(struct gametype_option const *option, struct g
 	case _option_option_byte: return o[option->offset];
 	case _option_byte_value: return v[option->offset];
 	case _option_radar: return options->radar_players;
+	case _option_mode: return GAMETYPE_MODE_VALUE(options->mode, options->mode_variant);
 	}
 	return 0;
 }
@@ -14701,6 +14714,10 @@ static void gametype_option_value_set(struct gametype_option const *option, long
 			variant->universal_variant.flags &= ~FLAG(_game_variant_draw_object_in_motion_sensor_bit);
 		else
 			variant->universal_variant.flags |= FLAG(_game_variant_draw_object_in_motion_sensor_bit);
+		break;
+	case _option_mode:
+		options->mode = (byte)(value & 0xFF);
+		options->mode_variant = (byte)(value >> 8);
 		break;
 	}
 }
@@ -15178,10 +15195,14 @@ static void gametype_option_help(struct widget_instance *list)
 		visible_set(named(list, "op_secondary_weapon", 0), custom);
 	}
 	/* (OPENCE OPTIONS: the mode's own rows, Infection's or Gun Game's, below
-	MODE and HARDCORE) */
+	MODE and HARDCORE; Floodfection's Infection's, Tag Gun Game's Gun Game's
+	but its order, which it draws) */
 	if (named(list, "oce_mode_spinner", 0))
 	{
-		short mode = named(list, "oce_mode_spinner", 0)->parameters.list.selected_index;
+		struct gametype_option const *option = gametype_option_named("oce_mode_spinner");
+		long value = option->values[PIN(named(list, "oce_mode_spinner", 0)->parameters.list.selected_index, 0,
+			option->count - 1)];
+		short mode = (short)(value & 0xFF);
 		short place = 73 + 2 * 30;
 
 		for (row = list->child; row; row = row->next)
@@ -15190,7 +15211,8 @@ static void gametype_option_help(struct widget_instance *list)
 
 			if (!infection && strncmp(row->name, "op_gg_", 6))
 				continue;
-			row->visible = infection ? mode == _game_mode_infection : mode == _game_mode_gun_game;
+			row->visible = infection ? mode == _game_mode_infection : mode == _game_mode_gun_game &&
+				!(value >> 8 == _game_mode_variant_tag_gun_game && !strcmp(row->name, "op_gg_order"));
 			if (row->visible)
 			{
 				row->vertical_offset = place;

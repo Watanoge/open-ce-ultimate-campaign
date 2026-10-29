@@ -242,6 +242,18 @@ enum
 	NUMBER_OF_GUN_GAME_ORDERS
 };
 
+enum
+{
+	/* port: this fork's takes on a mode (game_variant_options' mode_variant):
+	Floodfection, Infection with green zombies and the Flood's fog over every
+	map; Tag Gun Game, Gun Game with its weapons drawn for each game, the
+	Tag Injector's multiplayer profile's among them */
+	_game_mode_variant_none = 0,
+	_game_mode_variant_floodfection,
+	_game_mode_variant_tag_gun_game,
+	NUMBER_OF_GAME_MODE_VARIANTS
+};
+
 /* (the starting equipment, generic or the map's, is the variant's own:
 _game_variant_generic_starting_equipment_bit) */
 struct game_variant_options
@@ -289,7 +301,11 @@ struct game_variant_options
 	of their own team (game_engine_get_starting_location_rating). Taken from
 	reserved, which older builds zero and ignore: the host alone picks spawns */
 	boolean force_team_spawns;
-	byte reserved[5];
+	byte reserved[4];
+	/* port: this fork's take on the mode (_game_mode_variant_*), from
+	reserved's last byte, which builds without it zero: they play the mode
+	itself (Infection, Gun Game) */
+	byte mode_variant;
 };
 
 typedef char verify_game_variant_options_size[sizeof(struct game_variant_options) == 0x2C ? 1 : -1];

@@ -516,8 +516,19 @@ Only the host decides each mode's events (Infection's zombies, Gun Game's
 weapons, Hardcore's restores); the clients take them from it as they take
 the rest of the game. The lobby and Server Setup name the gametype's mode.
 `debug.network_test` hosts them by name: `swat`, `infection`, `gun_game`,
-`hardcore`, `hardcore_ctf`, `hardcore_oddball` and `hardcore_king`
-(`host:bloodgulch:infection`).
+`hardcore`, `hardcore_ctf`, `hardcore_oddball`, `hardcore_king`,
+`floodfection` and `tag_gun_game` (`host:bloodgulch:infection`).
+
+This fork adds two takes on them (the options' `mode_variant`, from their
+reserved bytes, which builds without it zero and so play the mode itself):
+**Floodfection**, Infection whose zombies are green and whose every map is
+under a green fog that hides the sky past some 55 world units (drawn by each
+machine of the fork: `infection.c`'s `infection_fog`, called by `render.c`);
+and **Tag Gun Game**, Gun Game whose weapons the host draws for each game
+from the map's and, in a game playing a Tag Injector multiplayer profile
+(the TAG PROFILE screen), the weapons its share added
+(`tag_multiplayer_level_weapons`). Both are in the OPENCE bank and the
+OPENCE OPTIONS screen's MODE.
 
 ## Settings
 
