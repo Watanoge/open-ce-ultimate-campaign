@@ -2,7 +2,7 @@
  * Keep individual allocations stable rather than repeatedly moving/reloading
  * a packed arena. This cache owns only synchronous, cached CE map pixels;
  * dynamic textures and other map storage keep their established paths. */
-#ifdef HALO_ANDROID
+#if defined(HALO_ANDROID) || defined(HALO_WEB)
 #include "cseries.h"
 #include "bitmaps/bitmaps.h"
 #include "bitmaps/bitmap_group.h"

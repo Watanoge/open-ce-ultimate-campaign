@@ -28,7 +28,7 @@ memory_watch.c detects that by write-protecting the pages.
 #endif
 #include <stdlib.h>
 #include <string.h>
-#ifdef HALO_ANDROID
+#if defined(HALO_ANDROID) || defined(HALO_WEB)
 #include "../game/android_ce_texture_cache.h"
 #endif
 
@@ -1123,6 +1123,8 @@ struct texture_entry
 	unsigned long menu_serial;
 	GLuint menu_texture;
 	unsigned long menu_levels;
+#endif
+#if defined(HALO_ANDROID) || defined(HALO_WEB)
 	/* (upstream's Custom Edition texture residency, android_ce_texture_cache.c) */
 	const void *ce_resource;
 #endif
@@ -1148,7 +1150,7 @@ static struct
 	struct texture_entry *entry;
 	unsigned long watch_serial;
 	unsigned long drop_serial;
-#ifdef HALO_ANDROID
+#if defined(HALO_ANDROID) || defined(HALO_WEB)
 	const void *ce_resource;
 #endif
 } recent_textures[RECENT_TEXTURE_COUNT];
@@ -1183,7 +1185,7 @@ static unsigned long palette_hash(const D3DCOLOR *palette)
 	return hash ? hash : 1;
 }
 
-#ifdef HALO_ANDROID
+#if defined(HALO_ANDROID) || defined(HALO_WEB)
 void android_ce_texture_gpu_forget(const void *resource)
 {
 	const DWORD *header = resource;
@@ -1210,7 +1212,7 @@ void android_ce_texture_gpu_forget(const void *resource)
 
 static BOOL texture_entry_pixels_valid(const struct texture_entry *entry)
 {
-#ifdef HALO_ANDROID
+#if defined(HALO_ANDROID) || defined(HALO_WEB)
 	/* Registration and the allocation-length check at creation admit these
 	 * pixels. Their owner removes the GPU entry before freeing the storage. */
 	if (entry->ce_resource)
@@ -1359,7 +1361,7 @@ GLuint xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, GLenum *
 	static int no_cache = -1;
 	unsigned long recent = bucket_index(data, format_word, size_word) % RECENT_TEXTURE_COUNT;
 	unsigned long watch_serial = memory_watch_serial();
-#ifdef HALO_ANDROID
+#if defined(HALO_ANDROID) || defined(HALO_WEB)
 	unsigned long ce_bytes;
 	const void *ce_pixels = android_ce_texture_pixels(resource, &ce_bytes);
 	const void *ce_resource = ce_pixels ? resource : NULL;
@@ -1369,7 +1371,7 @@ GLuint xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, GLenum *
 	dropped: remembered, a page written since only means checking it) */
 	entry = NULL;
 	if (!palettized && recent_textures[recent].entry && recent_textures[recent].data == data &&
-#ifdef HALO_ANDROID
+#if defined(HALO_ANDROID) || defined(HALO_WEB)
 		recent_textures[recent].ce_resource == ce_resource &&
 #endif
 		recent_textures[recent].format_word == format_word && recent_textures[recent].size_word == size_word &&
@@ -1389,7 +1391,7 @@ GLuint xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, GLenum *
 		{
 			if (entry->data == data && entry->format_word == format_word && entry->size_word == size_word)
 			{
-#ifdef HALO_ANDROID
+#if defined(HALO_ANDROID) || defined(HALO_WEB)
 				if (entry->ce_resource != ce_resource)
 					continue;
 #endif
@@ -1429,7 +1431,7 @@ GLuint xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, GLenum *
 		byte counts would not fit in 32 bits) */
 		entry->size = texture_size_supported(&entry->description) ?
 			xgpu_texture_face_size(&entry->description) * (entry->description.cube_map ? 6 : 1) : 0;
-#ifdef HALO_ANDROID
+#if defined(HALO_ANDROID) || defined(HALO_WEB)
 		entry->ce_resource = ce_resource;
 		if (ce_resource)
 		{
@@ -1455,7 +1457,7 @@ GLuint xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, GLenum *
 	/* (its pages' newest generation, found again only once a watched page
 	has been written: a large texture's pages, scanned for every draw that
 	bound it, were much of a frame with many objects) */
-#ifdef HALO_ANDROID
+#if defined(HALO_ANDROID) || defined(HALO_WEB)
 	if (entry->ce_resource)
 		generation = 1; /* Published CE map pixels do not change while resident. */
 	else
@@ -1471,7 +1473,7 @@ GLuint xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, GLenum *
 	if (!entry->generation || generation > entry->generation || no_cache)
 	{
 		/* protect first, so a write racing with the upload is noticed */
-#ifdef HALO_ANDROID
+#if defined(HALO_ANDROID) || defined(HALO_WEB)
 		if (entry->ce_resource)
 			entry->generation = 1;
 		else
@@ -1532,7 +1534,7 @@ GLuint xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, GLenum *
 		recent_textures[recent].entry = entry;
 		recent_textures[recent].watch_serial = watch_serial;
 		recent_textures[recent].drop_serial = texture_drop_serial;
-#ifdef HALO_ANDROID
+#if defined(HALO_ANDROID) || defined(HALO_WEB)
 		recent_textures[recent].ce_resource = ce_resource;
 #endif
 	}

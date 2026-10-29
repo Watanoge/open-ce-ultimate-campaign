@@ -212,7 +212,7 @@ def test_android_ce_scope_and_cleanup():
     assert 'custom_edition_cache_tags_loaded()' in get
     assert 'TEST_FLAG(bitmap->flags, _bitmap_cached_bit)' in get
     assert 'texture_cache_bitmap_valid(bitmap)' in get
-    stripped = re.sub(r'#ifdef HALO_ANDROID\n.*?#endif', '', source, flags=re.S)
+    stripped = re.sub(r'#if defined\(HALO_ANDROID\) \|\| defined\(HALO_WEB\)\n.*?#endif', '', source, flags=re.S)
     assert 'android_ce_texture_' not in stripped
     assert 'android_ce_texture_delete(bitmap)' in function(source, 'texture_cache_bitmap_delete')
     assert 'android_ce_texture_reset()' in function(source, 'texture_cache_flush')

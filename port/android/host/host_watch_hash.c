@@ -160,10 +160,20 @@ void watch_hash_prepare_write(struct watch_hash *watch, uint32_t first, uint32_t
 {
 	uint32_t page;
 
-	if (!watch->unchanged || !clamp(watch, first, &last))
+	if (!clamp(watch, first, &last))
 		return;
+	/* (hashed again at the next query, even in this frame: the texture
+	cache can evict a bitmap drawn this frame and read another into its
+	pages, at the same address, format and size) */
 	for (page = first; page <= last; page++)
-		watch->unchanged[page] = 0;
+	{
+		if (watch->unchanged)
+			watch->unchanged[page] = 0;
+		watch->hashed_frame[page] = watch->frame - 1;
+	}
+	/* and the serial changes, so that a lookup remembered this frame
+	(xbox_textures.c's recent_textures) asks again */
+	__sync_add_and_fetch(watch->current_generation, 1);
 }
 
 /*

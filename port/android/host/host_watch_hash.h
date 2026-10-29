@@ -65,7 +65,8 @@ uint32_t watch_hash_generation(struct watch_hash *watch, uint32_t first, uint32_
 /* The pages were remapped: treat them as written and unwatched. */
 void watch_hash_forget(struct watch_hash *watch, uint32_t first, uint32_t last);
 
-/* The pages are about to be written: hash them every frame again. */
+/* The pages are about to be written: hash them at the next query, even in
+this frame, and every frame again; the serial changes. */
 void watch_hash_prepare_write(struct watch_hash *watch, uint32_t first, uint32_t last);
 
 /* A new frame: pages may be hashed again, and the serial changes. */

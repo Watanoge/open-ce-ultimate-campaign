@@ -122,7 +122,7 @@ symbols in this file:
 #include <xtl.h>
 #include "custom_edition_cache.h" /* port: port/linux/game/custom_edition_cache.c */
 
-#ifdef HALO_ANDROID
+#if defined(HALO_ANDROID) || defined(HALO_WEB)
 #include "android_ce_texture_cache.h" /* port: port/linux/game/android_ce_texture_cache.c */
 #endif
 
@@ -351,7 +351,7 @@ static unsigned long texture_cache_last_failure_time = 0;
 void texture_cache_delete(
 	void)
 {
-#ifdef HALO_ANDROID
+#if defined(HALO_ANDROID) || defined(HALO_WEB)
 	/* port: release CE heap pixels before their bitmap owners disappear. */
 	android_ce_texture_reset();
 #endif
@@ -372,7 +372,7 @@ void texture_cache_open(
 void texture_cache_idle(
 	void)
 {
-#ifdef HALO_ANDROID
+#if defined(HALO_ANDROID) || defined(HALO_WEB)
 	/* port: release the preceding frame's CE residency locks. */
 	android_ce_texture_idle();
 #endif
@@ -411,7 +411,7 @@ void texture_cache_bitmap_delete(
 {
 	long cache_block_index;
 
-#ifdef HALO_ANDROID
+#if defined(HALO_ANDROID) || defined(HALO_WEB)
 	/* port: independent CE allocations have no Xbox LRU block index. */
 	android_ce_texture_delete(bitmap);
 #endif
@@ -567,7 +567,7 @@ void texture_cache_flush(
 {
 	IDirect3DDevice8_KickPushBuffer(global_d3d_device);
 	IDirect3DDevice8_IsBusy(global_d3d_device);
-#ifdef HALO_ANDROID
+#if defined(HALO_ANDROID) || defined(HALO_WEB)
 	/* port: include CE pixels in map unload, reload and explicit flush. */
 	android_ce_texture_reset();
 #endif
@@ -834,7 +834,7 @@ static boolean texture_cache_bitmap_valid(
 	return valid;
 }
 
-#ifdef HALO_ANDROID
+#if defined(HALO_ANDROID) || defined(HALO_WEB)
 /* port: CE/mod readers fill and convert pixels synchronously before the
  * independent hardware header is published to the renderer. */
 static void texture_cache_read_android_ce(struct bitmap_data *bitmap, void *header)
@@ -896,7 +896,14 @@ static boolean texture_cache_start_loading_bitmap(
 		file, at once (port/linux/game/mod_bitmaps.c) */
 		{
 			extern boolean mod_bitmaps_read(struct bitmap_data *bitmap, void *buffer);
+			extern void memory_watch_prepare_write(void *address, unsigned long size);
 
+			/* port: the pages may hold the bitmap evicted for this one. Where
+			writes are seen by hashing pages (port/web), a page unchanged for
+			long is checked only every second, and the Tag Injector's, the
+			randomizer's and Custom Edition maps' reads copy into it without
+			saying so: its texture was drawn with the old pixels meanwhile */
+			memory_watch_prepare_write(base_address, (unsigned long)size);
 			if (mod_bitmaps_read(bitmap, base_address))
 			{
 				texture->loaded = TRUE;
@@ -1064,7 +1071,7 @@ void *_texture_cache_bitmap_get_hardware_format(
 		"c:\\halo\\SOURCE\\cache\\xbox_texture_cache.c",
 		210,
 		load || !block);
-#ifdef HALO_ANDROID
+#if defined(HALO_ANDROID) || defined(HALO_WEB)
 	/* port: CE's frame working set is not bounded by the Xbox texture arena.
 	 * Keep dynamic textures and Xbox maps on their own paths. */
 	if (custom_edition_cache_tags_loaded() && android_ce_texture_enabled() &&

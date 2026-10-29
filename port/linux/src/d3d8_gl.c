@@ -3268,7 +3268,7 @@ void WINAPI D3DDevice_SetTexture(DWORD stage, D3DBaseTexture *texture)
 		device.textures[stage] = texture;
 }
 
-#ifdef HALO_ANDROID
+#if defined(HALO_ANDROID) || defined(HALO_WEB)
 /* (CE's map pixels are kept outside the Xbox window, android_ce_texture_cache.c: this renderer reads them there) */
 int android_ce_texture_enabled(void)
 {
