@@ -847,6 +847,17 @@ static void texture_cache_read_android_ce(struct bitmap_data *bitmap, void *head
 		cache_file_read(bitmap->tag_index, bitmap->pixels_offset, bitmap->pixels_size,
 			bitmap->base_address, &loaded, TRUE);
 }
+
+/* port: a bitmap of a tag added to an Xbox map, by the Tag Injector's profile
+ * (port/linux/game/tag_injector.c) or copied by the randomizer from another
+ * map (port/linux/game/randomizer.c) */
+static boolean texture_cache_bitmap_added(struct bitmap_data *bitmap)
+{
+	extern boolean tag_injector_tag_injected(long tag_index);
+	extern int randomizer_tag_imported(long tag_index);
+
+	return tag_injector_tag_injected(bitmap->tag_index) || randomizer_tag_imported(bitmap->tag_index);
+}
 #endif
 
 static boolean texture_cache_start_loading_bitmap(
@@ -1073,9 +1084,12 @@ void *_texture_cache_bitmap_get_hardware_format(
 		load || !block);
 #if defined(HALO_ANDROID) || defined(HALO_WEB)
 	/* port: CE's frame working set is not bounded by the Xbox texture arena.
-	 * Keep dynamic textures and Xbox maps on their own paths. */
-	if (custom_edition_cache_tags_loaded() && android_ce_texture_enabled() &&
-		TEST_FLAG(bitmap->flags, _bitmap_cached_bit))
+	 * Keep dynamic textures and Xbox maps on their own paths. So are the
+	 * bitmaps the Tag Injector adds to a map, and those the randomizer copies
+	 * into it from others, which its arena was not made to hold: both are
+	 * read at once (tag_injector_read, randomizer_donor_read) */
+	if (android_ce_texture_enabled() && TEST_FLAG(bitmap->flags, _bitmap_cached_bit) &&
+		(custom_edition_cache_tags_loaded() || texture_cache_bitmap_added(bitmap)))
 	{
 		if (texture_cache_bitmap_valid(bitmap))
 			hardware_format = android_ce_texture_get(bitmap,

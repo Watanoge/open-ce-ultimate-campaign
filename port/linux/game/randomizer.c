@@ -455,6 +455,9 @@ static long grown_count;
 static long import_absolute[IMPORT_MAX];
 static short import_donor[IMPORT_MAX];
 static long import_count;
+/* a bit for each absolute tag index in import_absolute
+(randomizer_tag_imported, asked for every bitmap drawn) */
+static unsigned char import_marked[0x10000 / 8];
 /* how many copied bitmap and sound ranges the pack does not hold, and what
 the reads during play actually returned. The detail lines stop after a few
 dozen so a level does not fill the log */
@@ -2198,6 +2201,13 @@ static void remember_import(long absolute, short donor_index)
 	import_absolute[import_count] = absolute;
 	import_donor[import_count] = donor_index;
 	import_count++;
+	import_marked[(absolute & 0xFFFF) >> 3] |= (unsigned char)(1 << (absolute & 7));
+}
+
+static void imports_forget(void)
+{
+	import_count = 0;
+	memset(import_marked, 0, sizeof(import_marked));
 }
 
 static int variant_in_pool(struct donor *donor, long datum)
@@ -2931,7 +2941,7 @@ static void import_wanted(void)
 		bound_release();
 		held_free();
 		copied_count = 0;
-		import_count = 0;
+		imports_forget();
 		return;
 	}
 	/* a tag wanted from one map and found in another is that map's copy */
@@ -4160,7 +4170,7 @@ void randomizer_tags_unloaded(void)
 	wanted_free();
 	wanted_count = 0;
 	copied_count = 0;
-	import_count = 0;
+	imports_forget();
 	import_stopped = 0;
 	variant_count = 0;
 	pickup_choice.count = 0;
@@ -4255,6 +4265,16 @@ static void log_donor_read(struct donor *donor, long slot, long absolute, long o
 	}
 	if (donor_reads == 1 || donor_misses == 1 || (donor_reads % 200) == 0)
 		error(_error_silent, "randomizer: resource reads %ld, misses %ld", donor_reads, donor_misses);
+}
+
+/* whether a tag is one the randomizer copied from another map, whose bitmap
+pixels randomizer_donor_read reads at once (the texture cache keeps them
+outside the Xbox's: xbox_texture_cache.c) */
+int randomizer_tag_imported(long tag_index)
+{
+	if (import_count <= 0 || tag_index == NONE)
+		return 0;
+	return (import_marked[(tag_index & 0xFFFF) >> 3] >> (tag_index & 7)) & 1;
 }
 
 int randomizer_donor_read(long tag_index, long offset, long size, void *buffer)
