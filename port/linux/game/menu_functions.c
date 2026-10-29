@@ -95,8 +95,10 @@ their handlers open opens.
 /* (the server browser's master servers, and Server Setup's publisher key) */
 #include "../src/master_list.h"
 #include "../src/server_master.h"
+#include "../src/server_json.h"
 #include "text_filter.h"
 
+#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 #include <xtl.h>
@@ -6918,7 +6920,8 @@ static void invite_qr_draw(rectangle2d const *line)
 /* ---------- the main menu's news
 
 The latest release's notes (tools/embed_assets.py's news_text: the newest
-Build N commit's message), in a window the main menu's X opens (the west face
+Build N commit's message), or once they come the build's own release's notes
+from GitHub (news_fetch), in a window the main menu's X opens (the west face
 button: Y on a Switch, Square on a PS5; tools/port_settings.py's
 _news_screen), on the main menu alone. The notes are wrapped to the window's
 lines, measured in the font they are drawn in once one has been drawn
@@ -6955,10 +6958,171 @@ static struct
 	char title[64];
 } news_screen = { { { 0 } }, 0, NONE, 0, NONE, 0, 0, { 0 } };
 
-/* the notes as text */
+/* the build's own release notes, asked of GitHub the first time the window
+opens, on a thread of its own (news_fetch_main): the release named after the
+build's number (build-<number>) of the repository it was made from
+(main_build_identity), whose notes are what its build embeds, but a build
+made where its checkout's history could not be read (a container's) embeds
+none. Shown, once they come, in place of the embedded notes; a local build
+(no number), or no answer, keeps those */
+#define NEWS_FETCH_MAXIMUM (64 * 1024)
+static struct
+{
+	pthread_mutex_t lock;
+	boolean started;
+	/* asked, and answered or not */
+	boolean done;
+	/* the release's notes in ASCII (news_ascii), NULL until they come or if
+	they do not; and whether the window has wrapped them */
+	char *text;
+	boolean wrapped;
+} news_fetch = { PTHREAD_MUTEX_INITIALIZER, FALSE, FALSE, NULL, FALSE };
+
+void main_build_identity(long *number, char *flavor, size_t flavor_size, char *repository, size_t repository_size,
+	char *version, size_t version_size);
+
+/* UTF-8 text as the embedded notes are made (tools/embed_assets.py's
+news_text): its typographic quotes, dashes and the rest as their ASCII,
+any other character '?', no carriage returns, and the trailing lines of
+trailers (Co-Authored-By...) left out; malloc's, NULL without memory */
+static char *news_ascii(char const *text)
+{
+	static struct
+	{
+		unsigned long code;
+		char const *ascii;
+	} const drawn[] = {
+		{ 0x2018, "'" }, { 0x2019, "'" }, { 0x201C, "\"" }, { 0x201D, "\"" }, { 0x2013, "-" }, { 0x2014, "-" },
+		{ 0x2026, "..." }, { 0x00A0, " " }, { 0x2192, "->" }, { 0x00B7, "-" },
+	};
+	size_t length = strlen(text);
+	char *ascii = malloc(length * 3 + 1);
+	char *out = ascii;
+	unsigned char const *in = (unsigned char const *)text;
+
+	if (!ascii)
+		return NULL;
+	while (*in)
+	{
+		unsigned long code = *in;
+		long extra = code >= 0xF0 ? 3 : code >= 0xE0 ? 2 : code >= 0xC0 ? 1 : 0;
+		long index;
+
+		if (code >= 0x80)
+		{
+			code &= extra == 3 ? 0x07 : extra == 2 ? 0x0F : 0x1F;
+			for (in++; extra > 0 && (*in & 0xC0) == 0x80; extra--, in++)
+				code = code << 6 | (*in & 0x3F);
+			for (index = 0; index < (long)NUMBEROF(drawn); index++)
+			{
+				if (drawn[index].code == code)
+					break;
+			}
+			if (index < (long)NUMBEROF(drawn))
+			{
+				strcpy(out, drawn[index].ascii);
+				out += strlen(drawn[index].ascii);
+			}
+			else
+				*out++ = '?';
+			continue;
+		}
+		in++;
+		if (code == '\r')
+			continue;
+		*out++ = (char)(code == '\n' || (code >= ' ' && code < 0x7F) ? code : '?');
+	}
+	*out = 0;
+	/* (the trailers at the end, "Name: value" lines, and the blank lines) */
+	for (;;)
+	{
+		char *last = strrchr(ascii, '\n');
+		char *line = last ? last + 1 : ascii;
+		char *colon = strstr(line, ": ");
+		char const *name;
+
+		for (name = line; name < colon && (isalpha((unsigned char)*name) || *name == '-'); name++)
+			;
+		if (*line && !(colon && name == colon && colon > line))
+			break;
+		if (!last)
+		{
+			*ascii = 0;
+			break;
+		}
+		*last = 0;
+	}
+	return ascii;
+}
+
+static void *news_fetch_main(void *argument)
+{
+	long number;
+	char flavor[32];
+	char repository[128];
+	char version[128];
+	char url[256];
+	char *notes = NULL;
+
+	(void)argument;
+	main_build_identity(&number, flavor, sizeof(flavor), repository, sizeof(repository), version, sizeof(version));
+	if (number > 0 && repository[0])
+	{
+		int status = 0;
+		char *body = NULL;
+		unsigned long size = 0;
+
+		snprintf(url, sizeof(url), "https://api.github.com/repos/%s/releases/tags/build-%ld", repository, number);
+		if (master_list_https_get(url, &status, &body, &size) && status == 200 && size < 4 * 1024 * 1024)
+		{
+			struct server_json_document document;
+
+			if (server_json_parse(&document, body, (int)size, 16))
+			{
+				int token = server_json_member(&document, 0, "body");
+				char *raw = malloc(NEWS_FETCH_MAXIMUM);
+
+				if (token >= 0 && raw && server_json_get_string(&document, token, raw, NEWS_FETCH_MAXIMUM) && raw[0])
+				{
+					/* (the build's commit message alone: the release workflow puts
+					where it came from after it, .github/workflows/build.yml's
+					"Commit: <link>", "Build: <link>" and a line about the builds) */
+					char *after = NULL;
+					char *found;
+
+					for (found = strstr(raw, "\nCommit: https://"); found; found = strstr(found + 1, "\nCommit: https://"))
+						after = found;
+					if (after)
+						*after = 0;
+					notes = news_ascii(raw);
+				}
+				free(raw);
+				server_json_document_free(&document);
+			}
+		}
+		platform_log("news: build %ld's notes from %s: %s (%d)", number, repository,
+			notes ? "shown" : "none, the build's own kept", status);
+		free(body);
+	}
+	pthread_mutex_lock(&news_fetch.lock);
+	news_fetch.text = notes && notes[0] ? notes : NULL;
+	if (notes && !notes[0])
+		free(notes);
+	news_fetch.done = TRUE;
+	pthread_mutex_unlock(&news_fetch.lock);
+	return NULL;
+}
+
+/* the notes as text: the release's, once they have come (news_fetch), else
+the build's own */
 static char const *news_text(void)
 {
-	return (char const *)halo_news_words;
+	char const *text;
+
+	pthread_mutex_lock(&news_fetch.lock);
+	text = news_fetch.text ? news_fetch.text : (char const *)halo_news_words;
+	pthread_mutex_unlock(&news_fetch.lock);
+	return text;
 }
 
 /* whether `count` characters of text fit across a row */
@@ -7001,7 +7165,7 @@ first indented under its text */
 static void news_wrap(void)
 {
 	char const *text = news_text();
-	char const *end = text + halo_news_size;
+	char const *end = text + strlen(text);
 	char const *line_end;
 	boolean first = TRUE;
 
@@ -7077,6 +7241,17 @@ static void news_scroll(long by)
 /* "port news init" */
 static boolean news_initialize(void)
 {
+	/* (the release's notes asked for, the first time: news_fetch) */
+	if (!news_fetch.started)
+	{
+		pthread_t thread;
+
+		news_fetch.started = TRUE;
+		if (pthread_create(&thread, NULL, news_fetch_main, NULL) == 0)
+			pthread_detach(thread);
+		else
+			news_fetch.done = TRUE;
+	}
 	news_screen.first = 0;
 	news_wrap();
 	return TRUE;
@@ -7089,6 +7264,20 @@ static void news_update(struct widget_instance *screen)
 	wchar_t text[NEWS_LINE_LENGTH];
 	long row;
 
+	/* (the release's notes come: wrapped in place of the build's own) */
+	{
+		boolean came;
+
+		pthread_mutex_lock(&news_fetch.lock);
+		came = news_fetch.text && !news_fetch.wrapped;
+		news_fetch.wrapped |= came;
+		pthread_mutex_unlock(&news_fetch.lock);
+		if (came)
+		{
+			news_screen.first = 0;
+			news_screen.wrapped_font = NONE;
+		}
+	}
 	if (news_screen.font != news_screen.wrapped_font || news_screen.width != news_screen.wrapped_width)
 	{
 		news_wrap();
@@ -7133,7 +7322,15 @@ static void news_update(struct widget_instance *screen)
 		visible_set(named(screen, "news_scroll_text", 0), scrolls);
 	}
 	if (!news_screen.count)
-		text_set_length(named(screen, "news_line", 0), L"No news in this build.", NEWS_LINE_LENGTH);
+	{
+		boolean asking;
+
+		pthread_mutex_lock(&news_fetch.lock);
+		asking = news_fetch.started && !news_fetch.done;
+		pthread_mutex_unlock(&news_fetch.lock);
+		text_set_length(named(screen, "news_line", 0), asking ? L"Getting the news..." : L"No news in this build.",
+			NEWS_LINE_LENGTH);
+	}
 }
 
 /* "port news close" (B, Back, X): back to the main menu */

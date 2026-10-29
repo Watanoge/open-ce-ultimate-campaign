@@ -29,6 +29,12 @@ enum
 	_master_listings_brokers,
 };
 
+/* an HTTPS GET, the way this platform asks the masters (the host's, the
+desktop's or the browser's): 1 with the answer's status and its body (size
+bytes, not always NUL ended; the caller frees it), 0 when no answer came (the main menu's news,
+menu_functions.c, asks GitHub for the build's release notes so) */
+int master_list_https_get(const char *url, int *status, char **body, unsigned long *size);
+
 /* the masters of a masters.txt (the setting's file: beside config.toml
 unless a full path, else beside the executable): their URLs and Ed25519
 keys, up to maximum; how many (none: no file, or one with no master) */

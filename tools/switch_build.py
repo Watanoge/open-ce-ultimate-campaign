@@ -527,6 +527,10 @@ def generate_switch_build(n: Writer, sln: Any) -> None:
     objects: List[Path] = []
     for source in game_sources(config):
         cflags = game_cflags
+        # (the build's number and repository, as Android's: main_build_identity,
+        # which the main menu's news asks GitHub for this release's notes by)
+        if source.as_posix() == "source/main/main.c":
+            cflags += " " + updater_defines(getattr(sln, "port_release", False))
         if source.as_posix() in VARIADIC_PROTOTYPE_FILES:
             cflags += f" -include {ANDROID_PORT_DIR}/include/halo_android_variadic_prototypes.h"
         objects.append(guest_object(source, cflags))

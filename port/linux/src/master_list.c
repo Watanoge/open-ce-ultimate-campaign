@@ -507,6 +507,19 @@ static int fetch(const char *url, struct fetched *fetched)
 }
 #endif
 
+int master_list_https_get(const char *url, int *status, char **body, unsigned long *size)
+{
+	struct fetched fetched;
+
+	memset(&fetched, 0, sizeof(fetched));
+	if (!fetch(url, &fetched) || !fetched.body)
+		return 0;
+	*status = fetched.status;
+	*body = fetched.body;
+	*size = fetched.size;
+	return 1;
+}
+
 /* the masters to ask (the list thread's): masters.txt's; else, in the web
 build, its site's masters.json (the page's list of them, which its Servers
 panel reads too); else the official ones */
