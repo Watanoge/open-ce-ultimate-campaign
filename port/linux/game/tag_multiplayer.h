@@ -184,6 +184,13 @@ void tag_multiplayer_level_loaded(
 void tag_multiplayer_level_unloaded(
 	void);
 
+/* the weapons the level's share added (its definitions, at most maximum),
+on every machine of the game alike: Tag Gun Game's (gun_game.c); 0 for a
+level without a share */
+short tag_multiplayer_level_weapons(
+	long *definitions,
+	short maximum);
+
 /* game_engine.c's (the host's): the item a netgame equipment spawns, as
 the multiplayer profile swaps the map's weapons; and a player's loadout
 given (TRUE), or left to the gametype (FALSE) */

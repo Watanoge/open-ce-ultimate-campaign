@@ -89,6 +89,7 @@ void platform_log(char const *format, ...);
 #include "tag_multiplayer.h"
 #include "tag_campaign.h"
 #include "firing_range.h"
+#include "game_modes.h"
 #include "../src/port_tag_profiles.h"
 
 #include <xtl.h>
@@ -424,6 +425,9 @@ skulls.pack's of the map the skulls are copied from (randomizer_pack.c) */
 struct pack
 {
 	char const *file_name;
+	/* what it holds (the version word's upper half: randomizer.h's
+	GAME_MODES_PACK_CONTENT); another's is not read */
+	unsigned long content;
 	HANDLE file;
 	struct pack_entry entries[DONOR_COUNT];
 	int entry_count;
@@ -433,6 +437,7 @@ struct pack
 
 static struct pack randomizer_pack = { "randomizer.pack" };
 static struct pack skulls_pack = { "skulls.pack" };
+static struct pack game_modes_pack = { "gamemodes.pack", GAME_MODES_PACK_CONTENT };
 static struct wanted *wanted;
 static long wanted_count;
 static struct copied_tag copied[IMPORT_MAX];
@@ -1753,7 +1758,7 @@ static int pack_matches_maps(struct pack *pack)
 	return 1;
 }
 
-/* a pack: 'rpak', version 1, then one 32-byte record per map (8-byte name,
+/* a pack: 'rpak', version 1 (and in the upper half, what it holds), then one 32-byte record per map (8-byte name,
 file length, tag offset, tag size, where the tag bytes are, how many
 resource spans, where that table is) */
 static int pack_load(struct pack *pack, char const *path)
@@ -1773,7 +1778,8 @@ static int pack_load(struct pack *pack, char const *path)
 		return 0;
 	}
 	if (!pack_read_u32(pack, 0, &magic) || !pack_read_u32(pack, 4, &version) || !pack_read_u32(pack, 8, &count) ||
-		magic != 'rpak' || version != 1 || count > (unsigned long)DONOR_COUNT)
+		magic != 'rpak' || version != (PACK_FORMAT_VERSION | (pack->content << 16)) ||
+		count > (unsigned long)DONOR_COUNT)
 	{
 		error(_error_silent, "randomizer: %s is not a randomizer pack", path);
 		pack_close(pack);
@@ -2192,6 +2198,7 @@ static void donors_close(void)
 	donor_extra_bytes = 0;
 	pack_close(&randomizer_pack);
 	pack_close(&skulls_pack);
+	pack_close(&game_modes_pack);
 }
 
 static void remember_import(long absolute, short donor_index)
@@ -3533,7 +3540,7 @@ struct skull_root
 	char const *name;
 };
 
-static void gather_skull_roots(char const *leaf, struct skull_root const *roots, short count)
+static void gather_skull_roots(char const *leaf, struct skull_root const *roots, short count, struct pack *pack)
 {
 	struct donor *donor = donors + donor_count;
 	short root;
@@ -3545,7 +3552,7 @@ static void gather_skull_roots(char const *leaf, struct skull_root const *roots,
 	if (!missing || donor_count >= DONOR_COUNT)
 		return;
 	error(_error_silent, "randomizer: reading %d skull tags from %s.map", missing, leaf);
-	if (!open_donor(donor, leaf, &skulls_pack))
+	if (!open_donor(donor, leaf, pack))
 	{
 		close_donor_bytes(donor);
 		return;
@@ -3601,7 +3608,7 @@ static void gather_skulls(int carried, int outbreak, int scarab)
 		roots[count++].name = SKULLS_SCARAB_ROCKET_TAG;
 	}
 	if (count)
-		gather_skull_roots(SKULL_DONOR, roots, count);
+		gather_skull_roots(SKULL_DONOR, roots, count, &skulls_pack);
 	count = 0;
 	if (outbreak)
 	{
@@ -3614,7 +3621,39 @@ static void gather_skulls(int carried, int outbreak, int scarab)
 		roots[count++].name = SKULLS_SCARAB_FUEL_ROD_TAG;
 	}
 	if (count)
-		gather_skull_roots(SKULLS_FLOOD_DONOR, roots, count);
+		gather_skull_roots(SKULLS_FLOOD_DONOR, roots, count, &skulls_pack);
+}
+
+/* this fork's multiplayer modes': Floodfection's burst (infection.c),
+Two Betrayals' carrier's, and its zombies' Flood forms' models and
+animations (floodfection_forms.c), copied from gamemodes.pack (randomizer_pack.c),
+else from c40 itself. Every machine of the game copies it alike, as the
+game's mode says, before a shared profile's tags */
+static int game_modes_wanted(void)
+{
+	struct network_game *game = network_game_get_game();
+
+	return game && game_modes_variant_mode_variant(&game->variant, &game->variant_options) ==
+		_game_mode_variant_floodfection;
+}
+
+static void gather_game_modes(void)
+{
+	static struct skull_root const roots[] =
+	{
+		{ 'effe', SKULLS_OUTBREAK_BURST_TAG },
+		/* (its bits where a zombie dies: infection.c) */
+		{ 'effe', "effects\\flood bit limb explode" },
+		{ 'effe', "effects\\flood bit h-head explode" },
+		{ 'effe', "effects\\flood bit skin explode" },
+		/* (its zombies' forms: floodfection_forms.c) */
+		{ 'mode', "characters\\floodcombat_human\\floodcombat_human" },
+		{ 'antr', "characters\\floodcombat_human\\floodcombat_human" },
+		{ 'mode', "characters\\floodcombat elite\\floodcombat elite" },
+		{ 'antr', "characters\\floodcombat elite\\floodcombat elite" },
+	};
+
+	gather_skull_roots(SKULLS_FLOOD_DONOR, roots, (short)NUMBEROF(roots), &game_modes_pack);
 }
 
 /* the Tag Injector's: the stock weapon HUDs its profile's weapons are drawn
@@ -3938,8 +3977,10 @@ static void multiplayer_tags_loaded(char const *scenario_name, long profile, int
 	custom_profile = profile;
 	snprintf(map_name_leaf, sizeof(map_name_leaf), "%s", tag_name_strip_path(scenario_name));
 	stock_hud_count = tag_injector_tags_read(custom_profile, stock_huds, STOCK_HUD_MAX);
-	if (stock_hud_count && gather_begin())
+	if ((stock_hud_count || (multiplayer && game_modes_wanted())) && gather_begin())
 	{
+		if (multiplayer && game_modes_wanted())
+			gather_game_modes();
 		gather_stock_huds(map_name_leaf);
 		import_wanted();
 	}
@@ -4009,10 +4050,20 @@ void randomizer_tags_loaded(char const *scenario_name)
 			return;
 		}
 	}
-	if (!campaign_leaf(scenario_name, leaf, sizeof(leaf)))
+	/* (a multiplayer game's mode's: Floodfection's burst) */
+	if (!campaign_leaf(scenario_name, leaf, sizeof(leaf)) ||
+		(game && game->variant.game_engine_index != game_engine_none))
+	{
+		if (game_modes_wanted() && gather_begin())
+		{
+			snprintf(map_name_leaf, sizeof(map_name_leaf), "%s", tag_name_strip_path(scenario_name));
+			gather_game_modes();
+			import_wanted();
+			wanted_free();
+			error(_error_silent, "game modes: %s's tags copied in", map_name_leaf);
+		}
 		return;
-	if (game && game->variant.game_engine_index != game_engine_none)
-		return;
+	}
 	/* (a campaign profile, played alone as the Tag Injector's profiles are:
 	tag_campaign.c swaps the level's weapons and actors in the randomizer's
 	place; or a co-op game's, the host's share on every machine, which the

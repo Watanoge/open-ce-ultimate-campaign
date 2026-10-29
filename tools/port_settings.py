@@ -1795,16 +1795,18 @@ SHIELD_EFFECTS_HELP = [
 # OpenCE's gametypes' options (port/linux/game/game_modes.c), a screen of the
 # gametype editor's (menu_functions.c's "mp profile init opence options"): the
 # mode and Hardcore, then the mode's own rows, which menu_functions.c's
-# gametype_option_help shows (op_inf_ for Infection, op_gg_ for Gun Game)
-# below them; a row's values are menu_functions.c's gametype_options'
+# gametype_option_help shows (op_inf_ for Infection and Floodfection, op_gg_
+# for Gun Game and Tag Gun Game) below them; a row's values are menu_functions.c's gametype_options'
 PLAYLIST_EDIT = "main_menu/settings_select/multiplayer_setup/playlist_edit"
 OPENCE_EDIT = "main_menu/settings_select/multiplayer_setup/opence_options_edit"
 OPENCE_ROWS = [
-    ("oce_mode", "MODE:", ["NONE", "SWAT", "INFECTION", "GUN GAME"], [
+    ("oce_mode", "MODE:", ["NONE", "SWAT", "INFECTION", "GUN GAME", "FLOODFECTION", "TAG GUN GAME"], [
         "The game type's own rules.",
         "No shields, and a shot to the head kills. Slayer only.",
         "Humans killed join the zombies, who win when\\nno human is left. Team Slayer only.",
-        "Each kill gives the next weapon; a kill with the\\nlast wins. Free for all Slayer only."]),
+        "Each kill gives the next weapon; a kill with the\\nlast wins. Free for all Slayer only.",
+        "Infection with green zombies, every map under\\nthe Flood's fog. Team Slayer only.",
+        "Gun Game with weapons drawn each game, a Tag\\nInjector profile's too. Free for all Slayer only."]),
     ("oce_hardcore", "HARDCORE:", ["OFF", "ON"], [
         "The motion sensor and aim assist as the game\\ntype has them.",
         "No motion sensor, no aim assist, and a kill\\nrestores the killer's health and shields."]),
@@ -1887,8 +1889,9 @@ STRING_OVERRIDES.update({
         "Play the campaign with a\\nfriend in split screen:\\nplayer 2 on a gamepad.",
         "Set all the attributes for your \\nmultiplayer gametypes and\\nkeep them for future use.",
     ],
-    # (and the port's OPENCE: OpenCE's gametypes, port/linux/game/game_modes.c)
-    "main_menu/gametype_select/var_gametype_banks": ["STANDARD", "OPENCE", "CUSTOM"],
+    # (and the port's OPENCE: OpenCE's gametypes, port/linux/game/game_modes.c;
+    # and TAG INJECTION: this fork's takes on them, Floodfection and Tag Gun Game)
+    "main_menu/gametype_select/var_gametype_banks": ["STANDARD", "OPENCE", "CUSTOM", "TAG INJECTION"],
     # (the PC's weapon sets, then the Xbox's NO GRENADES: menu_functions.c's
     # gametype_options maps them to the engine's)
     "main_menu/settings_select/multiplayer_setup/item_options_edit/item_options_labels": ["INFINITE GRENADES:", "WEAPON SET:", "VEHICLE SET:", "STARTING EQUIPMENT:",
@@ -1936,7 +1939,7 @@ OVERRIDE_ORIGINALS = {
     f"{PE}/profile_edit_descriptions": [0, None, None, None, None, None, None, 7, None],
     f"{MT}/multiplayer_options": [0, 1, 2, 3, None, 5, None, None, None],
     f"{MT}/multiplayer_option_descriptions": [0, 1, None, None, 4, None, None, 5],
-    "main_menu/gametype_select/var_gametype_banks": [0, None, 2],
+    "main_menu/gametype_select/var_gametype_banks": [0, None, 2, None],
     "main_menu/settings_select/multiplayer_setup/item_options_edit/item_options_labels": [0, 1, 2, 3, 4] + [None] * 4,
     # (the first's note that infinite grenades work only with 4 players or
     # fewer is left out: not so here)

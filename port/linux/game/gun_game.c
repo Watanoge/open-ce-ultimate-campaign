@@ -16,13 +16,26 @@ each game. Only the host gives weapons: a player's weapons go to every
 machine with their inventory (network_objects.c). No one picks up a
 weapon; a weapon emptied is replaced with a full one; and a melee kill can
 take the victim back a weapon (gun_game_melee_demotes).
+
+Tag Gun Game (the options' mode_variant) is Gun Game with its list drawn by
+the host for each game, whatever the order: the map's loadout weapons and,
+in a game playing the Tag Injector's multiplayer profile
+(tag_multiplayer.c), the weapons its share added to the level, which every
+machine of the game has. Every machine counts the list alike (the score to
+win); only the host's order matters, as only the host gives weapons. A build
+without it plays Gun Game, with a list as long but for the profile's
+weapons, which only a build with the mod can join a game of. A Tag Gun Game
+with none of them (no multiplayer profile played, or none of its weapons on
+the map) says so on each player's HUD once they have spawned.
 */
 
 #include "cseries.h"
+#include "cseries/errors.h"
 #include "game/game.h"
 #include "game/game_engine.h"
 #include "game/game_engine_slayer.h"
 #include "game/players.h"
+#include "interface/hud_messaging.h"
 #include "items/weapons.h"
 #include "items/weapon_definitions.h"
 #include "networking/network_game_globals.h"
@@ -30,6 +43,7 @@ take the victim back a weapon (gun_game_melee_demotes).
 #include "units/units.h"
 #include "game_modes.h"
 #include "gun_game.h"
+#include "tag_multiplayer.h"
 
 static byte const gun_game_strongest_first[] =
 {
@@ -43,14 +57,18 @@ static byte const gun_game_strongest_first[] =
 	_loadout_weapon_pistol,
 };
 
-#define GUN_GAME_MAXIMUM_LEVELS NUMBEROF(gun_game_strongest_first)
+/* the map's loadout weapons and a multiplayer profile's (Tag Gun Game) */
+#define GUN_GAME_MAXIMUM_LEVELS 64
+/* a Tag Gun Game without the profile's weapons: said this long after every
+local player has spawned */
+#define GUN_GAME_NOTICE_TICKS (2 * 30)
 
 static struct
 {
 	struct game_engine engine;
 	struct game_engine slayer;
-	/* the map's list, its weapons as _loadout_weapon_* */
-	byte levels[GUN_GAME_MAXIMUM_LEVELS];
+	/* the map's list, its weapons' definitions */
+	long levels[GUN_GAME_MAXIMUM_LEVELS];
 	short level_count;
 	/* the host's: each player's unit given a level's weapon, and that level
 	(by absolute player index) */
@@ -58,6 +76,10 @@ static struct
 	short equipped_level[HALO_PORT_MAXIMUM_NETWORK_PLAYERS];
 	/* a weapon being given (gun_game_allow_pick_up allows it) */
 	boolean equipping;
+	/* a Tag Gun Game playing the map's weapons alone, not said yet, and the
+	ticks counted since every local player spawned */
+	boolean notice;
+	short notice_ticks;
 } gun_game;
 
 short gun_game_level_count(
@@ -66,10 +88,10 @@ short gun_game_level_count(
 	return gun_game.level_count;
 }
 
-byte gun_game_level_weapon(
+long gun_game_level_weapon(
 	short level)
 {
-	return VALID_INDEX(level, gun_game.level_count) ? gun_game.levels[level] : _loadout_weapon_none;
+	return VALID_INDEX(level, gun_game.level_count) ? gun_game.levels[level] : NONE;
 }
 
 /* a player's level: their score, within the list */
@@ -166,6 +188,7 @@ static void gun_game_equip(
 	if (!unit || TEST_FLAG(unit->object.damage_flags, _object_dead_bit))
 		return;
 	level = gun_game_player_level(player_index);
+	definition_index = gun_game.levels[level];
 	if (gun_game.equipped_unit[slot] == player->unit_index && gun_game.equipped_level[slot] == level)
 	{
 		long current = VALID_INDEX(unit->unit.current_weapon_index, MAXIMUM_WEAPONS_PER_UNIT) ?
@@ -177,7 +200,6 @@ static void gun_game_equip(
 	/* (no weapon in the hand: a grenade being thrown has it, so wait) */
 	if (unit->unit.grenade_throw_state != _unit_grenade_throw_idle)
 		return;
-	definition_index = game_engine_loadout_weapon_definition(gun_game.levels[level]);
 	if (definition_index == NONE)
 		return;
 	gun_game.equipping = TRUE;
@@ -204,21 +226,50 @@ void gun_game_postspawn(
 	gun_game_equip(player_index);
 }
 
-/* the map's list, in the gametype's order */
-static void gun_game_levels_build(
-	void)
+/* a weapon added to the list, once */
+static void gun_game_level_add(
+	long definition_index)
 {
-	short order = game_variant_options_get()->gun_game_order;
+	short level;
+
+	if (definition_index == NONE || gun_game.level_count >= GUN_GAME_MAXIMUM_LEVELS)
+		return;
+	for (level = 0; level < gun_game.level_count; level++)
+	{
+		if (gun_game.levels[level] == definition_index)
+			return;
+	}
+	gun_game.levels[gun_game.level_count++] = definition_index;
+}
+
+/* the map's list, in the gametype's order (Tag Gun Game's with the
+multiplayer profile's weapons, drawn) */
+static void gun_game_levels_build(
+	boolean tag_gun_game)
+{
+	short order = tag_gun_game ? _gun_game_order_random : game_variant_options_get()->gun_game_order;
+	short count = (short)NUMBEROF(gun_game_strongest_first);
 	short index;
 
 	gun_game.level_count = 0;
-	for (index = 0; index < (short)GUN_GAME_MAXIMUM_LEVELS; index++)
+	gun_game.notice = FALSE;
+	for (index = 0; index < count; index++)
 	{
-		byte weapon = gun_game_strongest_first[order == _gun_game_order_weakest_first ?
-			GUN_GAME_MAXIMUM_LEVELS - 1 - index : index];
+		gun_game_level_add(game_engine_loadout_weapon_definition(gun_game_strongest_first[
+			order == _gun_game_order_weakest_first ? count - 1 - index : index]));
+	}
+	if (tag_gun_game)
+	{
+		long shared[GUN_GAME_MAXIMUM_LEVELS];
+		short shared_count = tag_multiplayer_level_weapons(shared, GUN_GAME_MAXIMUM_LEVELS);
 
-		if (game_engine_loadout_weapon_definition(weapon) != NONE)
-			gun_game.levels[gun_game.level_count++] = weapon;
+		for (index = 0; index < shared_count; index++)
+			gun_game_level_add(shared[index]);
+		gun_game.notice = !shared_count;
+		gun_game.notice_ticks = 0;
+		if (!shared_count)
+			error(_error_silent, "gun game: Tag Gun Game without Tag Injector weapons, the map's %d alone",
+				(int)gun_game.level_count);
 	}
 	/* (the host's draw: only the host gives weapons) */
 	if (order == _gun_game_order_random && !network_game_distributed_client())
@@ -226,7 +277,7 @@ static void gun_game_levels_build(
 		for (index = gun_game.level_count - 1; index > 0; index--)
 		{
 			short other = (short)local_random_range(0, index + 1);
-			byte weapon = gun_game.levels[index];
+			long weapon = gun_game.levels[index];
 
 			gun_game.levels[index] = gun_game.levels[other];
 			gun_game.levels[other] = weapon;
@@ -237,7 +288,7 @@ static void gun_game_levels_build(
 static boolean gun_game_initialize_for_new_map(
 	void)
 {
-	gun_game_levels_build();
+	gun_game_levels_build(game_modes_mode_variant() == _game_mode_variant_tag_gun_game);
 	csmemset(gun_game.equipped_unit, 0xFF, sizeof(gun_game.equipped_unit));
 	csmemset(gun_game.equipped_level, 0xFF, sizeof(gun_game.equipped_level));
 	gun_game.equipping = FALSE;
@@ -254,6 +305,34 @@ static void gun_game_player_update_each_tick(
 	if (gun_game.slayer.player_update_each_tick)
 		gun_game.slayer.player_update_each_tick(player_index);
 	gun_game_equip(player_index);
+}
+
+/* the HUD's line of a Tag Gun Game without the profile's weapons */
+static void gun_game_update(
+	void)
+{
+	short local_player_index;
+
+	if (gun_game.slayer.update)
+		gun_game.slayer.update();
+	if (!gun_game.notice)
+		return;
+	for (local_player_index = 0; local_player_index < local_player_count(); local_player_index++)
+	{
+		long player_index = local_player_get_player_index(local_player_index);
+
+		if (player_index == NONE || player_get(player_index)->unit_index == NONE)
+			return;
+	}
+	if (++gun_game.notice_ticks < GUN_GAME_NOTICE_TICKS)
+		return;
+	for (local_player_index = 0; local_player_index < local_player_count(); local_player_index++)
+	{
+		/* (the newest message is shown on top: the last line first) */
+		hud_print_message(local_player_index, L"The map's weapons alone are played");
+		hud_print_message(local_player_index, L"Tag Gun Game: no Tag Injector weapons in this game");
+	}
+	gun_game.notice = FALSE;
 }
 
 /* only the weapons given (and a weapon held, which readying it asks of) */
@@ -302,6 +381,7 @@ struct game_engine *gun_game_engine_get(
 	gun_game.engine = *slayer;
 	gun_game.engine.initialize_for_new_map = gun_game_initialize_for_new_map;
 	gun_game.engine.player_update_each_tick = gun_game_player_update_each_tick;
+	gun_game.engine.update = gun_game_update;
 	gun_game.engine.allow_pick_up = gun_game_allow_pick_up;
 	gun_game.engine.player_killed_player = gun_game_player_killed_player;
 	return &gun_game.engine;

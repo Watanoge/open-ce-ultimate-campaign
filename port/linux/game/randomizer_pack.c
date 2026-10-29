@@ -29,6 +29,15 @@ seconds, written the same way once game.skulls is on with the skulls
 unlocked by playing, or their question not answered yet. At start-up both
 are written too with game.daily_challenge on, as its levels have both. A record names a map in seven letters, which
 Blood Gulch's name is too long for; Wizard's oddball is the same.
+
+maps/gamemodes.pack is the same file again for this fork's multiplayer
+modes: Two Betrayals' (c40) Flood carrier's burst, which Floodfection plays
+where a human turns or a zombie dies (infection.c), keeping the pixels and
+samples of the Flood's and the effects'. It is written at start-up once,
+whatever is set, as a game of one may be joined at any time; not when c40
+is not there. Its version word says what it holds, after the format's
+(randomizer.h's GAME_MODES_PACK_CONTENT): one of an older build is written
+again at start-up.
 */
 
 #include <stdio.h>
@@ -129,6 +138,9 @@ struct pack_kind
 	int (*keep)(unsigned long group, char const *name);
 	long minimum_bitmaps;
 	long minimum_sounds;
+	/* what it holds (randomizer.h's GAME_MODES_PACK_CONTENT), in its version
+	word's upper half */
+	unsigned long content;
 	wchar_t const *notice;
 	wchar_t const *building;
 	wchar_t const *ready;
@@ -893,7 +905,7 @@ static int pack_finish(struct pack_record const *records, int count)
 
 	memset(directory, 0, sizeof(directory));
 	write_u32(directory, 'rpak');
-	write_u32(directory + 4, 1);
+	write_u32(directory + 4, PACK_FORMAT_VERSION | (build.kind->content << 16));
 	write_u32(directory + 8, (unsigned long)count);
 	for (index = 0; index < count; index++)
 	{
@@ -1031,7 +1043,7 @@ static int skull_keep_bytes(unsigned long group, char const *name)
 
 static struct pack_kind const randomizer_kind =
 {
-	"randomizer.pack", campaign_map_count, campaign_map, randomizer_keep_bytes, 20, 20,
+	"randomizer.pack", campaign_map_count, campaign_map, randomizer_keep_bytes, 20, 20, 0,
 	L"The randomizer needs to build\r\nits data from the campaign maps:\r\n"
 	L"a few minutes and about 500 MB,\r\nonce. It starts when this closes.",
 	L"Building the randomizer's data\r\nfrom the campaign maps: ",
@@ -1042,11 +1054,46 @@ static struct pack_kind const randomizer_kind =
 
 static struct pack_kind const skulls_kind =
 {
-	"skulls.pack", skull_map_count, skull_map, skull_keep_bytes, 1, 0,
+	"skulls.pack", skull_map_count, skull_map, skull_keep_bytes, 1, 0, 0,
 	L"The skulls need some data\r\nfrom other maps.\r\nIt takes a moment.",
 	L"Building skull data:\r\n",
 	L"The skull data is ready.",
 	L"The skull data could not\r\nbe built. Is the card full?",
+};
+
+/* (this fork's multiplayer modes': Floodfection's burst, Two Betrayals') */
+static int game_modes_map_count(void)
+{
+	return 1;
+}
+
+static char const *game_modes_map(int index)
+{
+	(void)index;
+	return SKULLS_FLOOD_DONOR;
+}
+
+/* the Flood's pixels and samples, and the effects' (the burst's particles
+and their bitmaps) */
+static int game_modes_keep_bytes(unsigned long group, char const *name)
+{
+	char lower[256];
+	int index;
+
+	(void)group;
+	for (index = 0; name[index] && index + 1 < (int)sizeof(lower); index++)
+		lower[index] = (char)tolower((unsigned char)name[index]);
+	lower[index] = 0;
+	return strstr(lower, "flood") != NULL || !strncmp(lower, "effects\\", 8);
+}
+
+static struct pack_kind const game_modes_kind =
+{
+	"gamemodes.pack", game_modes_map_count, game_modes_map, game_modes_keep_bytes, 1, 0, GAME_MODES_PACK_CONTENT,
+	L"The multiplayer game modes need\r\nsome data from other maps.\r\nIt takes a moment.",
+	L"Building game mode data:\r\n",
+	L"The game mode data is ready.",
+	L"The game mode data could not\r\nbe built. Is the card full?",
 };
 
 int randomizer_pack_build(void)
@@ -1073,7 +1120,8 @@ static int pack_ready(struct pack_kind const *kind)
 	file = CreateFileA(path, GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
 	if (file == INVALID_HANDLE_VALUE)
 		return 0;
-	ready = file_read(file, head, sizeof(head)) && read_u32(head) == 'rpak' && read_u32(head + 4) == 1;
+	ready = file_read(file, head, sizeof(head)) && read_u32(head) == 'rpak' &&
+		read_u32(head + 4) == (PACK_FORMAT_VERSION | (kind->content << 16));
 	count = ready ? read_u32(head + 8) : 0;
 	if (!count || count > PACK_MAPS)
 		ready = 0;
@@ -1128,7 +1176,7 @@ enum
 static int pack_step;
 /* the pack being written, and those asked for after it, in turn */
 static struct pack_kind const *pack_current;
-static struct pack_kind const *pack_queue[2];
+static struct pack_kind const *pack_queue[3];
 static int pack_queued;
 
 static void pack_request(struct pack_kind const *kind)
@@ -1174,6 +1222,11 @@ void skulls_pack_request(void)
 	pack_request(&skulls_kind);
 }
 
+int game_modes_pack_ready(void)
+{
+	return pack_ready(&game_modes_kind);
+}
+
 void randomizer_pack_update(boolean main_menu)
 {
 	static int checked;
@@ -1193,6 +1246,13 @@ void randomizer_pack_update(boolean main_menu)
 			randomizer_pack_request();
 		if (daily || skulls_pack_wanted())
 			skulls_pack_request();
+		/* (Floodfection's burst: any multiplayer game may be one) */
+		{
+			long file_length, tag_offset, tag_size;
+
+			if (randomizer_pack_map_header(SKULLS_FLOOD_DONOR, &file_length, &tag_offset, &tag_size, NULL))
+				pack_request(&game_modes_kind);
+		}
 	}
 	switch (pack_step)
 	{

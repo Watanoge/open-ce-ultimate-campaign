@@ -1596,7 +1596,12 @@ static void effect_generate_part(
 	/* port: skull: Outbreak's burst, a raised Flood's, its particles alone:
 	no damage, no sound (port/linux/game/skulls_outbreak.c) */
 	if ((skulls_effect_quiet && part_definition->runtime_base_class_tag == SOUND_DEFINITION_TAG) ||
-		(skulls_effect_harmless && part_definition->runtime_base_class_tag == DAMAGE_EFFECT_DEFINITION_TAG))
+		(skulls_effect_harmless && part_definition->runtime_base_class_tag == DAMAGE_EFFECT_DEFINITION_TAG) ||
+		/* port: and Floodfection's, no objects but garbage (its bits), which
+		each machine keeps for itself: a multiplayer game's clients would not
+		have the others (port/linux/game/infection.c) */
+		(skulls_effect_no_objects && part_definition->runtime_base_class_tag == OBJECT_DEFINITION_TAG &&
+			part_definition->reference.group_tag != 'garb'))
 	{
 		return;
 	}
