@@ -521,16 +521,31 @@ the rest of the game. The lobby and Server Setup name the gametype's mode.
 
 This fork adds two takes on them (the options' `mode_variant`, from their
 reserved bytes, which builds without it zero and so play the mode itself):
-**Floodfection**, Infection whose zombies are green, whose humans each wear
+**Floodfection**, Infection whose round starts with a tenth of the players
+as zombies (rounded up, so 11 players start 2; the gametype's own count if
+more; always leaving a human), whose zombies are green, have no shields,
+150% speed and 150% health whatever the gametype says, are not killed
+outright by headshots (a multiplayer headshot's damage instead), bleed the
+Flood's green (each projectile's Flood combat form impact, visual only:
+`projectiles.c`) and burst into the Flood's bits as they die (garbage, each
+machine's own), and are drawn as Flood combat forms, a human's
+or an elite's for each body (the same on every machine), animated by what
+their Spartan does, though their own player still sees the Spartan's arms
+and the skull in first person; their bodies vanish as they die. Only the
+drawing changes (`floodfection_forms.c`, hooked in `render_objects.c`): hit
+boxes and physics stay the Spartan's. Its humans each wear
 their own colour as in free for all, and whose every map is under a green
 fog that hides the sky past some 55 world units, 16 under a roof (a cluster
 with no sky), blended walking through a door (drawn by each machine of the
 fork: `infection.c`'s `infection_fog`, called by `render.c`). Where a human
 turns or a zombie dies, each machine plays a Flood carrier's burst
-(particles, decals and sound, no damage or objects), Two Betrayals'
-(`c40.map`), copied into the level as it loads from `maps/gamemodes.pack`,
-which the main menu writes once at start-up when `c40.map` is there (else
-from the map, more slowly);
+(particles, decals and sound, no damage or objects). The burst and the
+forms' models and animations are Two Betrayals' (`c40.map`), copied into
+the level as it loads from `maps/gamemodes.pack`,
+which the main menu writes once at start-up when `c40.map` is there, and
+again whenever a build changes what it holds (its header's version word
+carries that, `GAME_MODES_PACK_CONTENT` in `randomizer.h`; a stale one is
+not read), else from the map, more slowly;
 and **Tag Gun Game**, Gun Game whose weapons the host draws for each game
 from the map's and, in a game playing a Tag Injector multiplayer profile
 (the TAG PROFILE screen), the weapons its share added

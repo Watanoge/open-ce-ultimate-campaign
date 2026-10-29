@@ -35,7 +35,9 @@ modes: Two Betrayals' (c40) Flood carrier's burst, which Floodfection plays
 where a human turns or a zombie dies (infection.c), keeping the pixels and
 samples of the Flood's and the effects'. It is written at start-up once,
 whatever is set, as a game of one may be joined at any time; not when c40
-is not there.
+is not there. Its version word says what it holds, after the format's
+(randomizer.h's GAME_MODES_PACK_CONTENT): one of an older build is written
+again at start-up.
 */
 
 #include <stdio.h>
@@ -136,6 +138,9 @@ struct pack_kind
 	int (*keep)(unsigned long group, char const *name);
 	long minimum_bitmaps;
 	long minimum_sounds;
+	/* what it holds (randomizer.h's GAME_MODES_PACK_CONTENT), in its version
+	word's upper half */
+	unsigned long content;
 	wchar_t const *notice;
 	wchar_t const *building;
 	wchar_t const *ready;
@@ -900,7 +905,7 @@ static int pack_finish(struct pack_record const *records, int count)
 
 	memset(directory, 0, sizeof(directory));
 	write_u32(directory, 'rpak');
-	write_u32(directory + 4, 1);
+	write_u32(directory + 4, PACK_FORMAT_VERSION | (build.kind->content << 16));
 	write_u32(directory + 8, (unsigned long)count);
 	for (index = 0; index < count; index++)
 	{
@@ -1038,7 +1043,7 @@ static int skull_keep_bytes(unsigned long group, char const *name)
 
 static struct pack_kind const randomizer_kind =
 {
-	"randomizer.pack", campaign_map_count, campaign_map, randomizer_keep_bytes, 20, 20,
+	"randomizer.pack", campaign_map_count, campaign_map, randomizer_keep_bytes, 20, 20, 0,
 	L"The randomizer needs to build\r\nits data from the campaign maps:\r\n"
 	L"a few minutes and about 500 MB,\r\nonce. It starts when this closes.",
 	L"Building the randomizer's data\r\nfrom the campaign maps: ",
@@ -1049,7 +1054,7 @@ static struct pack_kind const randomizer_kind =
 
 static struct pack_kind const skulls_kind =
 {
-	"skulls.pack", skull_map_count, skull_map, skull_keep_bytes, 1, 0,
+	"skulls.pack", skull_map_count, skull_map, skull_keep_bytes, 1, 0, 0,
 	L"The skulls need some data\r\nfrom other maps.\r\nIt takes a moment.",
 	L"Building skull data:\r\n",
 	L"The skull data is ready.",
@@ -1084,7 +1089,7 @@ static int game_modes_keep_bytes(unsigned long group, char const *name)
 
 static struct pack_kind const game_modes_kind =
 {
-	"gamemodes.pack", game_modes_map_count, game_modes_map, game_modes_keep_bytes, 1, 0,
+	"gamemodes.pack", game_modes_map_count, game_modes_map, game_modes_keep_bytes, 1, 0, GAME_MODES_PACK_CONTENT,
 	L"The multiplayer game modes need\r\nsome data from other maps.\r\nIt takes a moment.",
 	L"Building game mode data:\r\n",
 	L"The game mode data is ready.",
@@ -1115,7 +1120,8 @@ static int pack_ready(struct pack_kind const *kind)
 	file = CreateFileA(path, GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
 	if (file == INVALID_HANDLE_VALUE)
 		return 0;
-	ready = file_read(file, head, sizeof(head)) && read_u32(head) == 'rpak' && read_u32(head + 4) == 1;
+	ready = file_read(file, head, sizeof(head)) && read_u32(head) == 'rpak' &&
+		read_u32(head + 4) == (PACK_FORMAT_VERSION | (kind->content << 16));
 	count = ready ? read_u32(head + 8) : 0;
 	if (!count || count > PACK_MAPS)
 		ready = 0;

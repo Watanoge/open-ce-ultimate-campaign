@@ -20,6 +20,11 @@ colour in place of its team's, a zombie's green and a human's their own
 its own, closer indoors (the camera's cluster has no sky), TRUE when it is
 (render.c: the sky is then not drawn) */
 void infection_change_color(long player_index, union real_rgb_color *color);
+/* the game being played is Floodfection */
+boolean infection_floodfection_enabled(void);
+/* the object is a Floodfection zombie's unit: hit, it bleeds as the Flood
+(projectiles.c), and a headshot does not kill it outright (damage.c) */
+boolean infection_floodfection_zombie(long object_index);
 boolean infection_fog(short local_player_index, boolean indoors, struct render_fog *fog);
 
 /* a living zombie's unit */

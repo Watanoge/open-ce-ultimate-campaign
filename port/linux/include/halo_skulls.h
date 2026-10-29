@@ -260,9 +260,16 @@ size, harmless (effects.c) */
 extern int skulls_effect_quiet;
 extern int skulls_effect_harmless;
 extern float skulls_effect_size;
-/* while set, an effect made makes no objects (Floodfection's burst, played
-by each machine of a multiplayer game for itself: infection.c) */
+/* while set, an effect made makes no objects but garbage, which every
+machine keeps for itself (Floodfection's burst and bits, played by each
+machine of a multiplayer game for itself: infection.c) */
 extern int skulls_effect_no_objects;
+/* Floodfection's bits, thrown where a zombie dies (Two Betrayals', copied in
+from gamemodes.pack with the burst: randomizer.c, infection.c) */
+#define FLOODFECTION_BITS_TAGS \
+	"effects\\flood bit limb explode", \
+	"effects\\flood bit h-head explode", \
+	"effects\\flood bit skin explode"
 /* a skull to be found lying about: its name ("IRON SKULL"), else NULL; and
 it taken by a player's action button: on for the level, to be kept once
 the level is finished without dying. FALSE for another item. (The name is

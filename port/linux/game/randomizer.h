@@ -112,6 +112,14 @@ int skulls_pack_ready(void);
 (Floodfection's burst, Two Betrayals'), the same way: written at start-up
 once, when Two Betrayals is there; and it is there and matches its map */
 int game_modes_pack_ready(void);
+/* what a pack holds: the version word's upper half, after its format's
+(1) in the lower; 0 for randomizer.pack and skulls.pack. gamemodes.pack's is
+raised whenever what it holds changes (its maps, or the tags whose pixels
+and samples it keeps: randomizer_pack.c's game_modes_keep_bytes, for the
+roots randomizer.c's gather_game_modes copies), and one of another is
+written again at start-up, and not read until it is */
+#define PACK_FORMAT_VERSION 1
+#define GAME_MODES_PACK_CONTENT 2
 
 /* a campaign map's header, as the pack records it. 0 when the map is not
 there or is not an Xbox map */
