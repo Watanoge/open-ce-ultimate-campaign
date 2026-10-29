@@ -46,9 +46,11 @@ slower, to a pause (game_time_set_speed); Back held shows the scores (the
 watched's row as a player's own); B hides the lines over the screen. Start
 puts up the pause menu (the game stopped, the camera kept): B in it leaves,
 Start resumes. A line at the top says who is
-watched, the view and the speed, and a dark bar at the bottom edge the
+watched, the view and the speed, a dark bar near the bottom edge the
 buttons, each as Kenney's picture of the controller's
-(hud_hires_prompt_draw)
+(hud_hires_prompt_draw), and under it the seek bar: the time, a Halo blue
+line with the playhead a circle on it, and the replay's length
+(playback_draw_seek)
 (network_replay_playback_draw). The game's end, or the replay's, returns
 to the main menu a few seconds later.
 
@@ -246,6 +248,18 @@ picture's), the bar's room either side of them and its colour */
 #define REPLAY_HINT_ICON_SIZE 18
 #define REPLAY_HINT_ICON_GAP 3
 #define REPLAY_HINT_SPACING 12
+/* the seek bar under the hints (playback_draw_seek): its line's height, how
+far it is from the screen's sides, the room either side of the line for
+the times (mm:ss), the line's thickness and the playhead's radius, and its
+colours: the Halo blue of the menus' text, the line ahead of the playhead
+dimmer */
+#define REPLAY_SEEK_HEIGHT 20
+#define REPLAY_SEEK_INSET 40
+#define REPLAY_SEEK_TIME_WIDTH 44
+#define REPLAY_SEEK_THICKNESS 4
+#define REPLAY_SEEK_HEAD_RADIUS 6
+#define REPLAY_SEEK_COLOR 0xFF2896FF
+#define REPLAY_SEEK_AHEAD_COLOR 0x602896FF
 /* the screen's dimming under the pause menu */
 #define REPLAY_PAUSE_DIM_COLOR 0x80000000
 /* a stick's or a trigger's dead middle, of its whole */
@@ -280,6 +294,9 @@ static struct
 	long size;
 	long next;
 	long start_tick;
+	/* the tick of its last record: where it ends (a file a crash cut short,
+	where it was cut) */
+	long end_tick;
 	/* the replay is being set up (the old client's disposal does not stop
 	it: network_replay_playback_stop) */
 	boolean setting_up;
@@ -515,6 +532,7 @@ static void playback_find_recorders(
 	playback.client = format >= 4 && header_size >= REPLAY_FLAGS_OFFSET + 4 &&
 		(replay_get_long(playback.data + REPLAY_FLAGS_OFFSET) & REPLAY_FLAG_CLIENT) != 0;
 	csmemset(playback.recorders, 0, sizeof(playback.recorders));
+	playback.end_tick = playback.start_tick;
 	while (next + REPLAY_RECORD_HEADER_SIZE <= playback.size)
 	{
 		byte const *record = playback.data + next;
@@ -522,6 +540,7 @@ static void playback_find_recorders(
 
 		if (next + REPLAY_RECORD_HEADER_SIZE + size > playback.size)
 			break;
+		playback.end_tick = MAX(playback.end_tick, (long)replay_get_long(record + 4));
 		if (record[0] == _network_replay_own_actions)
 		{
 			short player_index = network_distributed_own_actions_player(record + REPLAY_RECORD_HEADER_SIZE, size);
@@ -2147,8 +2166,96 @@ static short playback_draw_hint_line(
 	return x;
 }
 
-/* the buttons' hints on a dark bar that fits them at the bottom edge
-(their width from a pass drawn unseen first) */
+/* a tick of the replay as minutes and seconds from its start (mm:ss) */
+static void playback_time_text(
+	long tick,
+	wchar_t *text,
+	short size)
+{
+	long seconds = MAX(0, tick - playback.start_tick) / TICKS_PER_SECOND;
+
+	usnprintf(text, size - 1, L"%02ld:%02ld", seconds / 60, seconds % 60);
+	text[size - 1] = 0;
+}
+
+/* the seek bar, at the screen's foot under the hints: where the replay is
+(the time at the left, its length at the right, and between them the line,
+Halo blue to the playhead, a circle, and dimmer after it). It only shows:
+nothing on it is chosen */
+static void playback_draw_seek(
+	long font_index)
+{
+	struct font_header *font = font_definition_get(font_index);
+	short height = (short)(font->ascending_height + font->descending_height);
+	rectangle2d window = render.camera.window_bounds;
+	rectangle2d box;
+	rectangle2d text_bounds;
+	rectangle2d line;
+	real_argb_color color = *global_real_argb_white;
+	wchar_t text[16];
+	long length = MAX(1, playback.end_tick - playback.start_tick);
+	real fraction = PIN((real)(game_time_get() - playback.start_tick) / (real)length, 0.0f, 1.0f);
+	short middle;
+	short head;
+	short row;
+
+	box.x0 = (short)(window.x0 + REPLAY_SEEK_INSET);
+	box.x1 = (short)(window.x1 - REPLAY_SEEK_INSET);
+	box.y1 = (short)(window.y1 - REPLAY_SCREEN_MARGIN / 2);
+	box.y0 = (short)(box.y1 - MAX(height, REPLAY_SEEK_HEIGHT) - 4);
+	draw_quad(&box, REPLAY_HINT_BAR_COLOR);
+	middle = (short)((box.y0 + box.y1) / 2);
+	/* (the times, either side) */
+	text_bounds = box;
+	text_bounds.y0 = (short)(middle - height / 2);
+	text_bounds.y1 = (short)(text_bounds.y0 + height + 4);
+	text_bounds.x0 = (short)(box.x0 + REPLAY_HINT_PADDING);
+	text_bounds.x1 = (short)(text_bounds.x0 + REPLAY_SEEK_TIME_WIDTH);
+	playback_time_text(game_time_get(), text, NUMBEROF(text));
+	draw_string_set_draw_mode(font_index, NONE, 0, 0, &color);
+	rasterizer_draw_unicode_string(&text_bounds, NULL, NULL, 0, text);
+	text_bounds.x1 = (short)(box.x1 - REPLAY_HINT_PADDING);
+	text_bounds.x0 = (short)(text_bounds.x1 - REPLAY_SEEK_TIME_WIDTH);
+	playback_time_text(playback.end_tick, text, NUMBEROF(text));
+	draw_string_set_draw_mode(font_index, NONE, 1, 0, &color);
+	rasterizer_draw_unicode_string(&text_bounds, NULL, NULL, 0, text);
+	/* (the line, played and to come, and the playhead on it) */
+	line.x0 = (short)(box.x0 + REPLAY_HINT_PADDING + REPLAY_SEEK_TIME_WIDTH + REPLAY_SEEK_HEAD_RADIUS);
+	line.x1 = (short)(box.x1 - REPLAY_HINT_PADDING - REPLAY_SEEK_TIME_WIDTH - REPLAY_SEEK_HEAD_RADIUS);
+	if (line.x1 <= line.x0)
+		return;
+	line.y0 = (short)(middle - REPLAY_SEEK_THICKNESS / 2);
+	line.y1 = (short)(line.y0 + REPLAY_SEEK_THICKNESS);
+	head = (short)(line.x0 + (short)(fraction * (real)(line.x1 - line.x0) + 0.5f));
+	{
+		rectangle2d part = line;
+
+		part.x1 = head;
+		if (part.x1 > part.x0)
+			draw_quad(&part, REPLAY_SEEK_COLOR);
+		part.x0 = head;
+		part.x1 = line.x1;
+		if (part.x1 > part.x0)
+			draw_quad(&part, REPLAY_SEEK_AHEAD_COLOR);
+	}
+	/* (a circle, a row of pixels at a time) */
+	for (row = -REPLAY_SEEK_HEAD_RADIUS; row < REPLAY_SEEK_HEAD_RADIUS; row++)
+	{
+		real across = (real)row + 0.5f;
+		short half = (short)(sqrt((real)(REPLAY_SEEK_HEAD_RADIUS * REPLAY_SEEK_HEAD_RADIUS) - across * across) + 0.5f);
+		rectangle2d span;
+
+		span.x0 = (short)(head - half);
+		span.x1 = (short)(head + half);
+		span.y0 = (short)(middle + row);
+		span.y1 = (short)(span.y0 + 1);
+		if (span.x1 > span.x0)
+			draw_quad(&span, REPLAY_SEEK_COLOR);
+	}
+}
+
+/* the buttons' hints on a dark bar that fits them, above the seek bar at
+the bottom edge (their width from a pass drawn unseen first) */
 static void playback_draw_hints(
 	long font_index,
 	struct playback_hint const *hints,
@@ -2166,12 +2273,14 @@ static void playback_draw_hints(
 	width = (short)(playback_draw_hint_line(font_index, &line, window.x0, hints, count, FALSE) - window.x0);
 	bar.x0 = (short)((window.x0 + window.x1 - width) / 2 - REPLAY_HINT_PADDING);
 	bar.x1 = (short)(bar.x0 + width + 2 * REPLAY_HINT_PADDING);
-	bar.y1 = (short)(window.y1 - REPLAY_SCREEN_MARGIN / 2);
+	/* (above the seek bar: playback_draw_seek) */
+	bar.y1 = (short)(window.y1 - REPLAY_SCREEN_MARGIN / 2 - MAX(height, REPLAY_SEEK_HEIGHT) - 4 - REPLAY_SCREEN_MARGIN / 2);
 	bar.y0 = (short)(bar.y1 - MAX(height, REPLAY_HINT_HEIGHT) - 6);
 	draw_quad(&bar, REPLAY_HINT_BAR_COLOR);
 	line.y0 = (short)(bar.y0 + 3);
 	line.y1 = bar.y1;
 	playback_draw_hint_line(font_index, &line, (short)(bar.x0 + REPLAY_HINT_PADDING), hints, count, TRUE);
+	playback_draw_seek(font_index);
 }
 
 /* the pause menu: the screen dimmed, PAUSED in its middle, and its

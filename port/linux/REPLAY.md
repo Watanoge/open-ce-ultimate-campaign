@@ -310,8 +310,12 @@ DELETE (pressed twice), EXPORT (Android) and BACK. A recording shorter than
   again resumes it at its speed. A playback is a client of the
   distributed netcode, whose host's rules put a client's game speed back
   each tick (`cheats_network_client_enforce`); a playback's is its own.
-  A line at the top says who is watched, the view and the speed, and a
-  dark bar along the bottom edge shows the buttons, in the menus' small
+  A line at the top says who is watched, the view and the speed. Along
+  the bottom edge a seek bar shows where the replay is: the time (mm:ss)
+  at its left, the replay's length (to its last record) at its right, and
+  between them a Halo blue line, the playhead a circle on it, dimmer
+  after it; it only shows (`playback_draw_seek`). Above it a dark bar
+  shows the buttons, in the menus' small
   font, each as a picture of the controller's button: Kenney's Input
   Prompts, the Xbox Series' in common and the Switch's and the PS5's on
   them (`hud_hires_prompt_draw`; port/assets/buttons/README.md, "Replay
