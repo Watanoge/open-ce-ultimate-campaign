@@ -117,7 +117,7 @@
 		<child widget="main_menu/theater/button_export" x="260" y="1" platform="android"/>
 		<child widget="main_menu/theater/button_back" x="510" y="1"/>
 	</widget>
-	<widget name="main_menu/theater/button_record" type="text" width="128" height="24" bitmap="bitmaps/text_button_background" text="RECORD: OFF" font="ui\small_ui" color="#FFFFFFFF" align="center" text_y="2">
+	<widget name="main_menu/theater/button_record" type="text" width="128" height="24" bitmap="bitmaps/text_button_background" font="ui\small_ui" color="#FFFFFFFF" align="center" text_y="2">
 		<on event="a" run="port theater record"/>
 		<on event="start" run="port theater record"/>
 		<on event="left_mouse" run="mouse emit accept event"/>

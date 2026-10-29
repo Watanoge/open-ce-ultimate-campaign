@@ -111,6 +111,13 @@ void game_state_port_restore(void (*read)(void *context), void *context);
 void render_interpolation_reset(void);
 void first_person_weapons_initialize_for_new_map(void);
 boolean hud_hires_prompt_draw(char const *name, real x, real y, real size, pixel32 color, boolean draw);
+/* xinput_sdl.c's: the mouse's turn since the last call (radians), whether
+the keyboard and mouse were used after a controller (the hints then name
+their keys), and an action's first key as the keyboard labels it */
+int halo_linux_mouse_look(short gamepad_index, float *yaw, float *pitch);
+int halo_replay_keyboard_last(void);
+void halo_binding_shown_name(char const *setting, char *shown, size_t size);
+void halo_input_shown_name(char const *binding, char *shown, size_t size);
 
 /* the simulation's and the netcode's variables outside the game state, all
 together (port/android/guest/guest.ld's .replay_data and .replay_bss): only
@@ -559,6 +566,12 @@ boolean network_replay_playing(
 	void)
 {
 	return playback.data != NULL && (playback.starting || playback.playing);
+}
+
+boolean network_replay_paused(
+	void)
+{
+	return network_replay_playing() && playback.paused;
 }
 
 boolean network_replay_playback_starting(
@@ -1216,17 +1229,25 @@ static real playback_axis(
 }
 
 /* every controller's sticks (the left's, the right's) and triggers (the
-right's less the left's), each 0 in its dead middle, added together */
+right's less the left's), each 0 in its dead middle, added together (the
+keyboard's WASD, Space and C among them: xinput_sdl.c); and the mouse's turn
+since the last frame, radians to the left and up */
 static void playback_sticks(
 	real *move_x,
 	real *move_y,
 	real *turn_x,
 	real *turn_y,
-	real *rise)
+	real *rise,
+	real *mouse_yaw,
+	real *mouse_pitch)
 {
 	short controller;
+	float yaw, pitch;
 
 	*move_x = *move_y = *turn_x = *turn_y = *rise = 0.0f;
+	halo_linux_mouse_look(0, &yaw, &pitch);
+	*mouse_yaw = yaw;
+	*mouse_pitch = pitch;
 	for (controller = 0; controller < MAXIMUM_GAMEPADS; controller++)
 	{
 		struct gamepad_state const *gamepad = input_get_gamepad_state(controller);
@@ -1288,22 +1309,25 @@ since it was chosen), from where it then is once one is */
 static boolean playback_free_camera(
 	real seconds)
 {
-	real move_x, move_y, turn_x, turn_y, rise;
+	real move_x, move_y, turn_x, turn_y, rise, mouse_yaw, mouse_pitch;
 	real_vector3d forward;
 	real_vector3d move;
 
-	playback_sticks(&move_x, &move_y, &turn_x, &turn_y, &rise);
+	playback_sticks(&move_x, &move_y, &turn_x, &turn_y, &rise, &mouse_yaw, &mouse_pitch);
 	if (playback.free_following)
 	{
-		if (move_x == 0.0f && move_y == 0.0f && turn_x == 0.0f && turn_y == 0.0f && rise == 0.0f)
+		if (move_x == 0.0f && move_y == 0.0f && turn_x == 0.0f && turn_y == 0.0f && rise == 0.0f &&
+			mouse_yaw == 0.0f && mouse_pitch == 0.0f)
+		{
 			return FALSE;
+		}
 		playback.free_following = FALSE;
 		playback.free_position = playback.camera.position;
 		playback.free_yaw = (real)atan2(playback.camera.forward.j, playback.camera.forward.i);
 		playback.free_pitch = (real)asin(PIN(playback.camera.forward.k, -1.0f, 1.0f));
 	}
-	playback.free_yaw -= turn_x * FREE_CAMERA_TURN * seconds;
-	playback.free_pitch = PIN(playback.free_pitch + turn_y * FREE_CAMERA_TURN * seconds,
+	playback.free_yaw += mouse_yaw - turn_x * FREE_CAMERA_TURN * seconds;
+	playback.free_pitch = PIN(playback.free_pitch + mouse_pitch + turn_y * FREE_CAMERA_TURN * seconds,
 		-FREE_CAMERA_MAXIMUM_PITCH, FREE_CAMERA_MAXIMUM_PITCH);
 	forward.i = (real)(cos(playback.free_yaw) * cos(playback.free_pitch));
 	forward.j = (real)(sin(playback.free_yaw) * cos(playback.free_pitch));
@@ -1404,18 +1428,19 @@ static void playback_behind_camera(
 
 	if (playback.view == _replay_view_behind)
 	{
-		real move_x, move_y, turn_x, turn_y, rise;
+		real move_x, move_y, turn_x, turn_y, rise, mouse_yaw, mouse_pitch;
 
-		playback_sticks(&move_x, &move_y, &turn_x, &turn_y, &rise);
-		if (!playback.behind_orbiting && playback.camera_valid && (turn_x != 0.0f || turn_y != 0.0f))
+		playback_sticks(&move_x, &move_y, &turn_x, &turn_y, &rise, &mouse_yaw, &mouse_pitch);
+		if (!playback.behind_orbiting && playback.camera_valid &&
+			(turn_x != 0.0f || turn_y != 0.0f || mouse_yaw != 0.0f || mouse_pitch != 0.0f))
 		{
 			playback.behind_orbiting = TRUE;
 			playback.behind_pitch = CAMERA_PITCH;
 		}
 		if (playback.behind_orbiting)
 		{
-			playback.yaw -= turn_x * CAMERA_ORBIT_TURN * seconds;
-			playback.behind_pitch = PIN(playback.behind_pitch - turn_y * CAMERA_ORBIT_TURN * seconds,
+			playback.yaw += mouse_yaw - turn_x * CAMERA_ORBIT_TURN * seconds;
+			playback.behind_pitch = PIN(playback.behind_pitch - mouse_pitch - turn_y * CAMERA_ORBIT_TURN * seconds,
 				CAMERA_ORBIT_HIGHEST, CAMERA_ORBIT_LOWEST);
 			pitch = playback.behind_pitch;
 		}
@@ -1619,6 +1644,52 @@ static wchar_t const *playback_button_label(
 	return L"?";
 }
 
+/* a button's keys on the keyboard and mouse (xinput_sdl.c's
+replay_keyboard_gamepad), as the keyboard labels them: Start's and Back's
+the pause's and the scores' own (controls.pause, controls.scoreboard) */
+static void playback_key_label(
+	short button,
+	wchar_t *label,
+	short size)
+{
+	char key[32];
+	char shown[32];
+	short index;
+
+	switch (button)
+	{
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_a: usnprintf(label, size, L"LMB"); return;
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_x: usnprintf(label, size, L"RMB"); return;
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_white: usnprintf(label, size, L"-"); return;
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_black: usnprintf(label, size, L"+"); return;
+	case _gamepad_binary_button_dpad_left: usnprintf(label, size, L"ARROWS"); return;
+	/* (B: Backspace in the pause menu, H otherwise) */
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_b:
+		if (playback.paused)
+		{
+			usnprintf(label, size, L"BACKSPACE");
+			return;
+		}
+		snprintf(key, sizeof(key), "H");
+		break;
+	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_y: snprintf(key, sizeof(key), "V"); break;
+	case _gamepad_binary_button_right_thumb: snprintf(key, sizeof(key), "R"); break;
+	case _gamepad_binary_button_start: halo_binding_shown_name("controls.pause", key, sizeof(key)); break;
+	case _gamepad_binary_button_back: halo_binding_shown_name("controls.scoreboard", key, sizeof(key)); break;
+	default: usnprintf(label, size, L"?"); return;
+	}
+	if (button == _gamepad_binary_button_start || button == _gamepad_binary_button_back)
+		snprintf(shown, sizeof(shown), "%s", key);
+	else
+		halo_input_shown_name(key, shown, sizeof(shown));
+	for (index = 0; shown[index]; index++)
+	{
+		if (shown[index] >= 'a' && shown[index] <= 'z')
+			shown[index] -= 'a' - 'A';
+	}
+	usnprintf(label, size, L"%hs", shown);
+}
+
 /* a text of the hints at x, drawn or only measured; where it ends (3 short
 of where the text says: render_state_text) */
 static short playback_draw_hint_text(
@@ -1651,6 +1722,15 @@ static short playback_draw_hint_button(
 {
 	char const *prompt = playback_button_prompt(button);
 
+	/* (the keyboard and mouse used last: their keys' names) */
+	if (halo_replay_keyboard_last())
+	{
+		wchar_t label[32];
+
+		playback_key_label(button, label, NUMBEROF(label));
+		label[NUMBEROF(label) - 1] = 0;
+		return playback_draw_hint_text(font_index, line, x, label, visible);
+	}
 	if (hud_hires_prompt_draw(prompt, 0.0f, 0.0f, 0.0f, 0, FALSE))
 	{
 		if (visible)

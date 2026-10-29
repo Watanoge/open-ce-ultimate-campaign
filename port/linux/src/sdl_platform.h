@@ -50,6 +50,8 @@ void halo_input_name(int input, char *name, size_t size);
 /* a binding's name ("Z") as the keyboard's layout labels its key ("Y"),
 for the menus */
 void halo_input_shown_name(const char *binding, char *shown, size_t size);
+/* ... the first an action's setting (controls.pause) binds; "-" for none */
+void halo_binding_shown_name(const char *setting, char *shown, size_t size);
 
 /* (xinput_sdl.c) a rebinding's controller: from begin, port 0's controller
 drives nothing until poll has taken a button newly pressed (1, its input),

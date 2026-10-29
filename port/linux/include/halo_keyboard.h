@@ -53,6 +53,9 @@ unsigned long halo_keyboard_actions(short controller_index);
 sticks, or the touchscreen, were last used (sdl_platform.c): a name typed in
 the overlay menu shows its on-screen keyboard only when not */
 int halo_keyboard_typed_last(void);
+/* whether, in a replay's playback, the keyboard or the mouse was used after
+the first controller (xinput_sdl.c): its hints name their keys */
+int halo_replay_keyboard_last(void);
 /* whether voice chat's push to talk is held (controls.push_to_talk), in the
 game and in the menus alike */
 int halo_push_to_talk_held(void);

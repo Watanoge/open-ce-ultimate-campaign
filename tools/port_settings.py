@@ -3361,7 +3361,7 @@ def _leaderboard() -> list:
                      '<on event="left_mouse" run="mouse emit accept event"/>'])
     lines += _leaderboard_screen(LEADERBOARD, "port leaderboard init",
                                  [f'<child widget="{LEADERBOARD}/button_view" x="24" y="1"/>'])
-    lines += _text_button(f"{LEADERBOARD}/button_view", "VIEW: ONLINE",
+    lines += _text_button(f"{LEADERBOARD}/button_view", None,
                           ['<on event="a" run="port leaderboard view"/>',
                            '<on event="start" run="port leaderboard view"/>'])
     return lines
@@ -3986,7 +3986,7 @@ def _theater() -> list:
                       f'<child widget="{base}/button_delete" x="130" y="1"/>',
                       f'<child widget="{base}/button_export" x="260" y="1" platform="android"/>',
                       f'<child widget="{base}/button_back" x="510" y="1"/>'])
-    lines += _text_button(f"{base}/button_record", "RECORD: OFF", ['<on event="a" run="port theater record"/>',
+    lines += _text_button(f"{base}/button_record", None, ['<on event="a" run="port theater record"/>',
                                                                   '<on event="start" run="port theater record"/>'])
     lines += _text_button(f"{base}/button_delete", "DELETE", ['<on event="a" run="port theater delete"/>',
                                                              '<on event="start" run="port theater delete"/>'])

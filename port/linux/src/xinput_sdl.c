@@ -75,9 +75,14 @@ extern unsigned char pc_menu_split_players(void);
 /* port/linux/game/network_test.c: the game's time in seconds while one runs,
 else -1 */
 extern double network_test_game_seconds(void);
+/* port/linux/game/network_replay_playback.c: a replay is played, and its
+pause menu is up */
+extern unsigned char network_replay_playing(void);
+extern unsigned char network_replay_paused(void);
 
 static int sdl_gamepads(SDL_Gamepad *gamepads[PORT_COUNT]);
 static SDL_Gamepad *port_gamepad(SDL_Gamepad *gamepads[PORT_COUNT], int count, int port);
+static BOOL gamepad_idle(SDL_Gamepad *gamepad);
 
 /* ---------- device tables */
 
@@ -997,6 +1002,109 @@ unsigned long halo_keyboard_actions(short controller_index)
 	return controller_index == 0 ? keyboard_actions_held : 0;
 }
 
+/* a replay's playback (port/linux/game/network_replay_playback.c), which
+has no player to act: the keys and the mouse as its controller's buttons.
+WASD the left stick, Space and C (or Left Ctrl) the right and left
+triggers (the free camera up and down), the left mouse button (or E) A and
+the right (or Q) X (the next and the last player), V Y (the view), R the
+right stick's click, the wheel up (or + and =) RB and down (or -) LB (the
+speed), the arrows the d-pad (the keyframes), H B (the lines over the screen
+hidden) and in the pause menu Backspace (leaving); the pause's and the
+scores' own keys Start and Back. The mouse turns the camera itself
+(halo_linux_mouse_look) */
+static void replay_keyboard_gamepad(const struct platform_input_state *input, unsigned long held, XINPUT_GAMEPAD *pad)
+{
+	const unsigned char *k = input->keys;
+	const unsigned char *m = input->mouse_buttons;
+	BOOL mouse = !input->mouse_released;
+	BOOL wheel = SDL_GetTicks() < wheel_press_until_ms;
+	int x = 0, y = 0;
+
+	keyboard_controls(held, pad);
+	keyboard_actions_held = 0;
+	if (k[SDL_SCANCODE_D]) x++;
+	if (k[SDL_SCANCODE_A]) x--;
+	if (k[SDL_SCANCODE_W]) y++;
+	if (k[SDL_SCANCODE_S]) y--;
+	if (x || y)
+	{
+		float length = (x && y) ? 0.70710678f : 1.0f;
+
+		pad->sThumbLX = (SHORT)(x * 32767 * length);
+		pad->sThumbLY = (SHORT)(y * 32767 * length);
+	}
+	if (k[SDL_SCANCODE_UP]) pad->wButtons |= XINPUT_GAMEPAD_DPAD_UP;
+	if (k[SDL_SCANCODE_DOWN]) pad->wButtons |= XINPUT_GAMEPAD_DPAD_DOWN;
+	if (k[SDL_SCANCODE_LEFT]) pad->wButtons |= XINPUT_GAMEPAD_DPAD_LEFT;
+	if (k[SDL_SCANCODE_RIGHT]) pad->wButtons |= XINPUT_GAMEPAD_DPAD_RIGHT;
+	if (k[SDL_SCANCODE_R] || (mouse && m[SDL_BUTTON_MIDDLE])) pad->wButtons |= XINPUT_GAMEPAD_RIGHT_THUMB;
+	pad->bAnalogButtons[XINPUT_GAMEPAD_RIGHT_TRIGGER] |= analog(k[SDL_SCANCODE_SPACE]);
+	pad->bAnalogButtons[XINPUT_GAMEPAD_LEFT_TRIGGER] |= analog(k[SDL_SCANCODE_C] || k[SDL_SCANCODE_LCTRL]);
+	pad->bAnalogButtons[XINPUT_GAMEPAD_A] |= analog(k[SDL_SCANCODE_E] || (mouse && m[SDL_BUTTON_LEFT]));
+	pad->bAnalogButtons[XINPUT_GAMEPAD_X] |= analog(k[SDL_SCANCODE_Q] || (mouse && m[SDL_BUTTON_RIGHT]));
+	pad->bAnalogButtons[XINPUT_GAMEPAD_Y] |= analog(k[SDL_SCANCODE_V]);
+	pad->bAnalogButtons[XINPUT_GAMEPAD_BLACK] |= analog(k[SDL_SCANCODE_EQUALS] || k[SDL_SCANCODE_KP_PLUS] ||
+		(mouse && wheel && wheel_direction == 1));
+	pad->bAnalogButtons[XINPUT_GAMEPAD_WHITE] |= analog(k[SDL_SCANCODE_MINUS] || k[SDL_SCANCODE_KP_MINUS] ||
+		(mouse && wheel && wheel_direction == -1));
+	pad->bAnalogButtons[XINPUT_GAMEPAD_B] |= analog(network_replay_paused() ? k[SDL_SCANCODE_BACKSPACE] :
+		k[SDL_SCANCODE_H]);
+}
+
+/* whether the keyboard or the mouse was used after port 0's controller
+(halo_replay_keyboard_last): a replay's hints then name their keys; with
+no controller, always */
+static BOOL replay_keyboard_last = TRUE;
+
+static void replay_keyboard_last_update(const struct platform_input_state *input, SDL_Gamepad *gamepad)
+{
+	int index;
+
+	if (!gamepad)
+	{
+		replay_keyboard_last = TRUE;
+		return;
+	}
+	if (!gamepad_idle(gamepad))
+	{
+		replay_keyboard_last = FALSE;
+		return;
+	}
+	if (!input->mouse_released && (input->mouse_dx != 0.0f || input->mouse_dy != 0.0f))
+		replay_keyboard_last = TRUE;
+	for (index = 0; index < PLATFORM_MOUSE_BUTTON_COUNT && !replay_keyboard_last; index++)
+		replay_keyboard_last = !input->mouse_released && input->mouse_buttons[index];
+	for (index = 0; index < SDL_SCANCODE_COUNT && !replay_keyboard_last; index++)
+		replay_keyboard_last = input->keys[index] != 0;
+}
+
+int halo_replay_keyboard_last(void)
+{
+	return replay_keyboard_last;
+}
+
+/* the first key or button an action's setting (controls.pause) binds, as
+the keyboard labels it (halo_input_shown_name); "-" for none */
+void halo_binding_shown_name(const char *setting, char *shown, size_t size)
+{
+	const char *text = config_string(setting);
+	char name[64];
+	size_t length;
+
+	while (text && (*text == ' ' || *text == ','))
+		text++;
+	length = text ? strcspn(text, ",") : 0;
+	snprintf(name, sizeof(name), "%.*s", (int)length, text ? text : "");
+	while (*name && name[strlen(name) - 1] == ' ')
+		name[strlen(name) - 1] = 0;
+	if (!*name)
+	{
+		snprintf(shown, size, "-");
+		return;
+	}
+	halo_input_shown_name(name, shown, size);
+}
+
 int halo_push_to_talk_held(void)
 {
 	struct platform_input_state input;
@@ -1743,9 +1851,13 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 		{
 			if (input.menus)
 				keyboard_gamepad(&input, &state->Gamepad);
+			else if (network_replay_playing())
+				replay_keyboard_gamepad(&input, held, &state->Gamepad);
 			else
 				keyboard_controls(held, &state->Gamepad);
 		}
+		if (network_replay_playing())
+			replay_keyboard_last_update(&input, gamepad);
 		if (gamepad && !gamepad_capturing(gamepad))
 		{
 			BOOL held_back[INPUT_GAMEPAD_END - INPUT_GAMEPAD];

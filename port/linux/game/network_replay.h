@@ -128,6 +128,9 @@ boolean network_replay_watch(char const *path, char *why, long why_size);
 
 /* whether a replay is being played (or its game loaded) */
 boolean network_replay_playing(void);
+/* whether its pause menu is up (xinput_sdl.c: the key that hides the lines
+over the screen does not also leave the replay from it) */
+boolean network_replay_paused(void);
 
 /* the playback's view made for this frame (main.c, before the sound and
 the windows: each asks network_replay_camera for it) */
