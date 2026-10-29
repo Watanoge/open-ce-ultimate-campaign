@@ -3291,7 +3291,14 @@ static void theater_update(struct widget_instance *list)
 		mods_wide_text(line, wide, ROW_TEXT_LENGTH);
 		text_set(named(row, "theater_replay_length", 0), wide);
 	}
-	text_set(named(list, "button_record", 0), recording ? L"RECORD: ON" : L"RECORD: OFF");
+	/* (its string list's OFF or ON: a text widget's words are its string
+	list's again each time it is drawn, so words set on it never showed) */
+	{
+		struct widget_instance *record = named(list, "button_record", 0);
+
+		if (record)
+			record->parameters.text_box.string_list_index = recording ? 1 : 0;
+	}
 	if (!details)
 		return;
 	network_replay_summary(&count, &bytes);

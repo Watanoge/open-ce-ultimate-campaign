@@ -2506,8 +2506,16 @@ def _theater() -> list:
                       f'<child widget="{base}/button_delete" x="130" y="1"/>',
                       f'<child widget="{base}/button_export" x="260" y="1" platform="android"/>',
                       f'<child widget="{base}/button_back" x="510" y="1"/>'])
-    lines += _text_button(f"{base}/button_record", "RECORD: OFF", ['<on event="a" run="port theater record"/>',
-                                                                  '<on event="start" run="port theater record"/>'])
+    # (its words a string list's, OFF and ON, which "port theater update"
+    # chooses between: a text widget's own words are its string list's again
+    # each time it is drawn, so words set on it would not show)
+    lines += _widget(f"{base}/button_record",
+                     [("type", "text"), ("width", 128), ("height", 24), ("bitmap", "bitmaps/text_button_background"),
+                      ("string_list", f"{base}/record_strings"), ("string_index", 0), ("font", "ui\\small_ui"),
+                      ("color", "#FFFFFFFF"), ("align", "center"), ("text_y", 2)],
+                     ['<on event="a" run="port theater record"/>', '<on event="start" run="port theater record"/>',
+                      '<on event="left_mouse" run="mouse emit accept event"/>'])
+    lines += _strings(f"{base}/record_strings", ["RECORD: OFF", "RECORD: ON"])
     lines += _text_button(f"{base}/button_delete", "DELETE", ['<on event="a" run="port theater delete"/>',
                                                              '<on event="start" run="port theater delete"/>'])
     lines += _text_button(f"{base}/button_export", "EXPORT", ['<on event="a" run="port theater export"/>',
