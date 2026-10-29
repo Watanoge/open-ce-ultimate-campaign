@@ -2,9 +2,11 @@
 TAG_CAMPAIGN.C
 
 The Tag Injector in the campaign (tag_campaign.h; docs/tag_injector.md,
-"Campaign profiles"). A campaign level played alone (not a network game,
-nor a challenge) can play a campaign profile (the TAG INJECTOR PROFILE
-screen before the level: game.campaign_tag_profile), which names a profile
+"Campaign profiles"). A campaign level played alone (not a challenge) can
+play a campaign profile (the TAG INJECTOR PROFILE screen before the level:
+game.campaign_tag_profile), and so can a co-op game's (the host's TAG PROFILE
+screen before Server Setup: tag_multiplayer.c, which shares the profile's
+tags with every machine, and whose host alone swaps), which names a profile
 of the Tag Injector's and how the level plays its weapons and AI
 (port_tag_mp_profiles.c's campaign folder). It plays them in the randomizer's
 place: randomizer.c adds the profile's tags to the level as it would its own
@@ -471,6 +473,23 @@ long tag_campaign_level_profile(
 	}
 	snprintf(tag_campaign_level.file, sizeof(tag_campaign_level.file), "%s",
 		port_tag_campaign_profiles_file(campaign_profile));
+	return profile;
+}
+
+long tag_campaign_level_profile_shared(
+	long profile,
+	long campaign_profile)
+{
+	tag_campaign_level.file[0] = 0;
+	if (profile == NONE)
+		return NONE;
+	/* (the host's campaign profile; a client has none, adding the host's
+	tags and swapping nothing) */
+	if (campaign_profile != NONE)
+	{
+		snprintf(tag_campaign_level.file, sizeof(tag_campaign_level.file), "%s",
+			port_tag_campaign_profiles_file(campaign_profile));
+	}
 	return profile;
 }
 

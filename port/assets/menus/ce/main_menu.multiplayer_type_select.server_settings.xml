@@ -770,7 +770,27 @@
 		<string text="10"/>
 		<string text="11"/>
 		<string text="12"/>
+		<string text="13"/>
+		<string text="14"/>
 		<string text="15"/>
+		<string text="16"/>
+		<string text="17"/>
+		<string text="18"/>
+		<string text="19"/>
+		<string text="20"/>
+		<string text="21"/>
+		<string text="22"/>
+		<string text="23"/>
+		<string text="24"/>
+		<string text="25"/>
+		<string text="26"/>
+		<string text="27"/>
+		<string text="28"/>
+		<string text="29"/>
+		<string text="30"/>
+		<string text="31"/>
+		<string text="32"/>
+		<string text="33"/>
 	</strings>
 	<widget name="main_menu/multiplayer_type_select/server_settings/bots_options/op_bots_skill" width="512" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/option_bkds" color="#FF2896FF">
 		<child widget="main_menu/multiplayer_type_select/server_settings/bots_options/bots_skill_label"/>
@@ -810,6 +830,26 @@
 	</strings>
 	<strings name="main_menu/multiplayer_type_select/server_settings/bots_options/cap_bots_options">
 		<string text="No bots: only the players on this computer."/>
+		<string text="Bots join the lobby with you, as far as the game\nhas room: Slayer, CTF and King of the Hill."/>
+		<string text="Bots join the lobby with you, as far as the game\nhas room: Slayer, CTF and King of the Hill."/>
+		<string text="Bots join the lobby with you, as far as the game\nhas room: Slayer, CTF and King of the Hill."/>
+		<string text="Bots join the lobby with you, as far as the game\nhas room: Slayer, CTF and King of the Hill."/>
+		<string text="Bots join the lobby with you, as far as the game\nhas room: Slayer, CTF and King of the Hill."/>
+		<string text="Bots join the lobby with you, as far as the game\nhas room: Slayer, CTF and King of the Hill."/>
+		<string text="Bots join the lobby with you, as far as the game\nhas room: Slayer, CTF and King of the Hill."/>
+		<string text="Bots join the lobby with you, as far as the game\nhas room: Slayer, CTF and King of the Hill."/>
+		<string text="Bots join the lobby with you, as far as the game\nhas room: Slayer, CTF and King of the Hill."/>
+		<string text="Bots join the lobby with you, as far as the game\nhas room: Slayer, CTF and King of the Hill."/>
+		<string text="Bots join the lobby with you, as far as the game\nhas room: Slayer, CTF and King of the Hill."/>
+		<string text="Bots join the lobby with you, as far as the game\nhas room: Slayer, CTF and King of the Hill."/>
+		<string text="Bots join the lobby with you, as far as the game\nhas room: Slayer, CTF and King of the Hill."/>
+		<string text="Bots join the lobby with you, as far as the game\nhas room: Slayer, CTF and King of the Hill."/>
+		<string text="Bots join the lobby with you, as far as the game\nhas room: Slayer, CTF and King of the Hill."/>
+		<string text="Bots join the lobby with you, as far as the game\nhas room: Slayer, CTF and King of the Hill."/>
+		<string text="Bots join the lobby with you, as far as the game\nhas room: Slayer, CTF and King of the Hill."/>
+		<string text="Bots join the lobby with you, as far as the game\nhas room: Slayer, CTF and King of the Hill."/>
+		<string text="Bots join the lobby with you, as far as the game\nhas room: Slayer, CTF and King of the Hill."/>
+		<string text="Bots join the lobby with you, as far as the game\nhas room: Slayer, CTF and King of the Hill."/>
 		<string text="Bots join the lobby with you, as far as the game\nhas room: Slayer, CTF and King of the Hill."/>
 		<string text="Bots join the lobby with you, as far as the game\nhas room: Slayer, CTF and King of the Hill."/>
 		<string text="Bots join the lobby with you, as far as the game\nhas room: Slayer, CTF and King of the Hill."/>

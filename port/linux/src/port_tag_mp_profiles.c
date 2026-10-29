@@ -849,7 +849,9 @@ void port_tag_mp_profiles_path(long profile, char *path, unsigned long size)
 		path[0] = 0;
 }
 
-long port_tag_mp_profiles_import(const char *path, const char *suffix, const char *profile)
+/* a copy of a profile's file of a share (port_tag_mp_profiles_import's,
+port_tag_campaign_profiles_import's) */
+static long kind_import(struct profile_kind *kind, const char *path, const char *suffix, const char *profile)
 {
 	char folder[MAXIMUM_PATH_LENGTH];
 	char file[MAXIMUM_FILE_LENGTH];
@@ -868,27 +870,32 @@ long port_tag_mp_profiles_import(const char *path, const char *suffix, const cha
 		strcmp(slash + 1 + length - strlen(MP_EXTENSION), MP_EXTENSION))
 		return -1;
 	snprintf(file, sizeof(file), "%.*s", (int)(length - strlen(MP_EXTENSION)), slash + 1);
-	if (!profile_read(&mp_kind, &read, folder, file))
+	if (!profile_read(kind, &read, folder, file))
 		return -1;
 	/* (its name the host's and the suffix, its file a new one, playing the
 	profile given) */
 	snprintf(name, sizeof(name), "%.*s%s", (int)(sizeof(name) - strlen(suffix ? suffix : "") - 1), read.name,
 		suffix ? suffix : "");
 	value_copy(read.name, sizeof(read.name), name);
-	value_copy(read.options[option_index(&mp_kind, "profile")], MAXIMUM_VALUE_LENGTH, profile);
+	value_copy(read.options[option_index(kind, "profile")], MAXIMUM_VALUE_LENGTH, profile);
 	snprintf(base, sizeof(base), "%s", name);
 	if (!file_name_clean(base))
 		snprintf(base, sizeof(base), "online");
-	if (!file_choose(&mp_kind, &read, base) || !profile_write(&mp_kind, &read))
+	if (!file_choose(kind, &read, base) || !profile_write(kind, &read))
 	{
 		profile_dispose(&read);
 		return -1;
 	}
 	snprintf(file, sizeof(file), "%s", read.file);
 	profile_dispose(&read);
-	port_tag_mp_profiles_scan();
-	platform_log("tag injector: copied the multiplayer profile %s, playing %s", name, profile);
-	return port_tag_mp_profiles_find(file);
+	kind_scan(kind);
+	platform_log("tag injector: copied the %s profile %s, playing %s", kind->what, name, profile);
+	return kind_find(kind, file);
+}
+
+long port_tag_mp_profiles_import(const char *path, const char *suffix, const char *profile)
+{
+	return kind_import(&mp_kind, path, suffix, profile);
 }
 
 long port_tag_campaign_profiles_scan(void)
@@ -964,4 +971,17 @@ int port_tag_campaign_profiles_list_has(long profile, const char *section, const
 int port_tag_campaign_profiles_list_set(long profile, const char *section, const char *key, const char *path, int on)
 {
 	return kind_list_set(&campaign_kind, profile, section, key, path, on);
+}
+
+void port_tag_campaign_profiles_path(long profile, char *path, unsigned long size)
+{
+	if (profile_get(&campaign_kind, profile))
+		profile_path(&campaign_kind, profile_get(&campaign_kind, profile), path, (size_t)size);
+	else if (size)
+		path[0] = 0;
+}
+
+long port_tag_campaign_profiles_import(const char *path, const char *suffix, const char *profile)
+{
+	return kind_import(&campaign_kind, path, suffix, profile);
 }

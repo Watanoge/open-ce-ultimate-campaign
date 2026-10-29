@@ -2,7 +2,8 @@
 TAG_CAMPAIGN.H
 
 The Tag Injector in the campaign (tag_campaign.c, docs/tag_injector.md
-"Campaign profiles"): a campaign level played alone plays the weapons and AI
+"Campaign profiles"): a campaign level played alone, or in a co-op game
+(tag_multiplayer.c shares the tags), plays the weapons and AI
 of a profile as a campaign profile says (port_tag_mp_profiles.c's
 campaign), in the randomizer's place: the weapons lying in the level and
 those its actors carry swapped, its enemies swapped (each kind, and each
@@ -84,6 +85,13 @@ tags it added (the profile's tags they were taken out for), and the level
 let go */
 long tag_campaign_level_profile(
 	void);
+/* ... a co-op game's: the host's share's profile (opened:
+tag_multiplayer_campaign_level_profile's), played as the campaign profile
+the host's game plays says (NONE: a client's, which adds the tags and swaps
+nothing: the host's objects and actors are its) */
+long tag_campaign_level_profile_shared(
+	long profile,
+	long campaign_profile);
 void tag_campaign_level_loaded(
 	long profile,
 	long const *roots,

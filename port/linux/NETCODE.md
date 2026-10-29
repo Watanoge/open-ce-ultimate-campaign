@@ -309,8 +309,8 @@ arrays differ from it.
 A randomized campaign (`port/linux/game/randomizer.c`), a campaign game
 with skulls, or one whose enemies drop the host's locked skulls to be found
 (`port/linux/game/skulls.c`), and a multiplayer game playing the host's
-Tag Injector weapons (`port/linux/game/tag_multiplayer.c`) is a modded
-game: only a build with the mod can play it. The network version stays the one builds without the
+Tag Injector weapons or a co-op game its campaign profile
+(`port/linux/game/tag_multiplayer.c`) is a modded game: only a build with the mod can play it. The network version stays the one builds without the
 mod have, so that plain games are played with them as before; a modded game
 is told apart by a signature of its own instead (`halo_port_limits.h`):
 
@@ -371,6 +371,13 @@ is told apart by a signature of its own instead (`halo_port_limits.h`):
   the host checks each client's table as for co-op
   (`_distributed_message_mod_tags`). The host swaps the map's weapons and
   gives the loadouts: they are its objects, which its clients have.
+- Tag Injector campaign profiles in co-op (mod version 5; `docs/tag_injector.md`,
+  "In co-op"): a co-op game on one of the campaign's ten levels whose host
+  plays a campaign profile advertises the same flag (and not the
+  randomizer's: the profile plays in its place) and shares the profile's
+  tags the same way, all of them (its AI, weapons and equipment) with the
+  campaign profile. Every machine adds them to each level of the game; the
+  host alone swaps the level's weapons and actors, which are its objects.
 
 Turned off (no swaps, no skulls, no drops, no Tag Injector weapons), the
 game is a plain one again: its

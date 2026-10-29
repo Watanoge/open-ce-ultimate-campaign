@@ -365,7 +365,6 @@ int port_tag_profiles_tag_clear_edits(long profile, long tag, char const *prefix
 int port_tag_profiles_shared(long profile);
 int port_tag_profiles_tag_set_option(long profile, long tag, const char *key, const char *value);
 int port_tag_profiles_tag_remove(long profile, long tag);
-char const *port_tag_mp_profiles_option(long profile, char const *key);
 
 /* ---------- the values */
 
@@ -1713,10 +1712,8 @@ static void editor_context(
 	context->profile = level_profile;
 	if (port_tag_profiles_shared(level_profile))
 	{
-		long mp_profile = tag_multiplayer_game_profile();
-
-		context->profile = tag_multiplayer_hosted() && mp_profile != NONE ?
-			port_tag_profiles_find(port_tag_mp_profiles_option(mp_profile, "profile")) : NONE;
+		/* (a multiplayer profile's, or a co-op game's campaign profile's) */
+		context->profile = tag_multiplayer_hosted() ? tag_multiplayer_game_base_profile() : NONE;
 		if (context->profile == NONE)
 		{
 			snprintf(context->why, sizeof(context->why), "Only the host edits the game's weapons: its edits reach "

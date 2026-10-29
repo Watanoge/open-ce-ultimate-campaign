@@ -1557,13 +1557,13 @@ boolean map_share_tags_download_begin(
 	}
 	download->state = _download_asking;
 	level_name_copy(download->level_name, level_name);
-	csstrncpy(download->message, "The host's game plays weapons of its Tag Injector profile, which this machine has "
+	csstrncpy(download->message, "The host's game plays tags of its Tag Injector profile, which this machine has "
 		"not got.", sizeof(download->message) - 1);
 	download->wanted = FLAG(_map_share_file_tags);
 	csmemcpy(download->tags_hash, hash, MAP_SHARE_HASH_BYTES);
 	download->asked_at = system_milliseconds();
 	download->progress_at = download->asked_at;
-	error(_error_silent, "map sharing: asking the host for its shared weapons (%lu bytes) of %s", size, level_name);
+	error(_error_silent, "map sharing: asking the host for its shared tags (%lu bytes) of %s", size, level_name);
 	download_ask();
 	return TRUE;
 }

@@ -402,7 +402,7 @@ and pick up better weapons, as well as `bots.skill` lets them
 
 Multiplayer > Create Game > LOCAL, in the PC version's menus, hosts a game
 that no other machine joins. Its Server Setup has BOTS in MAP SHARING's
-place: a screen of how many bots (none to 15), their skill and their teams,
+place: a screen of how many bots (none to 33), their skill and their teams,
 which writes `bots.count`, `bots.skill` and `bots.teams`, so the next game
 starts with them too.
 

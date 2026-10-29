@@ -9349,6 +9349,11 @@ static struct
 } map_list;
 
 #define SERVER_SETUP_NAME "pc\\main_menu\\multiplayer_type_select\\server_settings\\server_settings_screen"
+/* (the game's TAG PROFILE screen, which a co-op level's difficulty opens
+before Server Setup when the game asks for its profile: below) */
+#define TAG_PROFILE_SCREEN_NAME \
+	"pc\\main_menu\\multiplayer_type_select\\server_settings\\tag_profile\\tag_profile_screen"
+static boolean tag_profile_asked(void);
 
 static short map_step_count(void)
 {
@@ -9560,6 +9565,8 @@ static boolean map_list_choose(struct widget_instance *list, boolean *widget_del
 			community_daily_cancel();
 			return campaign_fail();
 		}
+		tag_multiplayer_game_campaign_profile_set(NONE);
+		multiplayer.tag_profile_shown = FALSE;
 		return ui_widget_port_open(list, SERVER_SETUP_NAME, widget_deleted);
 	}
 	community_daily_cancel();
@@ -9577,9 +9584,15 @@ static boolean map_list_choose(struct widget_instance *list, boolean *widget_del
 		char const *map_name = map_list.kind == MAP_KIND_SINGLEPLAYER ? main_get_solo_level_name(map_list.level) :
 			custom_map_level_name(map_list.kind, flat);
 
-		/* the co-op game set up, then Server Setup in the gametypes' place */
+		/* the co-op game set up, then Server Setup in the gametypes' place
+		(first the game's TAG PROFILE screen, tag_profile_asked: the game
+		plays no campaign profile until that chooses one) */
 		if (!ui_widget_port_cooperative_level_choose(map_name, chosen))
 			return campaign_fail();
+		tag_multiplayer_game_campaign_profile_set(NONE);
+		multiplayer.tag_profile_shown = tag_profile_asked();
+		if (multiplayer.tag_profile_shown)
+			return ui_widget_port_open(list, TAG_PROFILE_SCREEN_NAME, widget_deleted);
 		return ui_widget_port_open(list, SERVER_SETUP_NAME, widget_deleted);
 	}
 	/* (a multiplayer map: the Xbox's, then the Custom Edition ones, in the
@@ -9880,23 +9893,53 @@ Injector on and a multiplayer profile made, on one of the game's own
 multiplayer maps: NONE (the game listed for every build), then the Tag
 Injector's multiplayer profiles (the game listed for builds with the mod
 alone, its players downloading the profile's weapons: tag_multiplayer.c).
-What is chosen stays the game's: Server Setup shows it, and B from there
-comes back here to choose again */
+A co-op game's, on one of the campaign's levels with a campaign profile
+made, between the difficulty and Server Setup: NONE, then the campaign
+profiles (its players downloading the profile's AI and weapons, which the
+host plays in the randomizer's place: tag_campaign.c). What is chosen stays
+the game's: Server Setup shows it, and B from there comes back here to
+choose again */
 
 #define TAG_PROFILE_ROWS 9
-#define TAG_PROFILE_SCREEN_NAME \
-	"pc\\main_menu\\multiplayer_type_select\\server_settings\\tag_profile\\tag_profile_screen"
+
+static boolean hosting_cooperative(void);
+
+/* whether the screen is a co-op game's: one of the campaign's levels, its
+rows the campaign profiles */
+static boolean tag_profile_cooperative(void)
+{
+	void *server = global_network_game_server_get();
+	struct network_game *game = server ? network_game_server_get_game(server) : NULL;
+
+	return game && hosting_cooperative() && tag_multiplayer_campaign_takes(game->map.name);
+}
 
 /* whether the game hosted asks for its profile: a multiplayer game on one
 of the game's own maps, with the Tag Injector on and a multiplayer profile
-made */
+made; a co-op game on one of the campaign's levels with a campaign profile
+made (not a daily challenge's, the same for everyone) */
 static boolean tag_profile_asked(void)
 {
 	void *server = global_network_game_server_get();
 	struct network_game *game = server ? network_game_server_get_game(server) : NULL;
 
-	return game && config_boolean("game.tag_injection") && tag_multiplayer_map_takes(game->map.name) &&
-		port_tag_mp_profiles_scan() > 0;
+	if (!game || !config_boolean("game.tag_injection"))
+		return FALSE;
+	if (tag_profile_cooperative())
+		return !community_challenge_running() && port_tag_campaign_profiles_scan() > 0;
+	return !hosting_cooperative() && tag_multiplayer_map_takes(game->map.name) && port_tag_mp_profiles_scan() > 0;
+}
+
+/* the screen's profiles past NONE (multiplayer or campaign ones), a
+profile's name, and the one chosen last */
+static long tag_profile_count(void)
+{
+	return tag_profile_cooperative() ? port_tag_campaign_profiles_count() : port_tag_mp_profiles_count();
+}
+
+static char const *tag_profile_name(long profile)
+{
+	return tag_profile_cooperative() ? port_tag_campaign_profiles_name(profile) : port_tag_mp_profiles_name(profile);
 }
 
 /* the row (tag_profile_<n>) a widget is or is in, or NONE */
@@ -9913,7 +9956,7 @@ static short tag_profile_row(struct widget_instance *widget)
 /* "mp tag profiles init": the profile chosen last focused, else NONE */
 static boolean tag_profiles_initialize(struct widget_instance *list)
 {
-	long chosen = tag_multiplayer_profile_chosen();
+	long chosen = tag_profile_cooperative() ? tag_campaign_profile_chosen() : tag_multiplayer_profile_chosen();
 	short place = (short)(chosen == NONE ? 0 : chosen + 1);
 
 	multiplayer.tag_profile_first = (short)MAX(0, place - (TAG_PROFILE_ROWS - 1));
@@ -9927,9 +9970,10 @@ chosen: who sees the game, and what it plays */
 static void tag_profiles_update(struct widget_instance *list)
 {
 	struct widget_instance *help = list->parameters.list.extended_description;
-	short count = (short)(port_tag_mp_profiles_count() + 1);
+	short count = (short)(tag_profile_count() + 1);
 	short focused = tag_profile_row(list->focused_child);
 	short *first = &multiplayer.tag_profile_first;
+	boolean cooperative = tag_profile_cooperative();
 	short index;
 
 	if (focused == TAG_PROFILE_ROWS - 1 && *first + TAG_PROFILE_ROWS < count && list_scrolls_at_end())
@@ -9961,7 +10005,7 @@ static void tag_profiles_update(struct widget_instance *list)
 		if (place >= count)
 			continue;
 		if (place)
-			upper_copy(text, sizeof(text), port_tag_mp_profiles_name(place - 1));
+			upper_copy(text, sizeof(text), tag_profile_name(place - 1));
 		else
 			snprintf(text, sizeof(text), "NONE");
 		for (character = 0; text[character] && character < ROW_TEXT_LENGTH - 1; character++)
@@ -9971,10 +10015,22 @@ static void tag_profiles_update(struct widget_instance *list)
 		if (index != focused || !help)
 			continue;
 		if (!place)
-			snprintf(text, sizeof(text), "The map's own weapons. Every player can see and\njoin the game, on any build.");
+			snprintf(text, sizeof(text), cooperative ? "The levels' own AI and weapons, or the\nrandomizer's if it is on (Server Setup)." :
+				"The map's own weapons. Every player can see and\njoin the game, on any build.");
 		/* (the Tag Injector's bundles are Custom Edition maps': game.custom_edition) */
 		else if (!halo_custom_edition_tag_cache())
 			snprintf(text, sizeof(text), "Needs Custom Edition maps on (Settings > Gameplay).");
+		else if (cooperative)
+		{
+			long profile = port_tag_profiles_find(port_tag_campaign_profiles_option(place - 1, "profile"));
+
+			if (profile == NONE)
+				snprintf(text, sizeof(text), "A campaign profile whose profile is not there:\nthe levels play as they are.");
+			else
+				snprintf(text, sizeof(text), "%ld AI, %ld weapons of %.20s. Only this build's\nplayers see the game; "
+					"they download them.", tag_injector_profile_enabled_count(profile, 'actv'),
+					tag_injector_profile_enabled_count(profile, 'weap'), port_tag_profiles_name(profile));
+		}
 		else
 		{
 			long profile = port_tag_profiles_find(port_tag_mp_profiles_option(place - 1, "profile"));
@@ -9997,10 +10053,20 @@ static boolean tag_profile_choose(struct widget_instance *widget, boolean *widge
 	short place = row == NONE ? NONE : (short)(multiplayer.tag_profile_first + row);
 	long profile = place > 0 ? place - 1 : NONE;
 
-	if (place == NONE || place > port_tag_mp_profiles_count() || (profile != NONE && !halo_custom_edition_tag_cache()))
+	if (place == NONE || place > tag_profile_count() || (profile != NONE && !halo_custom_edition_tag_cache()))
 		return campaign_fail();
-	tag_multiplayer_game_profile_set(profile);
-	tag_multiplayer_profile_choose(profile);
+	/* (a co-op game's campaign profile, which its levels play in the
+	randomizer's place) */
+	if (tag_profile_cooperative())
+	{
+		tag_multiplayer_game_campaign_profile_set(profile);
+		tag_campaign_profile_choose(profile);
+	}
+	else
+	{
+		tag_multiplayer_game_profile_set(profile);
+		tag_multiplayer_profile_choose(profile);
+	}
 	ui_play_audio_feedback_sound(SOUND_FORWARD);
 	return ui_widget_port_open(widget, SERVER_SETUP_NAME, widget_deleted);
 }
@@ -10228,14 +10294,17 @@ static void wide_to_text(wchar_t const *wide, char *text, short size)
 	text[index] = 0;
 }
 
-/* whether Server Setup shows the game's TAG PROFILE: a multiplayer game
-whose TAG PROFILE screen was shown (tag_profile_asked), which chose it */
+/* whether Server Setup shows the game's TAG PROFILE: a multiplayer or
+co-op game whose TAG PROFILE screen was shown (tag_profile_asked), which
+chose it */
 static boolean server_settings_tag_profile_shown(void)
 {
 	void *server = global_network_game_server_get();
 	struct network_game *game = server ? network_game_server_get_game(server) : NULL;
 
-	return game && !hosting_cooperative() && multiplayer.tag_profile_shown &&
+	if (!game || !multiplayer.tag_profile_shown)
+		return FALSE;
+	return hosting_cooperative() ? tag_multiplayer_campaign_takes(game->map.name) :
 		tag_multiplayer_map_takes(game->map.name);
 }
 
@@ -10256,11 +10325,13 @@ static void server_settings_tag_profile_update(struct widget_instance *list)
 	if (!row || !shown)
 		return;
 	{
-		long profile = tag_multiplayer_game_profile();
+		boolean cooperative = hosting_cooperative();
+		long profile = cooperative ? tag_multiplayer_game_campaign_profile() : tag_multiplayer_game_profile();
 		char value[ROW_TEXT_LENGTH];
 
 		if (profile != NONE)
-			upper_copy(value, sizeof(value), port_tag_mp_profiles_name(profile));
+			upper_copy(value, sizeof(value), cooperative ? port_tag_campaign_profiles_name(profile) :
+				port_tag_mp_profiles_name(profile));
 		else
 			snprintf(value, sizeof(value), "NONE (EVERY BUILD)");
 		text_field_show(named(list, "tag_profile_value", 0), value, FALSE);
@@ -10348,8 +10419,11 @@ static void server_settings_update(struct widget_instance *list)
 			Settings > Gameplay: a level of the campaign's, any campaign map;
 			in a daily challenge's lobby both shown, dimmed, its own settings
 			not to be changed: community.c) */
+			/* (RANDOMIZER not with a campaign profile, played in its place:
+			tag_campaign.c) */
 			visible_set(randomizer_row, daily ||
-				(cooperative && config_boolean("game.randomizer") && hosting_campaign_level()));
+				(cooperative && config_boolean("game.randomizer") && hosting_campaign_level() &&
+				tag_multiplayer_game_campaign_profile() == NONE));
 			visible_set(skulls_row, daily || (cooperative && config_boolean("game.skulls")));
 			enabled_set(randomizer_row, !daily);
 			enabled_set(skulls_row, !daily);
@@ -13913,6 +13987,9 @@ enum
 	_option_setting		/* the host's own (config.toml): Server Setup's copy only */
 };
 
+/* the most values an option has (BOTS': 0 to 33) */
+#define GAMETYPE_OPTION_VALUES 34
+
 struct gametype_option
 {
 	char const *spinner;
@@ -13920,10 +13997,10 @@ struct gametype_option
 	short offset;
 	unsigned long argument;
 	short count;
-	long values[16];
+	long values[GAMETYPE_OPTION_VALUES];
 	/* (_option_setting: the setting, and its values' text) */
 	char const *setting;
-	char const *setting_values[16];
+	char const *setting_values[GAMETYPE_OPTION_VALUES];
 };
 
 #define VARIANT_FIELD(field) (short)offsetof(struct game_variant, field)
@@ -14076,8 +14153,9 @@ static struct gametype_option const gametype_options[] =
 		{ "256", "512", "1024", "2048", "4096", "8192", "16384", "20480" } },
 	/* the bots' (Server Setup's BOTS, a LOCAL game's: tools/port_settings.py's
 	BOTS_SETUP; bots.c, which the lobby's bots follow as they change) */
-	{ "bots_count_spinner", _option_setting, 0, 0, 14, { 0 }, "bots.count",
-		{ "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "15" } },
+	{ "bots_count_spinner", _option_setting, 0, 0, 34, { 0 }, "bots.count",
+		{ "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16",
+		"17", "18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "31", "32", "33" } },
 	{ "bots_skill_spinner", _option_setting, 0, 0, 7, { 0 }, "bots.skill",
 		{ "distributed", "recruit", "easy", "normal", "heroic", "veteran", "legendary" } },
 	{ "bots_teams_spinner", _option_setting, 0, 0, 2, { 0 }, "bots.teams", { "even", "against" } },

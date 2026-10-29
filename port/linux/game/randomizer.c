@@ -854,6 +854,9 @@ static int host_randomized(void)
 		return 0;
 	if (game && game->variant.game_engine_index != game_engine_none)
 		return 0;
+	/* (a co-op game playing a campaign profile, in the randomizer's place) */
+	if (tag_multiplayer_campaign_hosted())
+		return 0;
 	if (!game || !campaign_leaf(game->map.name, leaf, sizeof(leaf)))
 		return 0;
 	setup_from_config(&setup);
@@ -3990,9 +3993,15 @@ void randomizer_tags_loaded(char const *scenario_name)
 		return;
 	/* (a campaign profile, played alone as the Tag Injector's profiles are:
 	tag_campaign.c swaps the level's weapons and actors in the randomizer's
-	place) */
+	place; or a co-op game's, the host's share on every machine, which the
+	host alone swaps with) */
 	if (!game && !network_game_distributed_client() && !community_challenge_running())
 		campaign_profile = tag_campaign_level_profile();
+	else if (!community_challenge_running())
+	{
+		campaign_profile = tag_campaign_level_profile_shared(tag_multiplayer_campaign_level_profile(scenario_name),
+			network_game_distributed_client() ? NONE : tag_multiplayer_game_campaign_profile());
+	}
 	if (campaign_profile != NONE)
 	{
 		memset(&current, 0, sizeof(current));
@@ -4910,6 +4919,10 @@ void randomizer_advertisement(unsigned char *reserved)
 	if (!reserved || !game || game->variant.game_engine_index != game_engine_none)
 		return;
 	if (!config_boolean("game.randomizer") || !campaign_leaf(game->map.name, leaf, sizeof(leaf)))
+		return;
+	/* (a co-op game playing a campaign profile, in the randomizer's place:
+	its clients add the host's share instead, tag_multiplayer.c) */
+	if (tag_multiplayer_campaign_hosted())
 		return;
 	setup_from_config(&setup);
 	if (!setup_swaps(&setup))

@@ -532,9 +532,9 @@ so:
   gives it no weapon holds none.
 
 Each roll is the placement's, so starting the level again rolls again,
-and a checkpoint keeps what was placed. As the randomizer's profile, a
-campaign profile is played in a level played alone only (not a co-op game,
-a daily challenge or a random run), and a saved game expects the same one.
+and a checkpoint keeps what was placed. A campaign profile is played in a
+level played alone, or in a co-op game ("In co-op", below); never in a
+daily challenge or a random run, and a saved game expects the same one.
 A campaign profile whose profile is gone, or has no tags on, plays the level
 as it is (the log says so).
 
@@ -619,9 +619,38 @@ it. A profile's tag of a later Tag Injector, or a bundle a player's build
 reads otherwise (a texture its renderer cannot draw), makes that player's
 level differ from the host's.
 
-Not built yet: Custom Edition maps and the campaign; a profile's AI or
+Not built yet: Custom Edition maps; a multiplayer profile's AI or
 equipment. Downloaded shares stay in `tag_injector/.shared`
 until deleted by hand.
+
+### In co-op
+
+A co-op game hosted on one of the ten campaign levels (not a Custom
+Edition campaign map, nor a daily challenge) can play a campaign profile
+("Campaign profiles", above) the same way. With TAG INJECTION on and a
+campaign profile made, the difficulty chosen for the level opens the same
+**TAG PROFILE** screen before Server Setup: NONE (the levels as they are,
+or the randomizer's, a game every build joins unless it is randomized or
+has skulls), then the campaign profiles (starting on
+`game.campaign_tag_profile`). A campaign profile makes the game a modded
+one, kept for the whole game, every level of it; Server Setup's TAG
+PROFILE row shows it, A goes back to choose again, and its RANDOMIZER row
+is hidden: the profile plays in the randomizer's place, as it does alone,
+and the game is not advertised as randomized. A dedicated server hosting a
+co-op game takes `game.campaign_tag_profile` (with `game.tag_injection` on).
+
+- **The share** is made, told and downloaded as a multiplayer game's
+  (above), of all the profile's tags on (its AI, its weapons and the
+  equipment their bundles added), with the campaign profile played
+  (`campaign.toml`); a player's copy of it is a profile and a campaign
+  profile, both " (online)".
+- **The level.** Each level of the game adds the share's tags on every
+  machine as a campaign profile's level played alone adds the profile's
+  (the stock HUDs, the skulls' tags), so that they are at the same indices
+  on each; the host checks each player's tags.
+- **The swaps.** The host alone plays the campaign profile: it swaps the
+  level's weapons and actors and gives the loadouts, as alone. Its players
+  have the host's objects and actors, so they swap nothing.
 
 ## The Tag Editor
 

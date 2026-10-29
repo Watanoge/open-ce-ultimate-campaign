@@ -81,5 +81,9 @@ long port_tag_campaign_profiles_list_count(long profile, const char *section, co
 const char *port_tag_campaign_profiles_list(long profile, const char *section, const char *key, long entry);
 int port_tag_campaign_profiles_list_has(long profile, const char *section, const char *key, const char *path);
 int port_tag_campaign_profiles_list_set(long profile, const char *section, const char *key, const char *path, int on);
+/* a campaign profile's file's path, and a copy of a share's campaign.toml
+(a co-op game's), as the multiplayer profiles' */
+void port_tag_campaign_profiles_path(long profile, char *path, unsigned long size);
+long port_tag_campaign_profiles_import(const char *path, const char *suffix, const char *profile);
 
 #endif

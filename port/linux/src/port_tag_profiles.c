@@ -58,8 +58,8 @@ is listed, and left out where it is played.
 
 A network game's shared profile (port/linux/game/tag_multiplayer.c) is a
 folder of tag_injector/.shared, named for the hash of its archive: the
-host's weapons a multiplayer game plays, made from one of its profiles, and
-a client's download of it. It is no scan's (the menus never list it): it is
+host's weapons a multiplayer game plays (or the tags a co-op game plays),
+made from one of its profiles, and a client's download of it. It is no scan's (the menus never list it): it is
 opened alone, into a slot of its own past the profiles found, and kept
 there whatever scans come. Its archive (<id>.tagshare beside it) is its
 folder's files in one, as map sharing sends one file:
@@ -126,6 +126,7 @@ in, and an archive's magic, most files and largest file */
 /* the host's multiplayer profile in its share, and what a client's copy of
 a share it downloaded is named (after the host's names) */
 #define SHARED_MULTIPLAYER_FILE "multiplayer.toml"
+#define SHARED_CAMPAIGN_FILE "campaign.toml"
 #define SHARED_IMPORTED_EXTENSION ".imported"
 #define SHARED_COPY_SUFFIX " (online)"
 
@@ -973,6 +974,7 @@ long port_tag_profiles_duplicate(long profile, const char *name)
 		snprintf(from, sizeof(from), "%s/%s", from_folder, file);
 		snprintf(to, sizeof(to), "%s/%s", to_folder, file);
 		if (file[0] == '.' || !strcmp(file, "profile.toml") || !strcmp(file, SHARED_MULTIPLAYER_FILE) ||
+			!strcmp(file, SHARED_CAMPAIGN_FILE) ||
 			posix_stat(from, &information) != 0 ||
 			(information.flags & _posix_file_is_directory))
 			continue;
@@ -1761,7 +1763,8 @@ static int archive_entry_file(struct archive_entry *entry, const struct tag_prof
 	return archive_entry_path(entry, file, path);
 }
 
-long port_tag_profiles_shared_build(long profile, unsigned long group, const char *multiplayer, const char *archive)
+long port_tag_profiles_shared_build(long profile, unsigned long group, const char *multiplayer, const char *campaign,
+	const char *archive)
 {
 	struct tag_profile *found = profile_get(profile);
 	struct tag_profile shared;
@@ -1778,7 +1781,7 @@ long port_tag_profiles_shared_build(long profile, unsigned long group, const cha
 	memset(&shared, 0, sizeof(shared));
 	text_copy(shared.name, sizeof(shared.name), found->name);
 	shared.tags = calloc((size_t)(found->tag_count ? found->tag_count : 1), sizeof(*shared.tags));
-	entries = calloc((size_t)found->tag_count + 4, sizeof(*entries));
+	entries = calloc((size_t)found->tag_count + 5, sizeof(*entries));
 	if (!shared.tags || !entries)
 	{
 		free(shared.tags);
@@ -1810,9 +1813,12 @@ long port_tag_profiles_shared_build(long profile, unsigned long group, const cha
 	{
 		count += archive_entry_file(&entries[count], found, "tags.pack");
 		count += archive_entry_file(&entries[count], found, "tags.index");
-		/* (and the multiplayer profile played, which a client takes a copy of) */
+		/* (and the multiplayer or campaign profile played, which a client
+		takes a copy of) */
 		if (multiplayer && multiplayer[0])
 			count += archive_entry_path(&entries[count], SHARED_MULTIPLAYER_FILE, multiplayer);
+		if (campaign && campaign[0])
+			count += archive_entry_path(&entries[count], SHARED_CAMPAIGN_FILE, campaign);
 		text = profile_text(&shared);
 	}
 	written = text != NULL;
@@ -1967,15 +1973,19 @@ long port_tag_profiles_shared_import(const char *id)
 		return -1;
 	}
 	text_copy(folder, sizeof(folder), port_tag_profiles_folder(copy));
-	/* (the host's multiplayer profile, playing the copy) */
+	/* (the host's multiplayer or campaign profile, playing the copy) */
 	{
-		char multiplayer[MAXIMUM_PATH_LENGTH];
+		char played[MAXIMUM_PATH_LENGTH];
+		size_t length;
 
-		port_tag_profiles_shared_path(id, multiplayer, sizeof(multiplayer));
-		snprintf(multiplayer + strlen(multiplayer), sizeof(multiplayer) - strlen(multiplayer), "/%s",
-			SHARED_MULTIPLAYER_FILE);
-		if (posix_stat(multiplayer, &information) == 0)
-			port_tag_mp_profiles_import(multiplayer, SHARED_COPY_SUFFIX, folder);
+		port_tag_profiles_shared_path(id, played, sizeof(played));
+		length = strlen(played);
+		snprintf(played + length, sizeof(played) - length, "/%s", SHARED_MULTIPLAYER_FILE);
+		if (posix_stat(played, &information) == 0)
+			port_tag_mp_profiles_import(played, SHARED_COPY_SUFFIX, folder);
+		snprintf(played + length, sizeof(played) - length, "/%s", SHARED_CAMPAIGN_FILE);
+		if (posix_stat(played, &information) == 0)
+			port_tag_campaign_profiles_import(played, SHARED_COPY_SUFFIX, folder);
 	}
 	if (!file_write(path, folder, (unsigned long)strlen(folder)))
 		platform_log("tag injector: %s cannot be written: the share may be copied again", path);
