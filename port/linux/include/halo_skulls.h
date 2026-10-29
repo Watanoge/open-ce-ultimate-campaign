@@ -260,6 +260,9 @@ size, harmless (effects.c) */
 extern int skulls_effect_quiet;
 extern int skulls_effect_harmless;
 extern float skulls_effect_size;
+/* while set, an effect made makes no objects (Floodfection's burst, played
+by each machine of a multiplayer game for itself: infection.c) */
+extern int skulls_effect_no_objects;
 /* a skull to be found lying about: its name ("IRON SKULL"), else NULL; and
 it taken by a player's action button: on for the level, to be kept once
 the level is finished without dying. FALSE for another item. (The name is

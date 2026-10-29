@@ -29,6 +29,13 @@ seconds, written the same way once game.skulls is on with the skulls
 unlocked by playing, or their question not answered yet. At start-up both
 are written too with game.daily_challenge on, as its levels have both. A record names a map in seven letters, which
 Blood Gulch's name is too long for; Wizard's oddball is the same.
+
+maps/gamemodes.pack is the same file again for this fork's multiplayer
+modes: Two Betrayals' (c40) Flood carrier's burst, which Floodfection plays
+where a human turns or a zombie dies (infection.c), keeping the pixels and
+samples of the Flood's and the effects'. It is written at start-up once,
+whatever is set, as a game of one may be joined at any time; not when c40
+is not there.
 */
 
 #include <stdio.h>
@@ -1049,6 +1056,41 @@ static struct pack_kind const skulls_kind =
 	L"The skull data could not\r\nbe built. Is the card full?",
 };
 
+/* (this fork's multiplayer modes': Floodfection's burst, Two Betrayals') */
+static int game_modes_map_count(void)
+{
+	return 1;
+}
+
+static char const *game_modes_map(int index)
+{
+	(void)index;
+	return SKULLS_FLOOD_DONOR;
+}
+
+/* the Flood's pixels and samples, and the effects' (the burst's particles
+and their bitmaps) */
+static int game_modes_keep_bytes(unsigned long group, char const *name)
+{
+	char lower[256];
+	int index;
+
+	(void)group;
+	for (index = 0; name[index] && index + 1 < (int)sizeof(lower); index++)
+		lower[index] = (char)tolower((unsigned char)name[index]);
+	lower[index] = 0;
+	return strstr(lower, "flood") != NULL || !strncmp(lower, "effects\\", 8);
+}
+
+static struct pack_kind const game_modes_kind =
+{
+	"gamemodes.pack", game_modes_map_count, game_modes_map, game_modes_keep_bytes, 1, 0,
+	L"The multiplayer game modes need\r\nsome data from other maps.\r\nIt takes a moment.",
+	L"Building game mode data:\r\n",
+	L"The game mode data is ready.",
+	L"The game mode data could not\r\nbe built. Is the card full?",
+};
+
 int randomizer_pack_build(void)
 {
 	return pack_build(&randomizer_kind);
@@ -1128,7 +1170,7 @@ enum
 static int pack_step;
 /* the pack being written, and those asked for after it, in turn */
 static struct pack_kind const *pack_current;
-static struct pack_kind const *pack_queue[2];
+static struct pack_kind const *pack_queue[3];
 static int pack_queued;
 
 static void pack_request(struct pack_kind const *kind)
@@ -1174,6 +1216,11 @@ void skulls_pack_request(void)
 	pack_request(&skulls_kind);
 }
 
+int game_modes_pack_ready(void)
+{
+	return pack_ready(&game_modes_kind);
+}
+
 void randomizer_pack_update(boolean main_menu)
 {
 	static int checked;
@@ -1193,6 +1240,13 @@ void randomizer_pack_update(boolean main_menu)
 			randomizer_pack_request();
 		if (daily || skulls_pack_wanted())
 			skulls_pack_request();
+		/* (Floodfection's burst: any multiplayer game may be one) */
+		{
+			long file_length, tag_offset, tag_size;
+
+			if (randomizer_pack_map_header(SKULLS_FLOOD_DONOR, &file_length, &tag_offset, &tag_size, NULL))
+				pack_request(&game_modes_kind);
+		}
 	}
 	switch (pack_step)
 	{

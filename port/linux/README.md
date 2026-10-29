@@ -521,9 +521,16 @@ the rest of the game. The lobby and Server Setup name the gametype's mode.
 
 This fork adds two takes on them (the options' `mode_variant`, from their
 reserved bytes, which builds without it zero and so play the mode itself):
-**Floodfection**, Infection whose zombies are green and whose every map is
-under a green fog that hides the sky past some 55 world units (drawn by each
-machine of the fork: `infection.c`'s `infection_fog`, called by `render.c`);
+**Floodfection**, Infection whose zombies are green, whose humans each wear
+their own colour as in free for all, and whose every map is under a green
+fog that hides the sky past some 55 world units, 16 under a roof (a cluster
+with no sky), blended walking through a door (drawn by each machine of the
+fork: `infection.c`'s `infection_fog`, called by `render.c`). Where a human
+turns or a zombie dies, each machine plays a Flood carrier's burst
+(particles, decals and sound, no damage or objects), Two Betrayals'
+(`c40.map`), copied into the level as it loads from `maps/gamemodes.pack`,
+which the main menu writes once at start-up when `c40.map` is there (else
+from the map, more slowly);
 and **Tag Gun Game**, Gun Game whose weapons the host draws for each game
 from the map's and, in a game playing a Tag Injector multiplayer profile
 (the TAG PROFILE screen), the weapons its share added

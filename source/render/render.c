@@ -513,8 +513,8 @@ static void render_player_frame(
 		&render.fog);
 	structure_get_planar_fog((short)render.cluster_index, &render.fog);
 	/* port: Floodfection's fog over every map, which hides the sky
-	(port/linux/game/infection.c) */
-	if (infection_fog(&render.fog))
+	(port/linux/game/infection.c), closer in a cluster with none */
+	if (infection_fog(window->local_player_index, render.visible_sky_index == NONE, &render.fog))
 		render.visible_sky_model = FALSE;
 
 	if (render.fog.atmospheric_maximum_distance != 0.0f &&

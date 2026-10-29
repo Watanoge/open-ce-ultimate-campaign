@@ -108,6 +108,10 @@ wanted once skulls are to be found (game.skulls on, unlocking by playing) */
 void skulls_pack_request(void);
 /* skulls.pack is there and matches its map */
 int skulls_pack_ready(void);
+/* maps/gamemodes.pack, the multiplayer modes' tags from other maps
+(Floodfection's burst, Two Betrayals'), the same way: written at start-up
+once, when Two Betrayals is there; and it is there and matches its map */
+int game_modes_pack_ready(void);
 
 /* a campaign map's header, as the pack records it. 0 when the map is not
 there or is not an Xbox map */

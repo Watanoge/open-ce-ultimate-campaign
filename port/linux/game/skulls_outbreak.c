@@ -55,6 +55,7 @@ unsigned long system_milliseconds(void);
 
 int skulls_effect_quiet;
 int skulls_effect_harmless;
+int skulls_effect_no_objects;
 float skulls_effect_size = 1.0f;
 
 #define OUTBREAK_SPORES_MAX 8

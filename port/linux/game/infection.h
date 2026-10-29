@@ -14,12 +14,13 @@ struct game_engine *infection_engine_get(struct game_engine const *slayer);
 /* a player spawned: a zombie's skull (game_modes_postspawn) */
 void infection_postspawn(long player_index);
 
-/* Floodfection's look (the gametype's mode_variant): a zombie's armour
-colour in place of its team's (game_engine_player_get_change_color), and
-the fog over the map in place of its own, TRUE when it is (render.c: the
-sky is then not drawn) */
+/* Floodfection's look (the gametype's mode_variant): a player's armour
+colour in place of its team's, a zombie's green and a human's their own
+(game_engine_player_get_change_color), and the fog over the map in place of
+its own, closer indoors (the camera's cluster has no sky), TRUE when it is
+(render.c: the sky is then not drawn) */
 void infection_change_color(long player_index, union real_rgb_color *color);
-boolean infection_fog(struct render_fog *fog);
+boolean infection_fog(short local_player_index, boolean indoors, struct render_fog *fog);
 
 /* a living zombie's unit */
 boolean infection_unit_is_zombie(long unit_index);

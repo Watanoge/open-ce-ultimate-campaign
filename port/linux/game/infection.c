@@ -20,13 +20,18 @@ Each machine then sets each player's team, speed and shields by their role.
 Its options are the gametype's (game_engine.h's struct game_variant_options,
 infection_*). Floodfection (the options' mode_variant) is Infection with the
 Flood's look, which each machine of this fork draws for itself: its zombies
-green instead of blue, and every map under a green murk that hides the sky
-and all past some 55 world units. A build without it plays the same round,
-its zombies blue and its maps clear. The rules and much of the code follow the Infection of pull
+green instead of blue, its humans each in their own colour (as free for
+all's) instead of red, every map under a green murk that hides the sky and
+all past some 55 world units (16 under a roof), and a Flood carrier's burst
+where a human turns or a zombie dies (its tags from gamemodes.pack). A
+build without it plays the same round, its zombies blue and its maps
+clear. The rules and much of the code follow the Infection of pull
 request #420 by arisson2001rojas-design.
 */
 
 #include "cseries.h"
+#include "effects/effect_definitions.h"
+#include "effects/effects.h"
 #include "game/game.h"
 #include "game/game_engine.h"
 #include "game/players.h"
@@ -39,9 +44,12 @@ request #420 by arisson2001rojas-design.
 #include "objects/object_definitions.h"
 #include "physics/collisions.h"
 #include "render/render_cameras.h"
+#include "saved games/player_profile.h"
+#include "tag_files/tag_groups.h"
 #include "text/unicode.h"
 #include "units/units.h"
 #include "units/unit_definitions.h"
+#include "halo_skulls.h"
 #include "game_modes.h"
 #include "infection.h"
 #include "network_infection.h"
@@ -260,12 +268,24 @@ boolean infection_melee_rider_visible(
 /* ---- Floodfection's look */
 
 /* the Flood's fog: from a few world units off, opaque at its end, which the
-window clears to (the sky not drawn) */
+window clears to (the sky not drawn). Outdoors as far as a field needs;
+under a roof (a cluster with no sky: Prisoner's rooms, a base's halls) much
+closer, as rooms a few units across would hardly be tinted by the
+outdoors' */
 #define FLOODFECTION_FOG_START_DISTANCE 3.0f
 #define FLOODFECTION_FOG_OPAQUE_DISTANCE 55.0f
+#define FLOODFECTION_INDOOR_FOG_START_DISTANCE 0.5f
+#define FLOODFECTION_INDOOR_FOG_OPAQUE_DISTANCE 16.0f
+/* the share of the way from one to the other each frame drawn, walking in
+or out a door */
+#define FLOODFECTION_FOG_BLEND 0.08f
 
 static real_rgb_color const floodfection_zombie_color = { { 0.30f, 0.48f, 0.12f } };
 static real_rgb_color const floodfection_fog_color = { { 0.16f, 0.20f, 0.09f } };
+
+/* each local player's fog distances as last drawn, 0 before the first */
+static real floodfection_fog_start[MAXIMUM_NUMBER_OF_LOCAL_PLAYERS];
+static real floodfection_fog_opaque[MAXIMUM_NUMBER_OF_LOCAL_PLAYERS];
 
 static boolean infection_floodfection(
 	void)
@@ -273,6 +293,8 @@ static boolean infection_floodfection(
 	return infection_enabled() && game_modes_mode_variant() == _game_mode_variant_floodfection;
 }
 
+/* a zombie green; anyone else the colour of their profile, as free for
+all's (the humans are one team, but not one colour) */
 void infection_change_color(
 	long player_index,
 	real_rgb_color *color)
@@ -284,18 +306,109 @@ void infection_change_color(
 	role = infection_player(player_index);
 	if (role && role->role == _distributed_infection_role_zombie)
 		*color = floodfection_zombie_color;
+	else
+		*color = player_profile_get_rgb_color(player_get(player_index)->network_player_data.primary_color_index);
 }
 
 boolean infection_fog(
+	short local_player_index,
+	boolean indoors,
 	struct render_fog *fog)
 {
+	real start = indoors ? FLOODFECTION_INDOOR_FOG_START_DISTANCE : FLOODFECTION_FOG_START_DISTANCE;
+	real opaque = indoors ? FLOODFECTION_INDOOR_FOG_OPAQUE_DISTANCE : FLOODFECTION_FOG_OPAQUE_DISTANCE;
+
 	if (!infection_floodfection())
 		return FALSE;
+	if (VALID_INDEX(local_player_index, MAXIMUM_NUMBER_OF_LOCAL_PLAYERS))
+	{
+		real *last_start = &floodfection_fog_start[local_player_index];
+		real *last_opaque = &floodfection_fog_opaque[local_player_index];
+
+		if (*last_opaque > 0.0f)
+		{
+			start = *last_start + (start - *last_start) * FLOODFECTION_FOG_BLEND;
+			opaque = *last_opaque + (opaque - *last_opaque) * FLOODFECTION_FOG_BLEND;
+		}
+		*last_start = start;
+		*last_opaque = opaque;
+	}
 	fog->atmospheric_color = floodfection_fog_color;
 	fog->atmospheric_maximum_density = 1.0f;
-	fog->atmospheric_minimum_distance = FLOODFECTION_FOG_START_DISTANCE;
-	fog->atmospheric_maximum_distance = FLOODFECTION_FOG_OPAQUE_DISTANCE;
+	fog->atmospheric_minimum_distance = start;
+	fog->atmospheric_maximum_distance = MAX(opaque, start + 0.0001f);
 	return TRUE;
+}
+
+/* the Flood's burst (Two Betrayals' carrier's, copied into the level from
+gamemodes.pack: randomizer.c) where a player turned or a zombie died. Each
+machine plays its own, as it sees the turn (the host's state) or the death
+(the unit's): no message, and nothing of the game's but particles, decals
+and the sound (no damage, no objects a client would not have) */
+static long floodfection_burst_definition = NONE;
+/* by absolute player index: the role last seen, and the unit last burst */
+static short floodfection_seen_role[HALO_PORT_MAXIMUM_NETWORK_PLAYERS];
+static long floodfection_burst_unit[HALO_PORT_MAXIMUM_NETWORK_PLAYERS];
+
+static void floodfection_burst_reset(
+	void)
+{
+	long slot;
+
+	floodfection_burst_definition = tag_loaded(EFFECT_DEFINITION_TAG, SKULLS_OUTBREAK_BURST_TAG);
+	for (slot = 0; slot < HALO_PORT_MAXIMUM_NETWORK_PLAYERS; slot++)
+	{
+		floodfection_seen_role[slot] = _distributed_infection_role_none;
+		floodfection_burst_unit[slot] = NONE;
+	}
+	csmemset(floodfection_fog_start, 0, sizeof(floodfection_fog_start));
+	csmemset(floodfection_fog_opaque, 0, sizeof(floodfection_fog_opaque));
+}
+
+static void floodfection_burst_at(
+	long unit_index)
+{
+	char const *marker_names[1];
+	real_point3d marker_points[1];
+	real_vector3d marker_forwards[1];
+
+	marker_names[0] = "";
+	object_get_origin(unit_index, &marker_points[0]);
+	marker_forwards[0] = *global_up3d;
+	skulls_effect_harmless = TRUE;
+	skulls_effect_no_objects = TRUE;
+	effect_new_unattached_from_markers(floodfection_burst_definition, NONE, NULL, 1, marker_names, marker_points,
+		marker_forwards, 0.0f, 0.0f, NULL, NULL, TRUE);
+	skulls_effect_harmless = FALSE;
+	skulls_effect_no_objects = FALSE;
+}
+
+/* a human turned (killed or chosen: the body, or the living unit), or a
+zombie's unit dead: a burst there, once for each unit */
+static void floodfection_bursts(
+	long player_index)
+{
+	long slot = DATUM_INDEX_TO_ABSOLUTE_INDEX(player_index);
+	struct distributed_infection_player *role = infection_player(player_index);
+	struct player_datum *player = player_get(player_index);
+	long unit_index = player->unit_index != NONE ? player->unit_index : player->dead_unit_index;
+	struct unit_datum *unit = unit_index != NONE ? unit_try_and_get(unit_index) : NULL;
+	short seen;
+
+	if (!infection_floodfection() || !VALID_INDEX(slot, HALO_PORT_MAXIMUM_NETWORK_PLAYERS))
+		return;
+	seen = floodfection_seen_role[slot];
+	floodfection_seen_role[slot] = role ? role->role : _distributed_infection_role_none;
+	if (floodfection_burst_definition == NONE || !role || role->role != _distributed_infection_role_zombie ||
+		!unit || player->quit_out_of_game || floodfection_burst_unit[slot] == unit_index)
+	{
+		return;
+	}
+	if (seen == _distributed_infection_role_human || TEST_FLAG(unit->object.damage_flags, _object_dead_bit))
+	{
+		floodfection_burst_unit[slot] = unit_index;
+		floodfection_burst_at(unit_index);
+	}
 }
 
 /* ---- the host's round */
@@ -804,6 +917,7 @@ static boolean infection_initialize_for_new_map(
 	infection.state.game_number = network_game_get_game() ? network_game_get_number_of_games_played() : 0;
 	infection.missing_skull = get_ball_definition_index() == NONE;
 	infection.equipping = FALSE;
+	floodfection_burst_reset();
 	/* (everyone respawns; the variant's traits give zombies no infinite
 	grenades nor camouflage) */
 	variant->universal_variant.lives = 0;
@@ -872,6 +986,7 @@ static void infection_player_update_each_tick(
 	struct player_datum *player = player_get(player_index);
 
 	infection_reconcile_player(player_index);
+	floodfection_bursts(player_index);
 	if (network_game_distributed_client())
 		return;
 	/* (a dead zombie's skull deleted once its unit's death has dropped it) */
