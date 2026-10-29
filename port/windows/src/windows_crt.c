@@ -35,6 +35,18 @@ FILE *platform_fopen_host(const char *path, const char *mode)
 	return fopen(path, mode);
 }
 
+/* ... and one deleted, and one renamed (Windows' rename fails on a name a file has already), so: 0 when done
+(network_replay.c's and network_replay_page.c's) */
+int platform_remove_host(const char *path)
+{
+	return remove(path);
+}
+
+int platform_rename_host(const char *old_path, const char *new_path)
+{
+	return rename(old_path, new_path);
+}
+
 FILE *halo_windows_freopen(const char *path, const char *mode, FILE *stream)
 {
 	char host_path[1024];
