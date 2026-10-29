@@ -1356,8 +1356,10 @@ bottom one is the game's A everywhere else, and in a game */
 static BOOL menu_buttons_swapped(BOOL menus)
 {
 #ifdef HALO_SWITCH
-	/* (the game engine's: its carnage report, whose A picks the next game and B leaves, a menu's buttons too) */
+	/* (the game engine's: its carnage report, whose A picks the next game and B leaves, a menu's buttons too; and a
+	replay's playback, whose A watches the next player and B leaves: port/linux/game/network_replay_playback.c) */
 	extern unsigned char game_engine_showing_postgame(void);
+	extern unsigned char network_replay_playing(void);
 	static unsigned long read_at = (unsigned long)-1;
 	static BOOL swap;
 
@@ -1366,7 +1368,7 @@ static BOOL menu_buttons_swapped(BOOL menus)
 		read_at = config_changes();
 		swap = config_boolean("controls.nintendo_menu_buttons") != 0;
 	}
-	return (menus || game_engine_showing_postgame()) && swap;
+	return (menus || game_engine_showing_postgame() || network_replay_playing()) && swap;
 #else
 	(void)menus;
 	return FALSE;

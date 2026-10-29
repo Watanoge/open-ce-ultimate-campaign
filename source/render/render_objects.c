@@ -112,6 +112,7 @@ symbols in this file:
 #include "saved games/game_state.h"
 #include "rasterizer/rasterizer_console_vars.h"
 #include "rasterizer/rasterizer_model_types.h"
+#include "network_replay.h" /* port: port/linux/game/network_replay_playback.c */
 
 /* ---------- constants */
 
@@ -528,6 +529,17 @@ static boolean object_is_first_person_camera(
 		? NONE
 		: player_get(local_player_get_player_index(render.local_player_index))->unit_index;
 
+	/* port: a replay's playback's view through the watched player's eyes:
+their unit is the camera's, as a local player's own is
+(port/linux/game/network_replay_playback.c) */
+	if (network_replay_viewing_eyes())
+	{
+		long watched = network_replay_watched_player();
+		struct player_datum *player = watched != NONE ? player_try_and_get(watched) : NULL;
+
+		if (player && player->unit_index != NONE && player->unit_index == object_index)
+			return TRUE;
+	}
 	return (unit_index == object_index &&
 		director_get_perspective(render.local_player_index) ==
 			_director_perspective_first_person) ||

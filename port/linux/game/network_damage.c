@@ -2619,8 +2619,13 @@ static boolean distributed_event_goes_to(
 	short count = damage_event_destinations[event_index].player_count;
 	short index;
 
-	if (count == NONE || damage_event_destinations[event_index].owner_machine_index == machine_index)
+	/* (the replay recorder has every event: network_replay.c; and with
+	network.full_detail_to_clients every client) */
+	if (count == NONE || damage_event_destinations[event_index].owner_machine_index == machine_index ||
+		machine_index == distributed_recorder_machine() || distributed_full_detail_to_clients())
+	{
 		return TRUE;
+	}
 	for (index = 0; index < count; index++)
 	{
 		short player_index = damage_event_destinations[event_index].player_indices[index];
@@ -2700,7 +2705,7 @@ void network_damage_host_tick(
 	short limit = MIN(MAXIMUM_ENTRIES_PER_MESSAGE, RELIABLE_ENTRIES(struct distributed_damage_event));
 	long machine_indices[HALO_PORT_MAXIMUM_NETWORK_MACHINES];
 	short machine_count = damage_event_count ?
-		distributed_client_machines(machine_indices, HALO_PORT_MAXIMUM_NETWORK_MACHINES) : 0;
+		distributed_viewing_machines(machine_indices, HALO_PORT_MAXIMUM_NETWORK_MACHINES) : 0;
 	short machine_number;
 
 	distributed_log_reports();

@@ -15,7 +15,8 @@ saved as the menus save it).
 
 Holding L and R (the shoulders) and pressing the d-pad's down opens it and
 closes it, on any controller; on the keyboard | (wherever its layout has it:
-xinput_sdl.c); on Android without one, three fingers on the screen together
+xinput_sdl.c); on Android without one, three fingers (or four, the touch
+controls' General option) on the screen together
 (TouchControls.java over the touch controls). While
 it is open the game gets none of the controllers, the keyboard, the mouse
 or the touchscreen (port/linux/src/xinput_sdl.c, touch_input.c): the d-pad
@@ -396,6 +397,9 @@ static struct overlay_entry overlay_system_entries[] =
 	OVERLAY_GLOBAL("Lens Flares", "rasterizer_lens_flares"),
 	OVERLAY_GLOBAL("Screen Effects", "rasterizer_screen_effects"),
 	OVERLAY_GLOBAL("Weather Particles", "weather"),
+	/* (a host's recording of its games: network_replay.c, port/linux/REPLAY.md) */
+	OVERLAY_TOGGLE_NOTE("Record Replays", _overlay_state_config, "config network.record_replays true",
+		"config network.record_replays false", "network.record_replays", "From the next network game"),
 #if defined(HALO_SWITCH) || defined(HALO_PS5)
 	OVERLAY_TOGGLE_NOTE("Xbox Button Pictures", _overlay_state_config, "config display.xbox_buttons true",
 		"config display.xbox_buttons false", "display.xbox_buttons", "Applies at the next restart"),

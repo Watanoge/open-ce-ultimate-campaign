@@ -506,8 +506,9 @@ static const struct config_setting config_settings[] =
 		"Holding L and R and pressing the d-pad's down opens the game's overlay\n"
 		"menu, and closes it, as | does on the keyboard: cheats, the game's\n"
 		"speed, the HUD, the camera and the renderer's switches, in a panel at\n"
-		"the left of the screen (on Android also three fingers on the screen\n"
-		"together). While it is open the game gets no input; it is not paused.\n"
+		"the left of the screen (on Android also three or four fingers on the\n"
+		"screen together). While it is open the game gets no input; it is not\n"
+		"paused.\n"
 		"false: neither the buttons nor | open it." },
 #if defined(HALO_SWITCH) || defined(HALO_PS5)
 	{ "display.xbox_buttons", _config_boolean, "false", "HALO_XBOX_BUTTONS", _environment_value, _platform_all,
@@ -982,6 +983,23 @@ static const struct config_setting config_settings[] =
 		"drops it (5 to 300; the stock game's 15). Longer keeps players whose\n"
 		"connection stalls (a browser tab in the background) at the cost of\n"
 		"frozen players for longer when one really goes." },
+	{ "network.record_replays", _config_boolean, "false", "HALO_NET_RECORD_REPLAYS", _environment_value,
+		_platform_all,
+		"Each network game is recorded to the data folder's replays/, which\n"
+		"the main menu's Theater plays (port/linux/REPLAY.md): a host's, all of\n"
+		"it (what a client that sees everything is sent); a client's, what its\n"
+		"host sends it (far players less often) and its own input. Read at a\n"
+		"game's start; the overlay's System folder has it too." },
+	{ "network.full_detail_to_clients", _config_boolean, "false", "HALO_NET_FULL_DETAIL_TO_CLIENTS",
+		_environment_value, _platform_all,
+		"Hosting: send every client every player every tick (not those far\n"
+		"from its own, or out of their sight, less often) and every damage\n"
+		"event (not only those near its players), so that a client's replay\n"
+		"holds all of the game. More to send: a client's download grows with\n"
+		"the players. Read each tick." },
+	{ "network.replays_kept", _config_integer, "30", "HALO_NET_REPLAYS_KEPT", _environment_value, _platform_all,
+		"How many replays the replays/ folder keeps: the oldest are deleted as a\n"
+		"recording starts; 0 keeps them all." },
 	{ "network.allow_upnp", _config_boolean, "true", "HALO_NET_ALLOW_UPNP", _environment_value, _platform_all,
 		"Let internet play ask the router (UPnP) to forward its port, for\n"
 		"networks whose NAT stops connections: when a player joins this\n"
@@ -1145,7 +1163,7 @@ static const struct config_setting config_settings[] =
 	{ "network.browser_source", _config_string, "\"all\"", "HALO_NET_BROWSER_SOURCE", _environment_value,
 		_platform_all,
 		"The server browser's games: \"all\" (ALL GAMES: the dedicated\n"
-		"servers first, then the games players host), \"dedicated\" (the\n"
+		"servers and the games players host), \"dedicated\" (the\n"
 		"master servers' dedicated servers) or \"players\" (P2P GAMES: games\n"
 		"players host). Its top-left tab changes it." },
 	{ "network.browser_show_empty", _config_boolean, "true", "HALO_NET_BROWSER_SHOW_EMPTY", _environment_value,
@@ -1161,12 +1179,12 @@ static const struct config_setting config_settings[] =
 		_platform_all,
 		"The server browser lists games of one kind only: \"any\", \"ctf\",\n"
 		"\"slayer\", \"oddball\", \"king\" or \"race\" (its Filters screen)." },
-	{ "network.browser_sort", _config_string, "\"servers\"", "HALO_NET_BROWSER_SORT", _environment_value,
+	{ "network.browser_sort", _config_string, "\"players\"", "HALO_NET_BROWSER_SORT", _environment_value,
 		_platform_all,
-		"The server browser's order: \"servers\" (dedicated servers first, then by\n"
-		"players), \"players\", \"name\", \"map\", \"type\" or \"locked\" (a password's\n"
-		"first); \"-\" before one reverses it (\"-players\"). A column title sorts by\n"
-		"it, and again the other way." },
+		"The server browser's order: \"players\" (the most players first),\n"
+		"\"servers\" (dedicated servers first, then by players), \"name\", \"map\",\n"
+		"\"type\" or \"locked\" (a password's first); \"-\" before one reverses it\n"
+		"(\"-players\"). A column title sorts by it, and again the other way." },
 	{ "network.stun_servers", _config_string, "\"stun.l.google.com:19302,stun.cloudflare.com:3478\"",
 		"HALO_NET_STUN", _environment_value, _platform_all,
 		"Public STUN servers that tell this machine its internet address;\n"

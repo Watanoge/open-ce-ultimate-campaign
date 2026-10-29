@@ -40,7 +40,7 @@ and to **deko3d**, the Switch's own GPU interface, on the Switch.
 
 > [!TIP]
 > **New: the OpenCE overlay.** Hold **L + R** and press **d-pad down** (on
-> Android without a controller, tap the screen with three fingers) for a
+> Android without a controller, tap the screen with three fingers, or four as set in the touch controls' General options) for a
 > panel of cheats (god mode, infinite ammo, super jump and more), bots, the
 > game's speed, the HUD, the camera and the renderer's switches, without
 > leaving the game, and entries of your own. No cheats in multiplayer unless
@@ -649,7 +649,7 @@ menus and in a game, on the Switch, the PS5 and Android.
 | Switch | hold **L** and **R**, press **d-pad down** |
 | PS5 | hold **L1** and **R1**, press **d-pad down** |
 | Android, with a controller | hold **L1** and **R1** (LB and RB), press **d-pad down** |
-| Android, touch only | tap the screen with **three fingers** together |
+| Android, touch only | tap the screen with **three fingers** together (or four: the touch controls' Options, General) |
 
 The same buttons close it. While it is open the game gets none of your
 input, but it is not paused.
@@ -925,7 +925,8 @@ A profiling build plays with normal builds. It does not use
   and devkitPro, for the Switch.
 - [SDL](https://www.libsdl.org/), on both platforms.
 - [Kenney](https://kenney.nl/)'s [Input Prompts](https://kenney.nl/assets/input-prompts)
-  (CC0), the controller buttons' pictures on the Switch and the PS5.
+  (CC0), the controller buttons' pictures on the Switch and the PS5, and
+  a replay's button prompts everywhere.
 
 Halo is a trademark of Microsoft. This project is not affiliated with or
 endorsed by Microsoft, Bungie or 343 Industries.

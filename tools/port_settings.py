@@ -20,12 +20,31 @@ from xml.sax.saxutils import quoteattr
 
 PE = "main_menu/settings_select/player_setup/player_profile_edit"
 # the mods' screen, and its rows (_mods); the main menu's items
-# (ce/main_menu.xml): MODS in Credits' place (Credits is left out:
-# tools/ce_menus.py's LEFT_OUT), Quit a row below it (its CHILD_OFFSETS)
+# (ce/main_menu.xml), MAIN_MENU_ITEM_SPACING apart (the PC version's 36
+# leaves no room below Quit for a seventh): Campaign and Multiplayer, THEATER
+# below it (_theater), the PC version's Profiles and Settings, MODS in
+# Credits' place (Credits is left out: tools/ce_menus.py's LEFT_OUT), and
+# Quit (their CHILD_OFFSETS); the list's order is its up and down's
 MODS = "main_menu/mods"
 MOD_ROWS = 11
-MODS_ITEM_PLACE = (192, 391)
-QUIT_ITEM_PLACE = (192, 427)
+MAIN_MENU_ITEM_TOP = 247
+MAIN_MENU_ITEM_SPACING = 32
+MAIN_MENU_ITEMS = ["load_camp", "multiplayer", "theater", "profile", "settings", "mods", "quit_game"]
+
+
+def main_menu_item_place(item: str) -> tuple:
+    """where the main menu's item is (Campaign's 2 units right of the rest,
+    as the PC version has it)"""
+    return (194 if item == "load_camp" else 192,
+            MAIN_MENU_ITEM_TOP + MAIN_MENU_ITEM_SPACING * MAIN_MENU_ITEMS.index(item))
+
+
+MODS_ITEM_PLACE = main_menu_item_place("mods")
+THEATER_ITEM_PLACE = main_menu_item_place("theater")
+QUIT_ITEM_PLACE = main_menu_item_place("quit_game")
+# the Theater (port/linux/REPLAY.md): the replays a host records, its rows
+# (_theater)
+THEATER = "main_menu/theater"
 # the daily challenge's screens, and Campaign's DAILY CHALLENGE (_daily),
 # above Back, which goes a row down (wider than the other items, about the
 # same middle; menu_functions.c's campaign_menu_initialize takes it away,
@@ -2000,9 +2019,13 @@ WIDGET_PATCHES = {
     f"{MT}/connected/connected_map_select_wrapper": {"set": {
         "flags": "pass_unhandled_to_focused_child pause_game main_menu_if_no_history tag_controller_index force_handle_mouse",
     }},
-    # (the main menu's MODS, before Quit: _mods)
-    "main_menu/main_menu_select_list": {"insert_before": {"main_menu/main_menu_item_quit_game": [
-        f'<child widget="main_menu/main_menu_item_mods" x="{MODS_ITEM_PLACE[0]}" y="{MODS_ITEM_PLACE[1]}"/>']},
+    # (the main menu's THEATER, after Multiplayer, and MODS, before Quit:
+    # _theater, _mods)
+    "main_menu/main_menu_select_list": {"insert_before": {
+        "main_menu/main_menu_item_profile": [
+            f'<child widget="main_menu/main_menu_item_theater" x="{THEATER_ITEM_PLACE[0]}" y="{THEATER_ITEM_PLACE[1]}"/>'],
+        "main_menu/main_menu_item_quit_game": [
+            f'<child widget="main_menu/main_menu_item_mods" x="{MODS_ITEM_PLACE[0]}" y="{MODS_ITEM_PLACE[1]}"/>']},
         # (the main menu's X - the west face button: Y on a Switch, Square on
         # a PS5 - opens the news, the releases' notes: _news_screen; on the
         # main menu alone, once they came, and its hint shown only then)
@@ -2197,6 +2220,7 @@ BITMAP_FRAMES = {
 # are (port/assets/menus/port_svg): bitmap name, text
 TITLES = {
     "main_menu/mods/header_mods": "MODS",
+    "main_menu/theater/header_theater": "THEATER",
     f"{MT}/join_game/header_server_browser": "SERVER BROWSER",
     f"{MT}/join_game/header_direct_link": "DIRECT LINK",
     f"{MT}/join_game/header_password": "PASSWORD",
@@ -3704,6 +3728,8 @@ def multiplayer_files() -> dict:
         DAILY.replace("/", ".") + ".xml": [head[0], "<!-- The port's Daily Challenge screens, in the PC version's "
                                            "style (tools/port_settings.py) -->", head[2]] + _daily() +
         ["</menus>", ""],
+        THEATER.replace("/", ".") + ".xml": [head[0], "<!-- The port's Theater screen, in the PC version's style "
+                                             "(tools/port_settings.py) -->", head[2]] + _theater() + ["</menus>", ""],
     }
 
 
@@ -3727,7 +3753,10 @@ MENU_ITEM_TOP, MENU_ITEM_SCALE, MENU_ITEM_MIDDLE = 6.57, 0.9037, 130.0
 # words and the 24 that a space parts ("Y C": the space between words too)
 MENU_ITEM_SPACES = {"MO": 3.17, "OD": 2.8, "DS": 2.3,
                     "DA": 0.93, "AI": 1.03, "IL": 4.12, "LY": -3.02, "Y C": 10.89, "CH": 3.13, "HA": 1.74,
-                    "AL": 0.71, "LL": 0.8, "LE": 0.19, "EN": 4.22, "NG": 2.72, "GE": 2.5}
+                    "AL": 0.71, "LL": 0.8, "LE": 0.19, "EN": 4.22, "NG": 2.72, "GE": 2.5,
+                    # (THEATER's: ER as the redraws' PLAYER has it; the
+                    # others set by eye beside the PC version's items)
+                    "TH": 2.5, "HE": 2.6, "EA": 1.5, "AT": 0.5, "TE": 1.5, "ER": 3.24}
 # the mods' status icons (port/assets/icons/lucide): a mod out of the order it
 # asks for, and one that cannot be played (another mod says it cannot be
 # played with it, or this build cannot play it): menu_functions.c's
@@ -3881,4 +3910,88 @@ def _mods() -> list:
                                                               '<on event="start" run="port mods move down"/>'])
     lines += _button(f"{base}/button_ok", 1, ['<on event="a" run="port mods save" back="true"/>',
                                               '<on event="start" run="port mods save" back="true"/>'])
+    return lines
+
+
+# ---------- the Theater (port/linux/REPLAY.md): the main menu's THEATER,
+# the replays a host or a client records (port/linux/game/network_replay.c),
+# laid out as the Mods screen is: on the left the replays, a row each, the
+# newest first (its map and when, and its length), scrolling over more, A
+# playing the one chosen (network_replay_playback.c); on the right, in the
+# lobby's frame, what the one chosen is; and the buttons: RECORD (ON or OFF,
+# network.record_replays), DELETE (the one chosen, at a second press), EXPORT
+# (Android's: the app's folder picker, HaloActivity.exportReplays) and BACK
+# (menu_functions.c's "port theater" functions). The Switch and the PS5 have
+# fewer rows: under them a QR code of their replay page
+# (network_replay_page.c)
+
+THEATER_ROWS = 10
+THEATER_QR_ROWS = 6
+THEATER_ROW_TOP = 73
+
+
+def _theater() -> list:
+    base = THEATER
+    lines = _widget("main_menu/main_menu_item_theater",
+                    [("type", "text"), ("width", 256), ("height", 33), ("bitmap", "main_menu/menu_theater")],
+                    [f'<on event="a" open="{base}/theater_screen"/>', f'<on event="start" open="{base}/theater_screen"/>',
+                     '<on event="left_mouse" run="mouse emit accept event"/>'])
+    lines += _widget(f"{base}/theater_screen", [("width", 640), ("height", 480),
+                                                ("flags", "pass_unhandled_to_focused_child pause_game"),
+                                                ("bitmap", "bitmaps/gradient")],
+                     ['<on event="b" back="true"/>', '<on event="back" back="true"/>',
+                      '<child widget="main_menu/new_select/sel_list_desc_bkd"/>',
+                      f'<child widget="{base}/theater_list"/>',
+                      f'<child widget="{base}/header_theater"/>',
+                      f'<child widget="{base}/theater_qr_text" platform="switch ps5"/>'])
+    lines += _header(f"{base}/header_theater", f"{base}/header_theater")
+    rows = []
+    for index in range(THEATER_ROWS):
+        rows.append(f'<child{attributes([("widget", f"{base}/op_replay_{index + 1}"), ("x", 20), ("y", THEATER_ROW_TOP + 30 * index), ("platform", "desktop android web" if index >= THEATER_QR_ROWS else None)])}/>')
+    lines += _widget(f"{base}/theater_list", [("type", "column_list"), ("width", 640), ("height", 480),
+                                              ("flags", "pass_unhandled_to_focused_child up_down_tabs_children"),
+                                              ("description", f"{base}/theater_details")],
+                     ['<data input="port theater update"/>', *rows, f'<child widget="{base}/button_bar" y="414"/>'])
+    for index in range(THEATER_ROWS):
+        lines += _widget(f"{base}/op_replay_{index + 1}",
+                         [("width", 390), ("height", 28), ("flags", "pass_unhandled_to_focused_child"),
+                          ("bitmap", "bitmaps/sel_list_item_bkd_top" if index == 0 else "bitmaps/sel_list_item_bkd"),
+                          ("color", "#FF2896FF")],
+                         ['<on event="a" run="port theater watch"/>', '<on event="start" run="port theater watch"/>',
+                          '<on event="left_mouse" run="mouse emit accept event"/>',
+                          f'<child widget="{base}/theater_replay_name" x="12"/>',
+                          f'<child widget="{base}/theater_replay_length" x="290"/>'])
+    lines += _widget(f"{base}/theater_replay_name",
+                     [("type", "text"), ("controller", 1), ("width", 276), ("height", 22), ("font", "ui\\large_ui"),
+                      ("color", "#FF2896FF"), ("text_y", 4)], [])
+    lines += _widget(f"{base}/theater_replay_length",
+                     [("type", "text"), ("controller", 1), ("width", 90), ("height", 22), ("font", "ui\\large_ui"),
+                      ("color", "#FF2896FF"), ("align", "right"), ("text_y", 4), ("text_flags", "no_focus_test")], [])
+    # (the Switch's and the PS5's: the replay page's QR code, drawn over this
+    # line by menu_functions.c, network_replay_page.c)
+    lines += _widget(f"{base}/theater_qr_text",
+                     [("type", "text"), ("controller", 1), ("left", 20), ("top", 392), ("width", 390), ("height", 18),
+                      ("text", "Scan it to download or upload replays."), ("font", "ui\\small_ui"),
+                      ("color", "#FFFFFFFF"), ("align", "center"), ("text_flags", "no_focus_test")], [])
+    # (in the lobby's frame, sel_list_desc_bkd's, as the mods' details)
+    lines += _widget(f"{base}/theater_details", [("width", 640), ("height", 480)],
+                     [f'<child widget="{base}/theater_details_text"/>'])
+    lines += _widget(f"{base}/theater_details_text",
+                     [("type", "text"), ("controller", 1), ("left", 412), ("top", 84), ("width", 200),
+                      ("height", 318), ("font", "ui\\small_ui"), ("color", "#FF2896FF")], [])
+    lines += _widget(f"{base}/button_bar",
+                     [("type", "column_list"), ("width", 640), ("height", 28),
+                      ("flags", "pass_unhandled_to_focused_child left_right_tabs_items")],
+                     [f'<child widget="{base}/button_record" y="1"/>',
+                      f'<child widget="{base}/button_delete" x="130" y="1"/>',
+                      f'<child widget="{base}/button_export" x="260" y="1" platform="android"/>',
+                      f'<child widget="{base}/button_back" x="510" y="1"/>'])
+    lines += _text_button(f"{base}/button_record", "RECORD: OFF", ['<on event="a" run="port theater record"/>',
+                                                                  '<on event="start" run="port theater record"/>'])
+    lines += _text_button(f"{base}/button_delete", "DELETE", ['<on event="a" run="port theater delete"/>',
+                                                             '<on event="start" run="port theater delete"/>'])
+    lines += _text_button(f"{base}/button_export", "EXPORT", ['<on event="a" run="port theater export"/>',
+                                                             '<on event="start" run="port theater export"/>'])
+    lines += _text_button(f"{base}/button_back", "BACK", ['<on event="a" back="true"/>',
+                                                         '<on event="start" back="true"/>'])
     return lines

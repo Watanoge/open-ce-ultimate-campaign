@@ -4187,6 +4187,11 @@ static void render_state_bitmap(
 	return;
 }
 
+/* port: where the last draw_string_and_hack_in_icons left its cursor (the
+right of its last line), for a caller that centres what it drew
+(port/linux/game/network_replay_playback.c) */
+short draw_string_and_hack_in_icons_port_end_x;
+
 void draw_string_and_hack_in_icons(
 	rectangle2d *bounds,
 	rectangle2d *clip,
@@ -4333,6 +4338,7 @@ void draw_string_and_hack_in_icons(
 	}
 	if (current)
 		render_state_text(bounds, &cursor_bounds, current);
+	draw_string_and_hack_in_icons_port_end_x = cursor_bounds.x0;
 	draw_string_set_indents(0, 0);
 
 	return;

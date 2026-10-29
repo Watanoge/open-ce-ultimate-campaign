@@ -93,8 +93,11 @@ CHILD_OFFSETS = {
     **{("ui\\shell\\main_menu\\settings_select\\multiplayer_setup\\player_options_edit\\player_options_menu",
         f"ui\\shell\\main_menu\\settings_select\\multiplayer_setup\\player_options_edit\\op_{row}"): (54, 73 + 27 * index)
        for index, row in enumerate(port_settings.PLAYER_OPTIONS_ROWS)},
-    ("ui\\shell\\main_menu\\main_menu_select_list", "ui\\shell\\main_menu\\main_menu_item_quit_game"):
-        port_settings.QUIT_ITEM_PLACE,
+    # the main menu's items closer together, for MODS and THEATER
+    # (port_settings.MAIN_MENU_ITEMS)
+    **{("ui\\shell\\main_menu\\main_menu_select_list", f"ui\\shell\\main_menu\\main_menu_item_{item}"):
+       port_settings.main_menu_item_place(item)
+       for item in ("load_camp", "multiplayer", "profile", "settings", "quit_game")},
     ("ui\\shell\\main_menu\\campaign_select\\campaign_menu_select_list",
      "ui\\shell\\main_menu\\campaign_select\\menu_item_back"): port_settings.CAMPAIGN_BACK_ITEM_PLACE,
     ("ui\\shell\\main_menu\\multiplayer_type_select\\multiplayer_type_select_list",
@@ -722,6 +725,8 @@ def main() -> None:
     lines.append(art.port_picture("main_menu/menu_daily", port_settings.menu_item_frames(
         "DAILY CHALLENGE", art.redraws, port_settings.DAILY_ITEM_WIDTH)))
     lines.append(art.port_picture("main_menu/menu_mods", port_settings.menu_item_frames("MODS", art.redraws)))
+    # (and its THEATER: port_settings._theater)
+    lines.append(art.port_picture("main_menu/menu_theater", port_settings.menu_item_frames("THEATER", art.redraws)))
     lines.append(art.port_picture("mods/status", port_settings.mod_status_frames(ROOT / "port/assets/icons/lucide")))
     lines.append(art.port_picture("mods/status_small",
                                   port_settings.mod_status_frames(ROOT / "port/assets/icons/lucide", 16)))

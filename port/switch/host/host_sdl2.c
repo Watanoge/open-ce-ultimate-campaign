@@ -1457,6 +1457,13 @@ void host_gesture_insets(int *insets)
 	memset(insets, 0, 4 * sizeof(*insets));
 }
 
+/* (the Theater's EXPORT REPLAYS is the Android app's folder picker: the
+Switch's replays are on the card, port/linux/game/menu_functions.c) */
+void host_android_export_replays(const char *folder)
+{
+	(void)folder;
+}
+
 void host_touch_read(int32_t *state)
 {
 	memset(state, 0, 7 * sizeof(*state));
@@ -1501,4 +1508,9 @@ int host_folder_pick_result(char *buffer, unsigned int size)
 	(void)buffer;
 	(void)size;
 	return -1;
+}
+
+int host_touch_menu_fingers(void)
+{
+	return 3;
 }

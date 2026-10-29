@@ -40,7 +40,7 @@ unsigned char overlay_menu_open(void);
 /* nonzero while a name is typed in it (the Tag Editor's): the keyboard's
 keys go to it as typed then, none of them as the controller's */
 unsigned char overlay_menu_typing(void);
-/* opens it, or closes it if it is open (three fingers on Android's
+/* opens it, or closes it if it is open (three or four fingers on Android's
 touchscreen, or on its touch controls); taken at the next frame */
 void overlay_menu_toggle_request(void);
 

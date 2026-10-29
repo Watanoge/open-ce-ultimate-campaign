@@ -321,6 +321,35 @@ change. The screens open, close and move between each other as the PC
 version's. `display.menus = "xbox"` gives the Xbox's menus, which start every
 kind of game.
 
+The main menu adds two items of the port's: Theater, under Multiplayer,
+the replays this machine recorded of the network games it played
+([REPLAY.md](REPLAY.md)), and Mods (refer to
+[docs/mods.md](../../docs/mods.md)). Theater lists the replays, the newest
+first, each with its map, when and its length; A plays the one chosen,
+and the panel says what it is (its game type, server, who recorded it,
+its size). A replay is the game as it was played: A watches the next
+player and X the one before; the d-pad's left and right skip back and on
+10 seconds (to the keyframe before or after); Y goes round three views
+(behind them, which the right stick flies round them, its click turning
+it with them again, and the left stick zooms; through their eyes with
+their arms and weapon, or from behind their vehicle as they saw it; and a
+free camera moved with the sticks and the triggers; a replay a client
+recorded has only its own player's eyes); the right and left
+shoulder buttons (R and L on the Switch, R1 and L1 on the PS5) play it
+faster or slower, to a pause; Back held shows the scores; B hides the
+lines over the screen; Start pauses it, and in the pause menu B leaves and
+Start resumes. Its
+buttons: RECORD turns `network.record_replays` on or off; DELETE deletes
+the one chosen (pressed twice); on Android, EXPORT opens the system's
+folder picker and copies the replays to the folder chosen (those it
+already holds, by name, are left out), as the app's own folder cannot be
+opened by other apps. On the Switch and the PS5 the Theater shows a QR
+code and an address instead: a page on the local network, while the
+Theater is open, that downloads the replays and uploads others
+(`network.link_page` turns it off, with Direct Link's). The folder keeps
+the newest `network.replays_kept`, and a recording shorter than 5 seconds
+is deleted as it ends.
+
 The menus' text is in the language of the Custom Edition whose `loc.map` is
 in `custom_maps` (French, German, Italian, Spanish and so on), as that
 edition shows it: each of the PC version's texts is that `loc.map`'s
@@ -682,14 +711,17 @@ the setting for one start of the game. It has priority over the file.
 | `network.brokers_file` | `"brokers.txt"` | `HALO_NET_BROKERS_FILE` | The file of the public MQTT brokers that let the machines of an invite find each other, and that carry the listings of the server browser: next to `config.toml`, unless a full path. One `host:port` on each line, up to 4; `#` starts a comment. |
 | `network.stun_servers` | Google and Cloudflare | `HALO_NET_STUN` | The public STUN servers (`host:port`, with commas between them) that give the internet address of a machine. |
 | `network.client_timeout_seconds` | `15` | `HALO_NET_CLIENT_TIMEOUT_SECONDS` | Hosting: the seconds the host waits for a machine it hears nothing from before it drops it (5 to 300; the stock game waits 15). The same seconds are how long each machine's reliable stream waits for its peer to read before it gives up, and how long a host in a game waits for its own network to come back (an address renewed, a wifi drop) before it ends the game; each machine reads its own setting. A longer wait keeps players whose connection stalls (a browser tab in the background), but a machine that is really gone leaves its players frozen for longer. |
+| `network.record_replays` | `false` | `HALO_NET_RECORD_REPLAYS` | `true` records each network game to `replays/` in the data folder, one `.ocreplay` file a game. A host records all of it: what a client that sees every player is sent (a player's game or a dedicated server's). A client records what its host sends it (the players far from its own, or out of sight, less often; only the events the host sends it) and its own players' input. The main menu's Theater plays them; `tools/replay_stats.py` measures them. It is read when a game starts, so turning it on during a game (the overlay's System folder has Record Replays) records from the next one. Refer to [REPLAY.md](REPLAY.md). |
+| `network.replays_kept` | `30` | `HALO_NET_REPLAYS_KEPT` | How many replays `replays/` keeps: as a recording starts, the oldest past this many are deleted. `0` keeps them all. |
+| `network.full_detail_to_clients` | `false` | `HALO_NET_FULL_DETAIL_TO_CLIENTS` | Hosting: `true` sends every client every player every tick (not those far from its own players, or out of their sight, less often) and every damage event (not only those near its players), as a host's replay recorder is sent, so that a client's replay holds all of the game. A client downloads more, the more players there are. The objects and the AI's units are sent as before. |
 | `network.public_address` | `""` | `HALO_NET_PUBLIC_ADDRESS` | Hosting: the internet address the joiners reach this machine at, `host[:port]` (the port forwarded to `network.tunnel_port`), for a server behind a NAT with one forwarded port. It is offered first, and its name is looked up again every 5 minutes. Empty: what STUN and UPnP find. |
 | `network.listings` | `"both"` | `HALO_NET_LISTINGS` | What the server browser lists. `"both"`: the dedicated servers of the master servers first, then the games players host (from the brokers). `"masters"`: the master servers' only. `"brokers"`: the brokers' only. Refer to "Server browser". |
 | `network.masters_file` | `"masters.txt"` | `HALO_NET_MASTERS_FILE` | The file of the master servers the server browser asks for dedicated servers, next to `config.toml` unless a full path: on each line an `https://` URL and the master's key (`ed25519:<hex>`), 4 at most. A file that names none (missing, or comments alone, as the release's) leaves the official master, built in (`https://master.opencommunityedition.com`). Refer to "Dedicated server". |
-| `network.browser_source` | `"all"` | `HALO_NET_BROWSER_SOURCE` | The server browser's games. `"all"` (ALL GAMES): the dedicated servers first, then the games players host; `"dedicated"`: the dedicated servers of the master servers; `"players"` (P2P GAMES): the games players host. The tab at the top left of the server browser changes it. |
+| `network.browser_source` | `"all"` | `HALO_NET_BROWSER_SOURCE` | The server browser's games. `"all"` (ALL GAMES): the dedicated servers and the games players host; `"dedicated"`: the dedicated servers of the master servers; `"players"` (P2P GAMES): the games players host. The tab at the top left of the server browser changes it. |
 | `network.browser_show_empty`, `network.browser_show_full` | `true` | `HALO_NET_BROWSER_SHOW_EMPTY`, `HALO_NET_BROWSER_SHOW_FULL` | `false`: the server browser does not list the games with no player, the full games. The server browser's Filters screen sets them. |
 | `network.browser_maps` | `"yes"` | `HALO_NET_BROWSER_MAPS` | `"yes"`: the server browser lists the games on maps this computer does not have. `"no"`: it does not. `"downloadable"`: only those of a Custom Edition map that the host shares. |
 | `network.browser_gametype` | `"any"` | `HALO_NET_BROWSER_GAMETYPE` | The server browser lists the games of one kind only: `"any"`, `"ctf"`, `"slayer"`, `"oddball"`, `"king"` or `"race"` (the Filters screen). |
-| `network.browser_sort` | `"servers"` | `HALO_NET_BROWSER_SORT` | The server browser's order. `"servers"`: dedicated servers first, then by players. `"players"`, `"name"`, `"map"`, `"type"` or `"locked"` (games with a password first). A `-` before one reverses it (`"-players"`). A column's title sorts by it, and again the other way. |
+| `network.browser_sort` | `"players"` | `HALO_NET_BROWSER_SORT` | The server browser's order. `"players"`: the games with the most players first. `"servers"`: dedicated servers first, then by players. `"name"`, `"map"`, `"type"` or `"locked"` (games with a password first). A `-` before one reverses it (`"-players"`). A column's title sorts by it, and again the other way. |
 | `server.enabled` | `false` | `HALO_SERVER` | `true`: run as a dedicated server, as `halo --server` does. Refer to "Dedicated server". The `server.*` settings are written to `config.toml` only by a dedicated server. |
 | `server.name` | `"OpenCE Server"` | `HALO_SERVER_NAME` | The game's name in the lobby and the server browser: 15 characters of printable ASCII. |
 | `server.max_players` | `16` | `HALO_SERVER_MAX_PLAYERS` | The most players (2 to 127). |
@@ -1219,8 +1251,8 @@ master servers, or only the brokers.
   The titles are: server name, map, game, players, the lock (the games
   with a password first) and the dedicated icon (dedicated servers first).
   A second choice of the same title reverses the order, and an arrow on
-  the title shows the direction. The default order is dedicated servers
-  first, then the games with the most players, then by name. The browser
+  the title shows the direction. The default order is the games with the
+  most players first, then by name. The browser
   keeps the order in `network.browser_sort`.
 - FILTERS opens the Filters screen of Custom Edition. It has SHOW EMPTY
   SERVERS, SHOW FULL SERVERS, GAME TYPE (ANY or one game engine) and SHOW
