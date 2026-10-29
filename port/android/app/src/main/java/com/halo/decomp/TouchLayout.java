@@ -222,7 +222,6 @@ final class TouchLayout {
         return duplicate(type);
     }
 
-    /** moves a control, keeping all of it on the display */
     boolean optionsMoved() {
         return !Float.isNaN(optionsX);
     }
@@ -248,6 +247,7 @@ final class TouchLayout {
         optionsY = Math.max(radius, Math.min(height - radius, y));
     }
 
+    /** moves a control, keeping all of it on the display */
     void move(int control, float x, float y) {
         if (!Float.isFinite(x) || !Float.isFinite(y))
             return;
