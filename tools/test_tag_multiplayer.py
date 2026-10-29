@@ -206,9 +206,9 @@ def test_cooperative():
     asked = functions.split("static boolean tag_profile_asked(void)\n{", 1)[1].split("\n}\n", 1)[0]
     assert "port_tag_campaign_profiles_scan()" in asked and "community_challenge_running()" in asked
     choose = functions.split("static boolean tag_profile_choose(", 1)[1].split("\n}\n", 1)[0]
-    assert "tag_multiplayer_game_campaign_profile_set(profile)" in choose
+    assert "tag_multiplayer_game_campaign_profile_set(campaign_profile)" in choose
     share = TAG_MULTIPLAYER.read_text()
-    assert "return campaign ? 0 : WEAPON_DEFINITION_TAG;" in share
+    assert "return kind == _played_multiplayer ? WEAPON_DEFINITION_TAG : 0;" in share
     assert "tag_multiplayer_game_campaign_profile_set(tag_campaign_profile_chosen())" in share
     profiles = (ROOT / "port/linux/src/port_tag_profiles.c").read_text()
     assert '#define SHARED_CAMPAIGN_FILE "campaign.toml"' in profiles
@@ -222,6 +222,16 @@ def test_cooperative():
     assert advertised.index("tag_multiplayer_campaign_hosted()") < advertised.index("placement_roll_new(")
     limits = (ROOT / "port/linux/include/halo_port_limits.h").read_text()
     assert int(re.search(r"#define HALO_PORT_MOD_NETWORK_VERSION (\d+)", limits).group(1)) >= 5
+    # (a profile the randomizer plays, listed after the campaign profiles:
+    # its share told as the randomizer's, its pools and custom types
+    # advertised, a client keeping them only with that share)
+    assert "tag_multiplayer_game_randomizer_profile_set(randomizer_profile)" in choose
+    assert "config_boolean(\"game.randomizer\") ? port_tag_profiles_count() : 0" in functions
+    assert "message.share.kind = (byte)hosted->kind;" in share
+    assert "(setup.custom_type ? 32 : 0)" in advertised
+    remote = randomizer.split("static void setup_from_remote(struct setup *setup)", 1)[1].split("\n}\n", 1)[0]
+    assert "int custom = tag_multiplayer_randomizer_shared();" in remote and "POOL_TAG_INJECTOR" in remote
+    assert loaded.index("tag_multiplayer_randomizer_level_profile(scenario_name)") < loaded.index("gather_begin()")
 
 
 def test_documented():

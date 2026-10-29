@@ -87,7 +87,10 @@ the menus show it before joining it (hosts built before then never set it) */
 /* ... the game randomizes a campaign level (0x20: 0x04 is the dedicated flag,
 above). The next three reserved bytes are which swaps are on (bit 0 enemies, bit 1 weapon pickups, bit 2 the
 weapons actors carry, bit 3 the player's allies with the enemies, bit 4
-go crazy), the pool (0 any, 1 covenant, 2 flood, 3 human, 4 one type) and
+go crazy; bits 5 to 7 the enemies', the pickups' and the actors' weapons'
+one type a custom type of the Tag Injector profile a co-op host shares for
+its pools: tag_multiplayer.c), the pool (0 any, 1 covenant, 2 flood, 3
+human, 4 one type; 5 the shared profile's, with such a share) and
 that type (0 grunt, 1 elite, 2 jackal, 3 hunter, 4 flood combat, 5 flood
 carrier, 6 marine, 8 engineer, 9 sentinel). The next four bytes are the placement roll, a
 little-endian unsigned long, so a client lays out the level the host did.

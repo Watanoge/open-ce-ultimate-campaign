@@ -652,6 +652,18 @@ co-op game takes `game.campaign_tag_profile` (with `game.tag_injection` on).
   level's weapons and actors and gives the loadouts, as alone. Its players
   have the host's objects and actors, so they swap nothing.
 
+With the randomizer on, the screen lists the Tag Injector's profiles after
+the campaign profiles, marked (RANDOMIZER), as the solo screen does. One
+chosen joins the randomizer's pools (its TAG INJECTOR pools and custom
+types too, set on Server Setup's RANDOMIZER screen, which stays shown) for
+every level of the game, and is written to `game.randomizer_tag_profile`.
+It is shared as a campaign profile is (all its tags on, without a profile
+of settings), and the host advertises its TAG INJECTOR pools and whether
+each one type is a custom type with the randomizer's setup, so each player
+copies the same tags of the other campaign maps and adds the share's; the
+host alone swaps. With the randomizer swapping nothing, the game plays no
+share and is a plain one.
+
 ## The Tag Editor
 
 The overlay menu's **TAG EDITOR** (L, R and the d-pad's down, or | on the keyboard) changes the

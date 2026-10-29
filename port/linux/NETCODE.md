@@ -378,6 +378,11 @@ is told apart by a signature of its own instead (`halo_port_limits.h`):
   tags the same way, all of them (its AI, weapons and equipment) with the
   campaign profile. Every machine adds them to each level of the game; the
   host alone swaps the level's weapons and actors, which are its objects.
+  With the randomizer on, the host may share a profile for its pools
+  instead: the share message's kind byte says so (0 a game's profile, 1 the
+  randomizer's), the game is advertised as randomized too, and the
+  randomizer's setup bytes carry its TAG INJECTOR pools and custom-type
+  bits, so a client with the share copies the host's tags.
 
 Turned off (no swaps, no skulls, no drops, no Tag Injector weapons), the
 game is a plain one again: its

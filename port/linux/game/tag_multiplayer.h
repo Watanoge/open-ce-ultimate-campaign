@@ -7,7 +7,8 @@ the weapons of a profile, as a multiplayer profile says (port_tag_mp_profiles.c)
 on every machine: the host shares them as one file (map_share.c), and
 swaps the map's weapons for them and gives them as its players' loadouts. A
 co-op game on one of the campaign's levels plays a campaign profile's tags
-(tag_campaign.c) on every machine alike, shared the same way.
+(tag_campaign.c), or a profile's in the randomizer's pools (randomizer.c),
+on every machine alike, shared the same way.
 */
 
 #ifndef __TAG_MULTIPLAYER_H
@@ -61,6 +62,12 @@ long tag_multiplayer_game_campaign_profile(
 	void);
 void tag_multiplayer_game_campaign_profile_set(
 	long profile);
+/* ... or the profile (port_tag_profiles' index) a co-op game plays in the
+randomizer's pools (NONE: none, or not this machine's game) */
+long tag_multiplayer_game_randomizer_profile(
+	void);
+void tag_multiplayer_game_randomizer_profile_set(
+	long profile);
 long tag_multiplayer_game_base_profile(
 	void);
 /* whether a game on this level plays a multiplayer profile: one of the
@@ -87,6 +94,10 @@ boolean tag_multiplayer_hosted(
 /* ... a co-op game, playing a campaign profile (the randomizer is not
 played, nor advertised) */
 boolean tag_multiplayer_campaign_hosted(
+	void);
+/* whether the co-op game plays a profile in the randomizer's pools: the
+host's chosen for it, a client's told by the host (its share's kind) */
+boolean tag_multiplayer_randomizer_shared(
 	void);
 void tag_multiplayer_advertisement(
 	unsigned char *reserved);
@@ -127,6 +138,9 @@ long tag_multiplayer_level_profile(
 /* ... and a co-op game's campaign level's (tag_campaign.c plays it: the
 host's campaign profile on the host, nothing to swap on a client) */
 long tag_multiplayer_campaign_level_profile(
+	char const *scenario_name);
+/* ... and the share a co-op game's randomizer adds to its pools (opened) */
+long tag_multiplayer_randomizer_level_profile(
 	char const *scenario_name);
 void tag_multiplayer_level_loaded(
 	long profile,

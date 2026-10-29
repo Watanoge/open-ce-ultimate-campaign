@@ -750,9 +750,11 @@ static void setup_from_config(struct setup *setup)
 	setup->odd_enemies = setup->crazy && config_boolean("game.randomizer_crazy_enemies");
 	setup->flamethrower = setup->crazy && config_boolean("game.randomizer_crazy_flamethrower");
 	/* (the profile's tags, played alone: a network game's machines must all
-	have the same, and a challenge is the same for everyone) */
-	setup->custom_tags = !network_game_get_game() && !network_game_distributed_client() &&
-		!community_challenge_running() && tag_injector_profile_playable() != NONE;
+	have the same, and a challenge is the same for everyone; or the profile
+	a co-op game's host chose for it, which it shares: tag_multiplayer.c) */
+	setup->custom_tags = !network_game_distributed_client() && !community_challenge_running() &&
+		(network_game_get_game() ? tag_multiplayer_game_randomizer_profile() != NONE :
+		tag_injector_profile_playable() != NONE);
 	/* (a percentage, to the nearest tenth from one to all of them) */
 	setup->pods = setup->crazy ? (int)PIN((config_integer("game.randomizer_crazy_pods") + 5) / 10, 1, 10) : 0;
 	setup->pickups = config_boolean("game.randomizer_pickups");
@@ -801,18 +803,25 @@ static void setup_from_config(struct setup *setup)
 
 static void setup_from_remote(struct setup *setup)
 {
+	/* (the host's profile's tags, with the TAG INJECTOR pools and custom
+	types, when it shares them for its pools: tag_multiplayer.c; the custom
+	types' names are the host's alone, which this machine does not swap) */
+	int custom = tag_multiplayer_randomizer_shared();
+
 	setup->enemies = (remote_setup[0] & 1) != 0;
 	setup->pickups = (remote_setup[0] & 2) != 0;
 	setup->weapons = (remote_setup[0] & 4) != 0;
 	setup->allies = (remote_setup[0] & 8) != 0;
 	setup->crazy = (remote_setup[0] & 16) != 0;
-	setup->pool = remote_setup[1] <= POOL_ONE ? remote_setup[1] : POOL_ANY;
+	setup->pool = remote_setup[1] <= (custom ? POOL_TAG_INJECTOR : POOL_ONE) ? remote_setup[1] : POOL_ANY;
 	setup->type = type_known(remote_setup[2]) ? remote_setup[2] : TYPE_GRUNT;
 	setup->rank = remote_setup[7] < RANK_COUNT ? remote_setup[7] : RANK_ANY;
-	setup->pickup_pool = remote_setup[8] < WEAPON_POOL_TAG_INJECTOR ? remote_setup[8] : WEAPON_POOL_ANY;
+	setup->pickup_pool = remote_setup[8] <= (custom ? WEAPON_POOL_TAG_INJECTOR : WEAPON_POOL_ONE) ? remote_setup[8] :
+		WEAPON_POOL_ANY;
 	setup->pickup_type = remote_setup[9] < WEAPON_KIND_COUNT && !weapon_kinds[remote_setup[9]].actors_only ?
 		remote_setup[9] : WEAPON_PISTOL;
-	setup->weapon_pool = remote_setup[10] < WEAPON_POOL_TAG_INJECTOR ? remote_setup[10] : WEAPON_POOL_ANY;
+	setup->weapon_pool = remote_setup[10] <= (custom ? WEAPON_POOL_TAG_INJECTOR : WEAPON_POOL_ONE) ? remote_setup[10] :
+		WEAPON_POOL_ANY;
 	setup->weapon_type = remote_setup[11] < WEAPON_KIND_COUNT ? remote_setup[11] : WEAPON_PLASMA_RIFLE;
 	/* (Go Crazy's parts; a host built before there were any has all of
 	them, and swaps every infection form) */
@@ -830,11 +839,14 @@ static void setup_from_remote(struct setup *setup)
 		setup->flamethrower = setup->crazy;
 		setup->pods = 10;
 	}
-	/* (the host's profile's tags are its own) */
-	setup->custom_tags = 0;
-	setup->custom_type = 0;
-	setup->pickup_custom_type = 0;
-	setup->weapon_custom_type = 0;
+	/* (the host's profile's tags are its own, unless it shares them) */
+	setup->custom_tags = custom;
+	setup->custom_type = custom && (remote_setup[0] & 32) != 0;
+	setup->pickup_custom_type = custom && (remote_setup[0] & 64) != 0;
+	setup->weapon_custom_type = custom && (remote_setup[0] & 128) != 0;
+	setup->custom_type_name[0] = 0;
+	setup->pickup_custom_type_name[0] = 0;
+	setup->weapon_custom_type_name[0] = 0;
 }
 
 static int setup_swaps(struct setup const *setup)
@@ -4049,6 +4061,17 @@ void randomizer_tags_loaded(char const *scenario_name)
 		else
 			error(_error_silent, "randomizer: the Tag Injector's profile has no tags on any more");
 	}
+	/* (a co-op game's: the host's share of the profile its host chose, on
+	every machine, read and added in the same order) */
+	else if (randomize && current.custom_tags && !community_challenge_running())
+	{
+		custom_profile = tag_multiplayer_randomizer_level_profile(scenario_name);
+		if (custom_profile != NONE)
+			stock_hud_count = tag_injector_tags_read(custom_profile, stock_huds, STOCK_HUD_MAX);
+		else
+			error(_error_silent, "randomizer: the host's Tag Injector profile is not on this machine: the level "
+				"will not match the host's");
+	}
 	if (gather_begin())
 	{
 		if (randomize)
@@ -4935,7 +4958,8 @@ void randomizer_advertisement(unsigned char *reserved)
 		(unsigned char)(reserved[HALO_PORT_ADVERTISED_FLAGS_OFFSET] | HALO_PORT_ADVERTISED_RANDOMIZER_FLAG);
 	reserved[HALO_PORT_ADVERTISED_RANDOMIZER_SETUP_OFFSET] =
 		(unsigned char)((setup.enemies ? 1 : 0) | (setup.pickups ? 2 : 0) | (setup.weapons ? 4 : 0) |
-			(setup.allies ? 8 : 0) | (setup.crazy ? 16 : 0));
+			(setup.allies ? 8 : 0) | (setup.crazy ? 16 : 0) | (setup.custom_type ? 32 : 0) |
+			(setup.pickup_custom_type ? 64 : 0) | (setup.weapon_custom_type ? 128 : 0));
 	reserved[HALO_PORT_ADVERTISED_RANDOMIZER_SETUP_OFFSET + 1] = (unsigned char)setup.pool;
 	reserved[HALO_PORT_ADVERTISED_RANDOMIZER_SETUP_OFFSET + 2] = (unsigned char)setup.type;
 	reserved[HALO_PORT_ADVERTISED_RANDOMIZER_ROLL_OFFSET] = (unsigned char)placement_roll;

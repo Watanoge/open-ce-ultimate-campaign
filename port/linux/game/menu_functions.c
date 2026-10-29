@@ -2535,7 +2535,9 @@ static void randomizer_tags_refresh(void)
 	if (randomizer_tags.checked && system_milliseconds() - randomizer_tags.checked <= 1000)
 		return;
 	randomizer_tags.checked = system_milliseconds();
-	randomizer_tags.profile = campaign_screens_for_server ? NONE : tag_injector_profile_playable();
+	/* (a co-op game's: the profile chosen for it, which it shares) */
+	randomizer_tags.profile = campaign_screens_for_server ? tag_multiplayer_game_randomizer_profile() :
+		tag_injector_profile_playable();
 	randomizer_tags.actor_type_count = randomizer_tags.profile == NONE ? 0 :
 		tag_injector_custom_types(randomizer_tags.profile, 'actv', randomizer_tags.actor_types, RANDOMIZER_CUSTOM_TYPES);
 	randomizer_tags.weapon_type_count = randomizer_tags.profile == NONE ? 0 :
@@ -9926,20 +9928,52 @@ static boolean tag_profile_asked(void)
 	if (!game || !config_boolean("game.tag_injection"))
 		return FALSE;
 	if (tag_profile_cooperative())
-		return !community_challenge_running() && port_tag_campaign_profiles_scan() > 0;
+		return !community_challenge_running() && (port_tag_campaign_profiles_scan() > 0 ||
+			(config_boolean("game.randomizer") && port_tag_profiles_scan() > 0));
 	return !hosting_cooperative() && tag_multiplayer_map_takes(game->map.name) && port_tag_mp_profiles_scan() > 0;
 }
 
-/* the screen's profiles past NONE (multiplayer or campaign ones), a
-profile's name, and the one chosen last */
+/* the screen's profiles past NONE: a multiplayer game's multiplayer
+profiles; a co-op game's campaign profiles, then with the randomizer on the
+profiles it plays (as the solo screen lists them: randomizer_tag_profile_place).
+Of one (from 0), the campaign profile it is and the profile the randomizer
+plays (each NONE when it is not one), or the multiplayer profile (returned) */
 static long tag_profile_count(void)
 {
-	return tag_profile_cooperative() ? port_tag_campaign_profiles_count() : port_tag_mp_profiles_count();
+	if (!tag_profile_cooperative())
+		return port_tag_mp_profiles_count();
+	return port_tag_campaign_profiles_count() + (config_boolean("game.randomizer") ? port_tag_profiles_count() : 0);
 }
 
-static char const *tag_profile_name(long profile)
+static long tag_profile_place(long index, long *campaign_profile, long *profile)
 {
-	return tag_profile_cooperative() ? port_tag_campaign_profiles_name(profile) : port_tag_mp_profiles_name(profile);
+	long campaign_profiles = port_tag_campaign_profiles_count();
+
+	*campaign_profile = NONE;
+	*profile = NONE;
+	if (index < 0 || !tag_profile_cooperative())
+		return index;
+	if (index < campaign_profiles)
+		*campaign_profile = index;
+	else
+		*profile = index - campaign_profiles;
+	return NONE;
+}
+
+/* a row's name: a profile the randomizer plays marked so */
+static void tag_profile_name(long index, char *text, unsigned int size)
+{
+	long campaign_profile;
+	long profile;
+	long mp_profile = tag_profile_place(index, &campaign_profile, &profile);
+	char name[96];
+
+	if (profile != NONE)
+		snprintf(name, sizeof(name), "%s (RANDOMIZER)", port_tag_profiles_name(profile));
+	else
+		snprintf(name, sizeof(name), "%s", campaign_profile != NONE ? port_tag_campaign_profiles_name(campaign_profile) :
+			port_tag_mp_profiles_name(mp_profile));
+	upper_copy(text, size, name);
 }
 
 /* the row (tag_profile_<n>) a widget is or is in, or NONE */
@@ -9959,6 +9993,13 @@ static boolean tag_profiles_initialize(struct widget_instance *list)
 	long chosen = tag_profile_cooperative() ? tag_campaign_profile_chosen() : tag_multiplayer_profile_chosen();
 	short place = (short)(chosen == NONE ? 0 : chosen + 1);
 
+	/* (a co-op game's: else the profile the randomizer played last) */
+	if (tag_profile_cooperative() && chosen == NONE && config_boolean("game.randomizer"))
+	{
+		chosen = tag_injector_profile_playable();
+		place = (short)(chosen == NONE ? 0 : port_tag_campaign_profiles_count() + chosen + 1);
+	}
+
 	multiplayer.tag_profile_first = (short)MAX(0, place - (TAG_PROFILE_ROWS - 1));
 	focus_row(list, (short)(place - multiplayer.tag_profile_first));
 	return TRUE;
@@ -9974,6 +10015,8 @@ static void tag_profiles_update(struct widget_instance *list)
 	short focused = tag_profile_row(list->focused_child);
 	short *first = &multiplayer.tag_profile_first;
 	boolean cooperative = tag_profile_cooperative();
+	long campaign_profile;
+	long randomizer_profile;
 	short index;
 
 	if (focused == TAG_PROFILE_ROWS - 1 && *first + TAG_PROFILE_ROWS < count && list_scrolls_at_end())
@@ -10005,7 +10048,7 @@ static void tag_profiles_update(struct widget_instance *list)
 		if (place >= count)
 			continue;
 		if (place)
-			upper_copy(text, sizeof(text), tag_profile_name(place - 1));
+			tag_profile_name(place - 1, text, sizeof(text));
 		else
 			snprintf(text, sizeof(text), "NONE");
 		for (character = 0; text[character] && character < ROW_TEXT_LENGTH - 1; character++)
@@ -10014,15 +10057,25 @@ static void tag_profiles_update(struct widget_instance *list)
 		text_set(row, wide);
 		if (index != focused || !help)
 			continue;
+		tag_profile_place(place - 1, &campaign_profile, &randomizer_profile);
 		if (!place)
 			snprintf(text, sizeof(text), cooperative ? "The levels' own AI and weapons, or the\nrandomizer's if it is on (Server Setup)." :
 				"The map's own weapons. Every player can see and\njoin the game, on any build.");
 		/* (the Tag Injector's bundles are Custom Edition maps': game.custom_edition) */
 		else if (!halo_custom_edition_tag_cache())
 			snprintf(text, sizeof(text), "Needs Custom Edition maps on (Settings > Gameplay).");
+		else if (cooperative && randomizer_profile != NONE)
+		{
+			char size[24];
+
+			tags_size_text(port_tag_profiles_size(randomizer_profile), size, sizeof(size));
+			snprintf(text, sizeof(text), "%ld AI, %ld weapons (%s) join the randomizer's\npools. "
+				"Only this build's players see the game.", tag_injector_profile_enabled_count(randomizer_profile, 'actv'),
+				tag_injector_profile_enabled_count(randomizer_profile, 'weap'), size);
+		}
 		else if (cooperative)
 		{
-			long profile = port_tag_profiles_find(port_tag_campaign_profiles_option(place - 1, "profile"));
+			long profile = port_tag_profiles_find(port_tag_campaign_profiles_option(campaign_profile, "profile"));
 
 			if (profile == NONE)
 				snprintf(text, sizeof(text), "A campaign profile whose profile is not there:\nthe levels play as they are.");
@@ -10056,11 +10109,22 @@ static boolean tag_profile_choose(struct widget_instance *widget, boolean *widge
 	if (place == NONE || place > tag_profile_count() || (profile != NONE && !halo_custom_edition_tag_cache()))
 		return campaign_fail();
 	/* (a co-op game's campaign profile, which its levels play in the
-	randomizer's place) */
+	randomizer's place, or the profile whose tags join its pools) */
 	if (tag_profile_cooperative())
 	{
-		tag_multiplayer_game_campaign_profile_set(profile);
-		tag_campaign_profile_choose(profile);
+		long campaign_profile;
+		long randomizer_profile;
+
+		tag_profile_place(profile, &campaign_profile, &randomizer_profile);
+		if (randomizer_profile != NONE)
+			tag_multiplayer_game_randomizer_profile_set(randomizer_profile);
+		else
+			tag_multiplayer_game_campaign_profile_set(campaign_profile);
+		tag_campaign_profile_choose(campaign_profile);
+		if (!config_write("game.randomizer_tag_profile",
+			randomizer_profile != NONE ? port_tag_profiles_folder(randomizer_profile) : ""))
+			error(_error_silent, "randomizer: could not write game.randomizer_tag_profile");
+		randomizer_tags.checked = 0;
 	}
 	else
 	{
@@ -10327,9 +10391,16 @@ static void server_settings_tag_profile_update(struct widget_instance *list)
 	{
 		boolean cooperative = hosting_cooperative();
 		long profile = cooperative ? tag_multiplayer_game_campaign_profile() : tag_multiplayer_game_profile();
+		long randomizer_profile = cooperative ? tag_multiplayer_game_randomizer_profile() : NONE;
 		char value[ROW_TEXT_LENGTH];
+		char name[96];
 
-		if (profile != NONE)
+		if (randomizer_profile != NONE)
+		{
+			snprintf(name, sizeof(name), "%s (RANDOMIZER)", port_tag_profiles_name(randomizer_profile));
+			upper_copy(value, sizeof(value), name);
+		}
+		else if (profile != NONE)
 			upper_copy(value, sizeof(value), cooperative ? port_tag_campaign_profiles_name(profile) :
 				port_tag_mp_profiles_name(profile));
 		else
