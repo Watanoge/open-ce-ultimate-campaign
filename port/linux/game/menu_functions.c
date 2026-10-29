@@ -7239,7 +7239,8 @@ static void *news_fetch_main(void *argument)
 		}
 		platform_log("news: build %ld's notes from %s: %s (%d)", number, repository,
 			notes ? "shown" : "none, the build's own kept", status);
-		free(body);
+		/* (the C library's: this unit's free is the game's allocator's) */
+		master_list_https_free(body);
 	}
 	pthread_mutex_lock(&news_fetch.lock);
 	news_fetch.text = notes && notes[0] ? notes : NULL;

@@ -520,6 +520,11 @@ int master_list_https_get(const char *url, int *status, char **body, unsigned lo
 	return 1;
 }
 
+void master_list_https_free(char *body)
+{
+	free(body);
+}
+
 /* the masters to ask (the list thread's): masters.txt's; else, in the web
 build, its site's masters.json (the page's list of them, which its Servers
 panel reads too); else the official ones */
