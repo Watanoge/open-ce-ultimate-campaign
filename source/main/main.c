@@ -3741,6 +3741,10 @@ static boolean main_loop_iteration(
 						render_frame = main_globals.main_menu_scenario_loaded ||
 							(main_globals.halt_time_scale && game_time_get()>0);
 					render_frame &= !game_engine_running() || game_time_get()>=3;
+					/* port: none while a replay's skip ahead plays fast, the
+					screen held at its dimmed frame
+					(port/linux/game/network_replay_playback.c) */
+					render_frame &= !network_replay_frozen();
 
 					profile_scope_enter(main_non_deterministic_update_section)
 					collision_log_continue_period(1);

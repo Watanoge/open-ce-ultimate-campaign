@@ -129,6 +129,19 @@ boolean network_replay_watch(char const *path, char *why, long why_size);
 /* whether a replay is being played (or its game loaded) */
 boolean network_replay_playing(void);
 
+/* whether a skip ahead is under way, its dimmed frame drawn: no frame is
+drawn or shown until it is there, the screen held (main.c) */
+boolean network_replay_frozen(void);
+
+/* the most ticks a frame may run (a network client's, ticks, given): more
+while a skip ahead plays fast, never past where it goes (game_time.c) */
+long network_replay_ticks_per_frame(long ticks);
+
+/* before each tick a replay's playback runs, the records of the ticks the
+clock has reached, as a client reads its host's between ticks (game_time.c):
+a frame may run several */
+void network_replay_playback_tick(void);
+
 /* the playback's view made for this frame (main.c, before the sound and
 the windows: each asks network_replay_camera for it) */
 void network_replay_playback_frame(void);

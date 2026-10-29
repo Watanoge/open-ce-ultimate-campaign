@@ -277,8 +277,11 @@ DELETE (pressed twice), EXPORT (Android) and BACK. A recording shorter than
   in a seat with a third-person camera (a Warthog's, a Ghost's), the
   game's view from behind it (`following_camera_unit_view`); and a free
   camera that flies as the game's debug camera does (the left stick moves
-  it level, toward where it looks across the ground, the right one turns
-  it, the left trigger takes it down and the right one up; it follows
+  it level, toward where it looks across the ground, as its tilt squared,
+  so a slight tilt moves it slowly, its speed eased up in 0.2 seconds and
+  down in 0.08; the right one turns it; the left trigger takes it down and
+  the right one up, from still to full in a quarter of a second, so a tap
+  of the Switch's ZL or ZR, which are buttons, is a small step; it follows
   the player as the view behind them does until one of those is touched,
   and flies from there; it slides
   along the level's walls, its scenery and its doors rather than flying
@@ -337,7 +340,13 @@ DELETE (pressed twice), EXPORT (Android) and BACK. A recording shorter than
   block, then sets right what is this machine's rather than the game's
   (the host's last message's time, the frame's interpolation, the
   first-person weapon, the playback's speed). Going on to a keyframe not
-  yet taken plays to it at 8 times (SKIPPING), where it is taken. They
+  yet taken plays to it at 50 times, up to 60 ticks a frame and never past
+  it (`network_replay_ticks_per_frame`), where it is taken: the frame
+  then dimmed with SKIPPING over it and held, nothing drawn and the sound
+  paused until it is there (`network_replay_frozen`), and the playback
+  then at normal speed. The replay's records go to the game before each
+  tick (`network_replay_playback_tick`), as a client reads its host's
+  between ticks, so a frame of many ticks plays as the recording did. They
   take up to 256 MB (a log line says each one's size and how long its
   compression took); past that, none more are taken.
 

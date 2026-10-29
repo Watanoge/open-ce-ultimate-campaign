@@ -29,8 +29,10 @@ through their eyes with their arms and weapon (first_person_weapons.c),
 or, in a seat with a third-person camera (a Warthog's, a Ghost's), the
 game's view from behind it (following_camera_unit_view); or a free
 camera, as the game's debug flying camera: the left stick moving it level
-(toward where it looks across the ground, whatever its pitch), the right
-one turning it and the triggers taking it down (left) and up (right),
+(toward where it looks across the ground, whatever its pitch; a slight tilt
+slowly, its speed eased up and down: playback_free_camera_speed), the right
+one turning it and the triggers taking it down (left) and up (right), eased
+up from still (the Switch's are buttons: playback_free_camera_rise),
 following the player as behind does until one of them is touched,
 sliding along walls rather than through them (playback_free_camera_move).
 Through the eyes, the aim turns smoothly between the facings the replay
@@ -58,7 +60,9 @@ where the file's records were: copied in one go, then compressed in memory
 on a thread of its own (playback_compressor_main) while the game goes on. The d-pad's left puts
 the last one back (the one before it, just after one), as a core is
 loaded (game_state_port_restore), and its right the next, or plays to it
-at the fastest speed when it is not yet taken.
+when it is not yet taken: at 50 times, its records before each tick
+(network_replay_playback_tick), the screen held at a dimmed frame and the
+sound paused (network_replay_frozen), then at normal speed.
 */
 
 #include "cseries.h"
@@ -86,6 +90,7 @@ at the fastest speed when it is not yet taken.
 #include "camera/director.h"
 #include "camera/following_camera.h"
 #include "camera/observer.h"
+#include "sound/sound_manager.h"
 #include "network_distributed.h"
 #include "network_replay.h"
 
@@ -197,6 +202,17 @@ left of one goes (seconds of the game to go to a third) */
 #define FREE_CAMERA_SPEED 6.0f
 #define FREE_CAMERA_TURN 2.5f
 #define FREE_CAMERA_MAXIMUM_PITCH 1.5f
+/* ... how its speed follows the left stick: as the stick's tilt to this
+power (a slight tilt a slow move: a quarter of the way, a sixteenth of the
+speed), reaching it in this long from still to full and stopping in this
+long from full (seconds); and how long a trigger held takes it to its full
+speed up or down, from none (seconds: the Switch's ZL and ZR are buttons,
+all or nothing, so a tap is a small step; another's, pulled slowly, is as
+slow as it is pulled) */
+#define FREE_CAMERA_MOVE_POWER 2.0f
+#define FREE_CAMERA_ACCELERATION_TIME 0.2f
+#define FREE_CAMERA_BRAKE_TIME 0.08f
+#define FREE_CAMERA_RISE_TIME 0.25f
 /* what the free camera does not fly through: the level, its scenery and its
 machines (doors, lifts), invisible walls too (the map's edges); how far off
 them it keeps; and how many walls a frame's move slides along */
@@ -213,6 +229,12 @@ the one before it instead */
 #define REPLAY_MAXIMUM_KEYFRAMES 1024
 #define REPLAY_KEYFRAME_MEMORY (256UL * 1024 * 1024)
 #define REPLAY_REWIND_GRACE_TICKS (2 * TICKS_PER_SECOND)
+/* d-pad right to a keyframe not yet taken: the game played there this many
+times as fast, and no more ticks than this a frame (the controls still
+read, and its tick never passed); nothing drawn meanwhile, the screen held
+at a dimmed frame (playback_skip) */
+#define REPLAY_SKIP_SPEED 50.0f
+#define REPLAY_SKIP_TICKS_PER_FRAME 60
 /* the text on the screen: how far from its top edge the top line is (and
 twice how far from the bottom the hints' bar), the hints' height (a button's
 picture's), the bar's room either side of them and its colour */
@@ -317,6 +339,12 @@ static struct
 	real_point3d free_position;
 	real free_yaw;
 	real free_pitch;
+	/* ... its move (of the left stick's, as it follows it:
+	playback_free_camera_speed) and how far up a trigger held has taken
+	its rise (0 to 1, and which way: playback_free_camera_rise) */
+	real free_move_x;
+	real free_move_y;
+	real free_rise;
 	struct observer_result camera;
 	/* the keyframes, by their ticks; the memory they take; where a
 	keyframe is compressed (as large as the largest it can be); and the
@@ -332,6 +360,9 @@ static struct
 	the first */
 	long keyframe_frontier;
 	long skip_tick;
+	/* the skip's dimmed frame has been drawn: none is drawn after it until
+	the skip ends (network_replay_frozen) */
+	boolean skip_shown;
 	/* a record's bytes, aligned as the handlers read them */
 	word message[0x10000 / sizeof(word)];
 } playback = { NULL, 0, 0, 0, FALSE, FALSE, FALSE, 0, FALSE, FALSE, NONE };
@@ -408,6 +439,18 @@ static boolean playback_inflate(
 
 static boolean playback_keyframe_collect(boolean wait);
 
+/* a skip ahead ended, reached or not: the frames drawn and the sound heard
+again (the speed is the caller's) */
+static void playback_skip_stop(
+	void)
+{
+	if (playback.skip_tick == NONE)
+		return;
+	playback.skip_tick = NONE;
+	playback.skip_shown = FALSE;
+	sound_pause(FALSE);
+}
+
 /* every keyframe let go */
 static void playback_keyframes_free(
 	void)
@@ -423,7 +466,7 @@ static void playback_keyframes_free(
 	playback.keyframe_memory = 0;
 	playback.keyframe_frontier = NONE;
 	playback.keyframes_full = FALSE;
-	playback.skip_tick = NONE;
+	playback_skip_stop();
 }
 
 static void playback_free(
@@ -696,6 +739,31 @@ boolean network_replay_playing(
 	void)
 {
 	return playback.data != NULL && (playback.starting || playback.playing);
+}
+
+boolean network_replay_frozen(
+	void)
+{
+	return playback.playing && playback.skip_tick != NONE && playback.skip_shown;
+}
+
+long network_replay_ticks_per_frame(
+	long ticks)
+{
+	if (!playback.playing || playback.skip_tick == NONE)
+		return ticks;
+	return MAX(0, MIN(REPLAY_SKIP_TICKS_PER_FRAME, playback.skip_tick - game_time_get()));
+}
+
+static void playback_feed(struct network_game_client *client);
+
+void network_replay_playback_tick(
+	void)
+{
+	struct network_game_client *client = global_network_game_client_get();
+
+	if (playback.playing && client)
+		playback_feed(client);
 }
 
 boolean network_replay_playback_starting(
@@ -1123,7 +1191,7 @@ static void playback_keyframe_restore(
 	}
 	playback.next = keyframe->next;
 	playback.ended = 0;
-	playback.skip_tick = NONE;
+	playback_skip_stop();
 	network_distributed_replay_restored();
 	render_interpolation_reset();
 	first_person_weapons_initialize_for_new_map();
@@ -1165,8 +1233,12 @@ static void playback_skip(
 	if (playback.ended || playback.keyframes_full)
 		return;
 	playback.skip_tick = playback.keyframes[playback.keyframe_count - 1].tick + REPLAY_KEYFRAME_TICKS;
-	/* (the keyframe is taken there: playback_keyframe_take, as it is reached) */
-	game_time_set_speed(replay_speeds[NUMBEROF(replay_speeds) - 1]);
+	/* (the keyframe is taken there: playback_keyframe_take, as it is
+	reached; played to fast, a dimmed frame held meanwhile and nothing
+	heard: network_replay_frozen, network_replay_ticks_per_frame) */
+	playback.skip_shown = FALSE;
+	sound_pause(TRUE);
+	game_time_set_speed(REPLAY_SKIP_SPEED);
 }
 
 boolean network_replay_playback_idle(
@@ -1195,10 +1267,12 @@ boolean network_replay_playback_idle(
 	{
 		playback_keyframe_take();
 	}
+	/* (a skip ahead there: the game drawn again, at its normal speed) */
 	if (playback.skip_tick != NONE && (game_time_get() >= playback.skip_tick || playback.ended ||
 		playback.keyframes_full))
 	{
-		playback.skip_tick = NONE;
+		playback_skip_stop();
+		playback.speed = REPLAY_NORMAL_SPEED;
 		game_time_set_speed(replay_speeds[playback.speed]);
 	}
 	/* (the pause menu: Start puts it up, the game stopped, and takes it
@@ -1208,7 +1282,7 @@ boolean network_replay_playback_idle(
 	if (playback_pressed(_gamepad_binary_button_start))
 	{
 		playback.paused = !playback.paused;
-		playback.skip_tick = NONE;
+		playback_skip_stop();
 		playback.scores = FALSE;
 		game_time_set_speed(playback.paused ? 0.0f : replay_speeds[playback.speed]);
 		if (!playback.paused && playback.ended)
@@ -1258,12 +1332,12 @@ boolean network_replay_playback_idle(
 	if (playback_pressed(FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_black) &&
 		playback.speed < (short)NUMBEROF(replay_speeds) - 1)
 	{
-		playback.skip_tick = NONE;
+		playback_skip_stop();
 		game_time_set_speed(replay_speeds[++playback.speed]);
 	}
 	if (playback_pressed(FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_white) && playback.speed > 0)
 	{
-		playback.skip_tick = NONE;
+		playback_skip_stop();
 		game_time_set_speed(replay_speeds[--playback.speed]);
 	}
 	playback_pressed(_gamepad_binary_button_back);
@@ -1367,10 +1441,75 @@ static void playback_sticks(
 	}
 }
 
-/* the free camera moved by move, but not into a wall: up to it (kept
-FREE_CAMERA_WALL_MARGIN off it), then along it with what is left of the
-move, as far as the next. Only the walls facing it stop it, so one that
-starts inside something can still leave it */
+/* the free camera's move from the left stick: its tilt to
+FREE_CAMERA_MOVE_POWER, which the move follows over the seconds, a full
+speed's change in FREE_CAMERA_ACCELERATION_TIME speeding up and in
+FREE_CAMERA_BRAKE_TIME slowing down */
+static void playback_free_camera_speed(
+	real move_x,
+	real move_y,
+	real seconds)
+{
+	real tilt = (real)sqrt(move_x * move_x + move_y * move_y);
+	real target_x = 0.0f;
+	real target_y = 0.0f;
+	real difference_x;
+	real difference_y;
+	real difference;
+	real step;
+
+	if (tilt > 0.0f)
+	{
+		real speed = (real)pow(MIN(tilt, 1.0f), FREE_CAMERA_MOVE_POWER);
+
+		target_x = move_x / tilt * speed;
+		target_y = move_y / tilt * speed;
+	}
+	difference_x = target_x - playback.free_move_x;
+	difference_y = target_y - playback.free_move_y;
+	difference = (real)sqrt(difference_x * difference_x + difference_y * difference_y);
+	step = seconds / (target_x * target_x + target_y * target_y >=
+		playback.free_move_x * playback.free_move_x + playback.free_move_y * playback.free_move_y ?
+		FREE_CAMERA_ACCELERATION_TIME : FREE_CAMERA_BRAKE_TIME);
+	if (difference <= step)
+	{
+		playback.free_move_x = target_x;
+		playback.free_move_y = target_y;
+	}
+	else
+	{
+		playback.free_move_x += difference_x / difference * step;
+		playback.free_move_y += difference_y / difference * step;
+	}
+}
+
+/* the free camera's rise from the triggers (the right's less the left's):
+no more than a trigger held has taken it to, from none to full in
+FREE_CAMERA_RISE_TIME; let go, or the other one, and it starts from none */
+static real playback_free_camera_rise(
+	real rise,
+	real seconds)
+{
+	real held;
+
+	if (rise == 0.0f || (rise > 0.0f) != (playback.free_rise > 0.0f))
+		playback.free_rise = 0.0f;
+	if (rise == 0.0f)
+		return 0.0f;
+	held = MIN((real)fabs(playback.free_rise) + seconds / FREE_CAMERA_RISE_TIME, 1.0f);
+	playback.free_rise = rise > 0.0f ? held : -held;
+	return rise > 0.0f ? MIN(rise, held) : MAX(rise, -held);
+}
+
+/* the free camera moved by move, but never nearer a wall than
+FREE_CAMERA_WALL_MARGIN (further than the view's near clip, so it never
+sees into one): each part of the move is looked along as far again as the
+margin, and goes only as far as keeps it the margin off the wall it finds
+there, the rest of it along the wall, as far as the next. Tested only up to
+the move's end, a short move went past the margin into the wall's near
+clip and the next was put back out: the view in and out of the wall each
+frame. Only the walls facing it stop it, so one that starts inside
+something can still leave it */
 static void playback_free_camera_move(
 	real_vector3d const *move)
 {
@@ -1381,29 +1520,51 @@ static void playback_free_camera_move(
 	{
 		struct collision_result collision;
 		real_vector3d const *normal;
+		real_vector3d direction;
+		real_vector3d probe;
+		real length = (real)sqrt(left.i * left.i + left.j * left.j + left.k * left.k);
+		real approach;
+		real distance;
+		real travel;
 		real across;
 
-		if (left.i * left.i + left.j * left.j + left.k * left.k < 1.0e-8f)
+		if (length < 1.0e-4f)
 			return;
-		if (!collision_test_vector(FREE_CAMERA_COLLISION_FLAGS, &playback.free_position, &left, NONE, &collision))
+		direction.i = left.i / length;
+		direction.j = left.j / length;
+		direction.k = left.k / length;
+		probe.i = direction.i * (length + FREE_CAMERA_WALL_MARGIN);
+		probe.j = direction.j * (length + FREE_CAMERA_WALL_MARGIN);
+		probe.k = direction.k * (length + FREE_CAMERA_WALL_MARGIN);
+		normal = &collision.plane.n;
+		if (!collision_test_vector(FREE_CAMERA_COLLISION_FLAGS, &playback.free_position, &probe, NONE, &collision) ||
+			(approach = -(direction.i * normal->i + direction.j * normal->j + direction.k * normal->k)) < 1.0e-4f)
 		{
 			playback.free_position.x += left.i;
 			playback.free_position.y += left.j;
 			playback.free_position.z += left.k;
 			return;
 		}
-		normal = &collision.plane.n;
-		playback.free_position.x += left.i * collision.t + normal->i * FREE_CAMERA_WALL_MARGIN;
-		playback.free_position.y += left.j * collision.t + normal->j * FREE_CAMERA_WALL_MARGIN;
-		playback.free_position.z += left.k * collision.t + normal->k * FREE_CAMERA_WALL_MARGIN;
-		/* (what is left of the move, along the wall) */
-		left.i *= 1.0f - collision.t;
-		left.j *= 1.0f - collision.t;
-		left.k *= 1.0f - collision.t;
+		/* (how far off the wall it is, and how far along the move it may go
+		to be the margin off it: none if it is nearer already) */
+		distance = (playback.free_position.x - collision.point.x) * normal->i +
+			(playback.free_position.y - collision.point.y) * normal->j +
+			(playback.free_position.z - collision.point.z) * normal->k;
+		travel = PIN((distance - FREE_CAMERA_WALL_MARGIN) / approach, 0.0f, length);
+		playback.free_position.x += direction.i * travel;
+		playback.free_position.y += direction.j * travel;
+		playback.free_position.z += direction.k * travel;
+		/* (what is left of the move, along the wall: none of it into it) */
+		left.i = direction.i * (length - travel);
+		left.j = direction.j * (length - travel);
+		left.k = direction.k * (length - travel);
 		across = left.i * normal->i + left.j * normal->j + left.k * normal->k;
-		left.i -= normal->i * across;
-		left.j -= normal->j * across;
-		left.k -= normal->k * across;
+		if (across < 0.0f)
+		{
+			left.i -= normal->i * across;
+			left.j -= normal->j * across;
+			left.k -= normal->k * across;
+		}
 	}
 }
 
@@ -1423,6 +1584,7 @@ static boolean playback_free_camera(
 		if (move_x == 0.0f && move_y == 0.0f && turn_x == 0.0f && turn_y == 0.0f && rise == 0.0f)
 			return FALSE;
 		playback.free_following = FALSE;
+		playback.free_move_x = playback.free_move_y = playback.free_rise = 0.0f;
 		playback.free_position = playback.camera.position;
 		playback.free_yaw = (real)atan2(playback.camera.forward.j, playback.camera.forward.i);
 		playback.free_pitch = (real)asin(PIN(playback.camera.forward.k, -1.0f, 1.0f));
@@ -1435,16 +1597,20 @@ static boolean playback_free_camera(
 	forward.k = (real)sin(playback.free_pitch);
 	/* (as the game's debug flying camera, flying_camera.c: the stick moves it
 	level, forward and back toward where it looks across the ground whatever
-	its pitch, and only the triggers change its height) */
-	move.i = ((real)cos(playback.free_yaw) * move_y + (real)sin(playback.free_yaw) * move_x) * FREE_CAMERA_SPEED * seconds;
-	move.j = ((real)sin(playback.free_yaw) * move_y - (real)cos(playback.free_yaw) * move_x) * FREE_CAMERA_SPEED * seconds;
+	its pitch, and only the triggers change its height; both eased:
+	playback_free_camera_speed, playback_free_camera_rise) */
+	playback_free_camera_speed(move_x, move_y, seconds);
+	rise = playback_free_camera_rise(rise, seconds);
+	move.i = ((real)cos(playback.free_yaw) * playback.free_move_y + (real)sin(playback.free_yaw) * playback.free_move_x) *
+		FREE_CAMERA_SPEED * seconds;
+	move.j = ((real)sin(playback.free_yaw) * playback.free_move_y - (real)cos(playback.free_yaw) * playback.free_move_x) *
+		FREE_CAMERA_SPEED * seconds;
 	move.k = rise * FREE_CAMERA_SPEED * seconds;
 	playback_free_camera_move(&move);
 	playback_camera_set(&playback.free_position, &forward);
 	return TRUE;
 }
 
-/* through the eyes of the unit, where it aims; FALSE when it has none */
 /* the moment the frame draws, in ticks: between the last two (render
 interpolation's), the tick just run's at 1 */
 static real playback_eyes_time(
@@ -2065,6 +2231,27 @@ void network_replay_playback_draw(
 
 	if (!playback.playing)
 		return;
+	/* (a skip ahead: this frame dimmed, SKIPPING over it, and held until the
+	skip is there: network_replay_frozen) */
+	if (playback.skip_tick != NONE)
+	{
+		window = render.camera.window_bounds;
+		draw_quad(&window, REPLAY_PAUSE_DIM_COLOR);
+		font_index = playback_font();
+		if (font_index != NONE)
+		{
+			font = font_definition_get(font_index);
+			height = (short)(font->ascending_height + font->descending_height);
+			color = *global_real_argb_white;
+			bounds = window;
+			bounds.y0 = (short)((window.y0 + window.y1 - height) / 2);
+			bounds.y1 = (short)(bounds.y0 + height + 4);
+			draw_string_set_draw_mode(font_index, NONE, 2, 0, &color);
+			rasterizer_draw_unicode_string(&bounds, NULL, NULL, 0, L"SKIPPING");
+		}
+		playback.skip_shown = TRUE;
+		return;
+	}
 	player = playback.watched != NONE ? player_try_and_get(playback.watched) : NULL;
 	if (playback.scores && player)
 	{
