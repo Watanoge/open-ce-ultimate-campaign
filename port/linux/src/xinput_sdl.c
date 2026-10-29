@@ -1741,13 +1741,19 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 		}
 		if (gamepad && !gamepad_capturing(gamepad))
 		{
+			extern unsigned char network_replay_playing(void);
 			BOOL held_back[INPUT_GAMEPAD_END - INPUT_GAMEPAD];
 			int index;
 
 			BOOL swap = menu_buttons_swapped(input.menus);
+			/* (a replay's playback has no voice chat and no game's controls: its
+			own take every button, a shoulder bound to talk its speed too:
+			port/linux/game/network_replay_playback.c) */
+			BOOL replay = network_replay_playing() != 0;
 
 			for (index = 0; index < INPUT_GAMEPAD_END - INPUT_GAMEPAD; index++)
-				held_back[index] = gamepad_bound_to_talk[index] || (!input.menus && gamepad_bound_in_game[index]);
+				held_back[index] = !replay &&
+					(gamepad_bound_to_talk[index] || (!input.menus && gamepad_bound_in_game[index]));
 			face_buttons_held_over_swap(gamepad, swap, held_back);
 			sdl_gamepad_state(gamepad, &state->Gamepad, held_back, scoreboard_picking_port == 0, swap);
 		}

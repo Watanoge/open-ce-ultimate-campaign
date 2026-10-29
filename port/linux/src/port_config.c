@@ -487,7 +487,8 @@ static const struct config_setting config_settings[] =
 	{ "controls.push_to_talk", _config_string, "\"V\"", "HALO_KEY_PUSH_TO_TALK", _environment_value, _platform_all,
 		"Voice chat: talk while it is held (audio.voice_chat \"push_to_talk\"). A\n"
 		"controller's button may be bound too (\"Gamepad DPad Down\", \"Gamepad LB\";\n"
-		"Settings > Controls Setup takes one pressed), which the game then ignores." },
+		"Settings > Controls Setup takes one pressed), which the game then ignores\n"
+		"(not a replay's playback, whose controls take every button)." },
 	{ "controls.chat", _config_string, "\"T\"", "HALO_KEY_CHAT", _environment_value, _platform_all,
 		"Network games' text chat: type a line to everyone (Enter sends it,\n"
 		"Escape lets it go)." },
