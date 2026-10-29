@@ -282,10 +282,17 @@ DELETE (pressed twice), EXPORT (Android) and BACK. A recording shorter than
   the player as the view behind them does until one of those is touched,
   and flies from there; it slides
   along the level's walls, its scenery and its doors rather than flying
-  through them, `playback_free_camera_move`). A client's
-  recording has only its own players' eyes (those of its own input's
-  records, `_network_replay_own_actions`): Y goes past that view for the
-  others, whom it saw only as a client sees another.
+  through them, `playback_free_camera_move`). Through the eyes, the aim
+  turns smoothly between the facings the replay has of the player (all
+  of them indexed as it loads, `playback_index_facings`: the host's
+  relayed input and a client's own input's records), the aim the
+  facing at the frame's moment (`playback_eyes_aim`: a unit's own aim
+  lags each new facing by ticks), and the host's
+  corrections of where they are are glided over in a tenth of a second
+  rather than jumped (`playback_eyes_glide`). Every player's eyes can be
+  watched: a client's recording has the players far from its own, or out
+  of their sight, every second to sixth tick, so their aim between those
+  is the smooth turn, not theirs, and the top line says EYES (SMOOTHED).
 - **The controls.** A watches the next player alive, X the one before;
   one who dies is watched again when they spawn. The d-pad's left goes
   back to the last keyframe (the one before it, within two seconds of

@@ -32,10 +32,13 @@ camera, as the game's debug flying camera: the left stick moving it level
 (toward where it looks across the ground, whatever its pitch), the right
 one turning it and the triggers taking it down (left) and up (right),
 following the player as behind does until one of them is touched,
-sliding along walls rather than through them (playback_free_camera_move). A
-client's recording has only its own players' eyes (playback_eyes_allowed):
-Y goes past that view for the others, whom it saw only as a client sees
-another. A watches the next player, X the one before; the right shoulder
+sliding along walls rather than through them (playback_free_camera_move).
+Through the eyes, the aim turns smoothly between the facings the replay
+has of the player (playback_index_facings, playback_eyes_aim) and the host's
+corrections of where they are are glided over (playback_eyes_glide): a
+client's recording has the players far from its own, or out of their
+sight, every second to sixth tick, and its other players' eyes show
+SMOOTHED. A watches the next player, X the one before; the right shoulder
 button (RB, the Switch's R, the PS5's R1) plays faster and the left one
 slower, to a pause (game_time_set_speed); Back held shows the scores (the
 watched's row as a player's own); B hides the lines over the screen. Start
@@ -102,6 +105,7 @@ boolean network_game_client_port_replay_begin(struct network_game const *game);
 boolean network_game_client_port_in_postgame(struct network_game_client *client);
 void network_game_abort(void);
 void render_interpolation_object_point(long object_index, real_point3d *point);
+real render_interpolation_fraction(void);
 real main_get_seconds_elapsed(void);
 void game_engine_port_rasterize_scores(long player_index);
 void draw_quad(rectangle2d *rectangle, pixel32 color);
@@ -125,6 +129,16 @@ struct replay_keyframe
 	long next;
 	byte *data;
 	unsigned long size;
+};
+
+/* a player's facing as the client had it: the tick the record that brought
+it was read at, and its yaw and pitch as the wire has them
+(distributed_angle_unpack's) */
+struct replay_facing
+{
+	long tick;
+	short yaw;
+	short pitch;
 };
 
 /* the file (network_replay.c, REPLAY.md's "The file") */
@@ -165,6 +179,19 @@ the distance behind) */
 #define CAMERA_ZOOM_RATE 1.2f
 #define CAMERA_ZOOM_NEAREST 0.4f
 #define CAMERA_ZOOM_FARTHEST 4.0f
+/* the eyes view: the most ticks between two of a player's facings it turns
+smoothly across (a far player's come every second to sixth tick, one lost
+between them doubling that); the most the facing may be from the unit's
+aim and be the view's (radians: more, and the facing is not the unit's: a
+dead player's, a respawn's); and the host's corrections of where the player is that it
+glides over: the least a frame's move may differ from their speed's to be
+one, the most (more is a teleport, taken at once), and how fast what is
+left of one goes (seconds of the game to go to a third) */
+#define EYES_FACING_MAXIMUM_TICKS 13
+#define EYES_FACING_MAXIMUM_TURN (_pi / 2.0f)
+#define EYES_CORRECTION_MINIMUM 0.02f
+#define EYES_CORRECTION_MAXIMUM 2.0f
+#define EYES_CORRECTION_TIME 0.1f
 /* the free camera: how fast it moves (world units a second), turns
 (radians a second, the stick all the way) and how far it pitches */
 #define FREE_CAMERA_SPEED 6.0f
@@ -249,6 +276,19 @@ static struct
 	theirs is a view through the eyes, the others' it never had */
 	boolean client;
 	boolean recorders[HALO_PORT_MAXIMUM_NETWORK_PLAYERS];
+	/* every player's facings through the replay (playback_index_facings),
+	each player's (by absolute index) together, in the order they were
+	read: the first of them and how many */
+	struct replay_facing *facings;
+	long facing_first[HALO_PORT_MAXIMUM_NETWORK_PLAYERS];
+	long facing_count[HALO_PORT_MAXIMUM_NETWORK_PLAYERS];
+	/* the eyes view's place as it was last made: the unit, the moment
+	(playback_eyes_time), where its eyes were drawn, and what of the host's
+	corrections of them is still being glided over (playback_eyes_glide) */
+	long eyes_unit;
+	real eyes_time;
+	real_point3d eyes_drawn;
+	real_vector3d eyes_offset;
 	/* the buttons held at the last idle (each press counted once) */
 	boolean held[NUMBER_OF_GAMEPAD_BUTTONS];
 	/* the view, the speed (replay_speeds'), and whether the scores are
@@ -403,6 +443,12 @@ static void playback_free(
 	playback.watched = NONE;
 	playback.client = FALSE;
 	csmemset(playback.recorders, 0, sizeof(playback.recorders));
+	if (playback.facings)
+		free(playback.facings);
+	playback.facings = NULL;
+	csmemset(playback.facing_first, 0, sizeof(playback.facing_first));
+	csmemset(playback.facing_count, 0, sizeof(playback.facing_count));
+	playback.eyes_unit = NONE;
 	playback.view = _replay_view_behind;
 	playback.speed = REPLAY_NORMAL_SPEED;
 	playback.scores = FALSE;
@@ -447,17 +493,112 @@ static void playback_find_recorders(
 	}
 }
 
-/* whether the player (a datum index) can be watched through their eyes:
-any of a host's recording, which saw them all as they were; only its own
-of a client's */
-static boolean playback_eyes_allowed(
-	long player_index)
+/* the players' facings through the whole replay, as the client read them:
+the host's relayed input (a far player's every second to sixth tick), and a
+client's recording's own input (every tick), for the eyes view to turn
+smoothly between (playback_eyes_facing). Counted, then kept; a facing older
+than one the player already had is dropped, as the client drops it
+(distributed_add_new_ticks), and a second one read at the same tick takes the
+first's place */
+struct playback_facing_scan
 {
-	if (!playback.client)
-		return TRUE;
-	return player_index != NONE &&
-		DATUM_INDEX_TO_ABSOLUTE_INDEX(player_index) < HALO_PORT_MAXIMUM_NETWORK_PLAYERS &&
-		playback.recorders[DATUM_INDEX_TO_ABSOLUTE_INDEX(player_index)];
+	boolean counting;
+	long tick;
+	long counts[HALO_PORT_MAXIMUM_NETWORK_PLAYERS];
+	long newest[HALO_PORT_MAXIMUM_NETWORK_PLAYERS];
+	boolean any[HALO_PORT_MAXIMUM_NETWORK_PLAYERS];
+};
+
+static void playback_facing_found(
+	void *context,
+	short player_index,
+	long tick,
+	short yaw,
+	short pitch)
+{
+	struct playback_facing_scan *scan = (struct playback_facing_scan *)context;
+	struct replay_facing *facing;
+	long count;
+
+	if (player_index < 0 || player_index >= HALO_PORT_MAXIMUM_NETWORK_PLAYERS)
+		return;
+	if (scan->any[player_index] && tick <= scan->newest[player_index])
+		return;
+	scan->any[player_index] = TRUE;
+	scan->newest[player_index] = tick;
+	if (scan->counting)
+	{
+		scan->counts[player_index]++;
+		return;
+	}
+	count = playback.facing_count[player_index];
+	facing = playback.facings + playback.facing_first[player_index] + count;
+	if (count > 0 && facing[-1].tick == scan->tick)
+		facing--;
+	else if (count < scan->counts[player_index])
+		playback.facing_count[player_index]++;
+	else
+		return;
+	facing->tick = scan->tick;
+	facing->yaw = yaw;
+	facing->pitch = pitch;
+}
+
+static void playback_scan_facings(
+	struct playback_facing_scan *scan)
+{
+	long next = playback.next;
+
+	csmemset(scan->newest, 0, sizeof(scan->newest));
+	csmemset(scan->any, 0, sizeof(scan->any));
+	while (next + REPLAY_RECORD_HEADER_SIZE <= playback.size)
+	{
+		byte const *record = playback.data + next;
+		word size = (word)(record[2] | record[3] << 8);
+
+		if (next + REPLAY_RECORD_HEADER_SIZE + size > playback.size)
+			break;
+		scan->tick = (long)replay_get_long(record + 4);
+		switch (record[0])
+		{
+		case _network_replay_datagram:
+		case _network_replay_reliable:
+		case _network_replay_reliable_to_machine:
+			network_distributed_replay_facings(record + REPLAY_RECORD_HEADER_SIZE, size, FALSE,
+				playback_facing_found, scan);
+			break;
+		case _network_replay_own_actions:
+			network_distributed_replay_facings(record + REPLAY_RECORD_HEADER_SIZE, size, TRUE,
+				playback_facing_found, scan);
+			break;
+		}
+		next += REPLAY_RECORD_HEADER_SIZE + size;
+	}
+}
+
+static void playback_index_facings(
+	void)
+{
+	struct playback_facing_scan scan;
+	long total = 0;
+	short player_index;
+
+	csmemset(&scan, 0, sizeof(scan));
+	scan.counting = TRUE;
+	playback_scan_facings(&scan);
+	for (player_index = 0; player_index < HALO_PORT_MAXIMUM_NETWORK_PLAYERS; player_index++)
+	{
+		playback.facing_first[player_index] = total;
+		playback.facing_count[player_index] = 0;
+		total += scan.counts[player_index];
+	}
+	/* (none: the eyes view turns with the players' ticks) */
+	if (!total || !(playback.facings = (struct replay_facing *)malloc((size_t)total * sizeof(struct replay_facing))))
+		return;
+	scan.counting = FALSE;
+	playback_scan_facings(&scan);
+	error(_error_log, "replay: %ld facings of the players kept for the eyes view (%lu KB)", total,
+		(unsigned long)(total * sizeof(struct replay_facing) / 1024));
 }
 
 boolean network_replay_watch(
@@ -531,6 +672,7 @@ boolean network_replay_watch(
 	playback.start_tick = (long)replay_get_long(playback.data + 24);
 	playback.next = (long)(header_size + REPLAY_RECORD_HEADER_SIZE + sizeof(game));
 	playback_find_recorders(format, header_size);
+	playback_index_facings();
 	/* (as a client joins a game: none of this machine's own network game is
 	left, benchmark.c's way) */
 	playback.setting_up = TRUE;
@@ -1097,9 +1239,6 @@ boolean network_replay_playback_idle(
 	if (playback_pressed(FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_y))
 	{
 		playback.view = (short)((playback.view + 1) % NUMBER_OF_REPLAY_VIEWS);
-		/* (a client's recording's other players have no eyes to see through) */
-		if (playback.view == _replay_view_eyes && !playback_eyes_allowed(playback.watched))
-			playback.view = _replay_view_free;
 		/* (the free camera follows the player until it is flown; behind
 		turns with them until it is, at its distance) */
 		if (playback.view == _replay_view_free)
@@ -1306,13 +1445,172 @@ static boolean playback_free_camera(
 }
 
 /* through the eyes of the unit, where it aims; FALSE when it has none */
-static void playback_eyes_camera(
-	long unit_index)
+/* the moment the frame draws, in ticks: between the last two (render
+interpolation's), the tick just run's at 1 */
+static real playback_eyes_time(
+	void)
+{
+	return (real)game_time_get() - 1.0f + render_interpolation_fraction();
+}
+
+/* the angle from one to the other, the short way round */
+static real playback_angle_between(
+	real from,
+	real to)
+{
+	real difference = (real)fmod(to - from, 2.0f * _pi);
+
+	if (difference > _pi)
+		difference -= 2.0f * _pi;
+	else if (difference < -_pi)
+		difference += 2.0f * _pi;
+	return difference;
+}
+
+/* the player's (an absolute index) facing at the moment, turned smoothly
+from the facing their ticks run to the next one the replay has
+(playback_index_facings); FALSE when it has none of theirs yet. A facing
+read at a tick is what the client's next tick runs: it is theirs from then
+(its tick and 1). */
+static boolean playback_eyes_facing(
+	short player_index,
+	real time,
+	real_euler_angles2d *facing)
+{
+	struct replay_facing const *facings;
+	long low = 0;
+	long high;
+	real from;
+	real to;
+	real fraction;
+
+	if (!playback.facings || player_index < 0 || player_index >= HALO_PORT_MAXIMUM_NETWORK_PLAYERS ||
+		!playback.facing_count[player_index])
+	{
+		return FALSE;
+	}
+	facings = playback.facings + playback.facing_first[player_index];
+	high = playback.facing_count[player_index];
+	/* (the last whose moment the time has reached) */
+	if ((real)(facings[0].tick + 1) > time)
+		return FALSE;
+	while (high - low > 1)
+	{
+		long middle = (low + high) / 2;
+
+		if ((real)(facings[middle].tick + 1) <= time)
+			low = middle;
+		else
+			high = middle;
+	}
+	facing->yaw = distributed_angle_unpack(facings[low].yaw, FALSE);
+	facing->pitch = distributed_angle_unpack(facings[low].pitch, TRUE);
+	if (low + 1 >= playback.facing_count[player_index] ||
+		facings[low + 1].tick - facings[low].tick > EYES_FACING_MAXIMUM_TICKS)
+	{
+		return TRUE;
+	}
+	fraction = (time - (real)(facings[low].tick + 1)) / (real)(facings[low + 1].tick - facings[low].tick);
+	fraction = PIN(fraction, 0.0f, 1.0f);
+	from = facing->yaw;
+	to = distributed_angle_unpack(facings[low + 1].yaw, FALSE);
+	facing->yaw = from + playback_angle_between(from, to) * fraction;
+	from = facing->pitch;
+	to = distributed_angle_unpack(facings[low + 1].pitch, TRUE);
+	facing->pitch = from + (to - from) * fraction;
+	return TRUE;
+}
+
+/* where the player aims at the moment: their smooth facing
+(playback_eyes_facing), which is where a player looks, as their own view
+is. Not the unit's aim: a unit turns toward its input's facing a little a
+tick, so it lags each new facing by ticks, and between a far player's it
+would step and swing. The unit's aim where the replay has no facing of
+theirs, or theirs is far from it (dead, or the facing not the unit's). */
+static void playback_eyes_aim(
+	long unit_index,
+	short player_index,
+	real time,
+	real_vector3d *aim)
 {
 	struct unit_datum *unit = unit_get(unit_index);
+	real_euler_angles2d smooth;
+	real_vector3d facing;
+
+	*aim = unit->unit.aiming_vector;
+	if (!playback_eyes_facing(player_index, time, &smooth))
+		return;
+	facing.i = (real)(cos(smooth.pitch) * cos(smooth.yaw));
+	facing.j = (real)(cos(smooth.pitch) * sin(smooth.yaw));
+	facing.k = (real)sin(smooth.pitch);
+	/* (more than EYES_FACING_MAXIMUM_TURN apart: cos 90 degrees) */
+	if (facing.i * aim->i + facing.j * aim->j + facing.k * aim->k > (real)cos(EYES_FACING_MAXIMUM_TURN))
+		*aim = facing;
+}
+
+/* the eyes moved past the host's corrections of where the player is: what a
+frame's move differs from the player's speed (or the vehicle's they ride)
+by is a correction the client was sent, glided over (EYES_CORRECTION_TIME)
+rather than jumped (a far player's come every second to sixth tick); a
+larger one, a teleport or a respawn, is taken at once, as is any after
+another player or view, or a jump in the replay's time (a keyframe, a
+skip, a fast speed) */
+static void playback_eyes_glide(
+	long unit_index,
+	real time,
+	real_point3d *eyes)
+{
+	real elapsed = time - playback.eyes_time;
+	struct object_datum *mover = object_get(object_get_ultimate_parent(unit_index));
+	real_vector3d error;
+	real distance;
+
+	if (playback.eyes_unit != unit_index || elapsed < 0.0f || elapsed > 3.0f)
+	{
+		playback.eyes_unit = unit_index;
+		playback.eyes_time = time;
+		playback.eyes_drawn = *eyes;
+		csmemset(&playback.eyes_offset, 0, sizeof(playback.eyes_offset));
+		return;
+	}
+	error.i = eyes->x - playback.eyes_drawn.x - mover->object.translational_velocity.i * elapsed;
+	error.j = eyes->y - playback.eyes_drawn.y - mover->object.translational_velocity.j * elapsed;
+	error.k = eyes->z - playback.eyes_drawn.z - mover->object.translational_velocity.k * elapsed;
+	distance = (real)sqrt(error.i * error.i + error.j * error.j + error.k * error.k);
+	playback.eyes_time = time;
+	playback.eyes_drawn = *eyes;
+	if (distance >= EYES_CORRECTION_MAXIMUM)
+		csmemset(&playback.eyes_offset, 0, sizeof(playback.eyes_offset));
+	else if (distance > EYES_CORRECTION_MINIMUM)
+	{
+		playback.eyes_offset.i -= error.i;
+		playback.eyes_offset.j -= error.j;
+		playback.eyes_offset.k -= error.k;
+	}
+	/* (to a third in EYES_CORRECTION_TIME of the game) */
+	{
+		real kept = (real)exp(-elapsed / (EYES_CORRECTION_TIME * TICKS_PER_SECOND));
+
+		playback.eyes_offset.i *= kept;
+		playback.eyes_offset.j *= kept;
+		playback.eyes_offset.k *= kept;
+	}
+	eyes->x += playback.eyes_offset.i;
+	eyes->y += playback.eyes_offset.j;
+	eyes->z += playback.eyes_offset.k;
+}
+
+/* the view through the player's eyes, where the frame draws them: their
+aim (playback_eyes_aim) and their place (playback_eyes_glide) smooth */
+static void playback_eyes_camera(
+	long unit_index,
+	short player_index)
+{
+	real time = playback_eyes_time();
 	real_point3d eyes;
 	real_point3d origin;
 	real_point3d drawn;
+	real_vector3d aim;
 
 	unit_get_camera_position(unit_index, &eyes);
 	/* (moved as the frame draws the unit) */
@@ -1322,7 +1620,9 @@ static void playback_eyes_camera(
 	eyes.x += drawn.x - origin.x;
 	eyes.y += drawn.y - origin.y;
 	eyes.z += drawn.z - origin.z;
-	playback_camera_set(&eyes, &unit->unit.aiming_vector);
+	playback_eyes_glide(unit_index, time, &eyes);
+	playback_eyes_aim(unit_index, player_index, time, &aim);
+	playback_camera_set(&eyes, &aim);
 }
 
 /* the view the unit's player has in a seat with a third-person camera:
@@ -1472,9 +1772,6 @@ void network_replay_playback_frame(
 	}
 	unit_index = player ? player->unit_index : NONE;
 	playback.first_person = FALSE;
-	/* (a client's recording: watching another of its players, from behind) */
-	if (playback.view == _replay_view_eyes && !playback_eyes_allowed(playback.watched))
-		playback.view = _replay_view_behind;
 	/* (the free camera, until it is flown, is behind's) */
 	if (playback.view == _replay_view_free && playback.camera_valid && playback_free_camera(main_get_seconds_elapsed()))
 		;
@@ -1494,7 +1791,7 @@ void network_replay_playback_frame(
 		}
 		else
 		{
-			playback_eyes_camera(unit_index);
+			playback_eyes_camera(unit_index, (short)DATUM_INDEX_TO_ABSOLUTE_INDEX(playback.watched));
 			playback.first_person = TRUE;
 		}
 	}
@@ -1799,8 +2096,15 @@ void network_replay_playback_draw(
 		usnprintf(text, NUMBEROF(text) - 1, L"REPLAY OVER");
 	else
 	{
+		/* (a client's recording's other player through their eyes: their
+		aim between the host's messages, which came every second to sixth
+		tick, is the smooth turn between them, not theirs) */
+		boolean smoothed = playback.view == _replay_view_eyes && playback.client && player &&
+			!playback.recorders[DATUM_INDEX_TO_ABSOLUTE_INDEX(playback.watched)];
+
 		usnprintf(text, NUMBEROF(text) - 1, L"%.12s   %s   %s",
-			playback.view == _replay_view_free || !player ? L"REPLAY" : player->name, view_names[playback.view], speed);
+			playback.view == _replay_view_free || !player ? L"REPLAY" : player->name,
+			smoothed ? L"EYES (SMOOTHED)" : view_names[playback.view], speed);
 	}
 	text[NUMBEROF(text) - 1] = 0;
 	font = font_definition_get(font_index);
