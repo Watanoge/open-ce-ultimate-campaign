@@ -647,6 +647,65 @@ $('delete-data').addEventListener('click', async () => {
   await refreshData();
 });
 
+// everything the site keeps in this browser: the private storage (OPFS), the
+// service worker and its caches (sw.js), and the page's own storage; the page
+// then loads as on a first visit. (Listened to from the start: a launcher
+// that stalls on what it reads can still be reset.)
+$('delete-everything').addEventListener('click', async () => {
+  if (gameElsewhere) {
+    alert('The game is running in another tab of this browser: quit it or close that tab first.');
+    return;
+  }
+  if (!confirm('Delete everything this site keeps in this browser: the maps, Custom Edition maps, mods, tag ' +
+    'profiles, saved games, replays and settings? Export what you want to keep first.')) return;
+  const button = $('delete-everything');
+  button.disabled = true;
+  $('storage-status').textContent = 'Deleting…';
+  const failed = [];
+  try {
+    const root = await navigator.storage.getDirectory();
+    const names = [];
+    for await (const [name] of root.entries()) names.push(name);
+    for (const name of names) {
+      $('storage-status').textContent = `Deleting ${name}…`;
+      await root.removeEntry(name, { recursive: true }).catch((error) => failed.push(`${name} (${error.name})`));
+    }
+  } catch {
+    // (no private storage)
+  }
+  try {
+    for (const name of await caches.keys()) await caches.delete(name);
+  } catch {
+    // (no caches)
+  }
+  try {
+    for (const registration of await navigator.serviceWorker.getRegistrations()) await registration.unregister();
+  } catch {
+    // (no service worker)
+  }
+  try {
+    if (indexedDB.databases) {
+      for (const { name } of await indexedDB.databases()) if (name) indexedDB.deleteDatabase(name);
+    }
+  } catch {
+    // (none)
+  }
+  try {
+    localStorage.clear();
+    sessionStorage.clear();
+  } catch {
+    // (none)
+  }
+  logLine('deleted everything' + (failed.length ? `; not: ${failed.join(', ')}` : ''));
+  if (failed.length) {
+    $('storage-status').textContent = `Could not delete ${failed.join(', ')}: close this site's other tabs and ` +
+      'try again.';
+    button.disabled = false;
+    return;
+  }
+  location.replace(location.pathname);
+});
+
 $('persist').addEventListener('click', async () => {
   if (navigator.storage && navigator.storage.persist) await navigator.storage.persist();
   await refreshStorage();
@@ -668,6 +727,10 @@ async function collect(directory, prefix, entries) {
 $('export-saves').addEventListener('click', async () => {
   if (gameStarted && !gameStopped) {
     alert('Quit the game first: its files are open while it runs.');
+    return;
+  }
+  if (gameElsewhere) {
+    alert('Quit the game in the other tab first: its files are open while it runs.');
     return;
   }
   const entries = [];
@@ -698,7 +761,41 @@ let gameStopped = false;
 let wakeLock = null;
 
 function canPlay() {
-  return checksPassed && dataReady && !gameStarted;
+  return checksPassed && dataReady && !gameStarted && !gameElsewhere;
+}
+
+// The game in another tab of this browser (the site's other pages share its
+// storage, whose files a game keeps open): the tab playing holds a lock, and
+// the others wait for it to go, Play off meanwhile.
+const GAME_LOCK = 'opence-game';
+let gameElsewhere = false;
+
+async function watchGameElsewhere() {
+  if (!navigator.locks || !navigator.locks.query) return;
+  try {
+    const { held } = await navigator.locks.query();
+    if (!held.some((lock) => lock.name === GAME_LOCK)) return;
+  } catch {
+    return;
+  }
+  gameElsewhere = true;
+  updatePlay();
+  // (granted once the other tab closes or quits its game)
+  navigator.locks.request(GAME_LOCK, { mode: 'shared' }, () => {
+    gameElsewhere = false;
+    updatePlay();
+  }).catch(() => {});
+}
+
+// the lock, held as long as this page is: false when another tab has it
+function holdGameLock() {
+  if (!navigator.locks) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    navigator.locks.request(GAME_LOCK, { ifAvailable: true }, (lock) => {
+      resolve(!!lock);
+      return lock ? new Promise(() => {}) : null;
+    }).catch(() => resolve(true));
+  });
 }
 
 // the Ready to play screen's rows: a row good or bad, and its value
@@ -711,6 +808,8 @@ function summarize(id, good, text) {
 function updatePlay() {
   $('play').disabled = !canPlay();
   $('play-note').textContent = !checksPassed ? 'This browser cannot run the game: see This browser, below.' :
+    gameElsewhere ? 'The game is already running in another tab of this browser: play there, or quit it or close ' +
+      'that tab, and Play here turns on.' :
     !dataReady ? 'The game data is needed first.' : '';
   summarize('summary-browser', checksPassed, checksPassed ? 'Runs the game' : 'Cannot run the game');
   summarize('summary-data', dataReady, dataReady ? $('data-status').textContent : 'Needed first');
@@ -869,6 +968,10 @@ function loadScript(src) {
 
 async function play() {
   if (!canPlay()) return;
+  if (!(await holdGameLock())) {
+    await watchGameElsewhere();
+    return;
+  }
   gameStarted = true;
   watchFrames();
   $('launcher').hidden = true;
@@ -1028,6 +1131,7 @@ document.addEventListener('visibilitychange', async () => {
 (async () => {
   await isolate();
   await loadStamp();
+  await watchGameElsewhere();
   checksPassed = await runChecks();
   if (!checksPassed) {
     $('checks-note').textContent = 'Desktop Chrome, Edge and Firefox run the game; Safari 17 or later may.';

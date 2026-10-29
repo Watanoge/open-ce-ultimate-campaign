@@ -24,14 +24,18 @@ in a game playing the Tag Injector's multiplayer profile
 machine of the game has. Every machine counts the list alike (the score to
 win); only the host's order matters, as only the host gives weapons. A build
 without it plays Gun Game, with a list as long but for the profile's
-weapons, which only a build with the mod can join a game of.
+weapons, which only a build with the mod can join a game of. A Tag Gun Game
+with none of them (no multiplayer profile played, or none of its weapons on
+the map) says so on each player's HUD once they have spawned.
 */
 
 #include "cseries.h"
+#include "cseries/errors.h"
 #include "game/game.h"
 #include "game/game_engine.h"
 #include "game/game_engine_slayer.h"
 #include "game/players.h"
+#include "interface/hud_messaging.h"
 #include "items/weapons.h"
 #include "items/weapon_definitions.h"
 #include "networking/network_game_globals.h"
@@ -55,6 +59,9 @@ static byte const gun_game_strongest_first[] =
 
 /* the map's loadout weapons and a multiplayer profile's (Tag Gun Game) */
 #define GUN_GAME_MAXIMUM_LEVELS 64
+/* a Tag Gun Game without the profile's weapons: said this long after every
+local player has spawned */
+#define GUN_GAME_NOTICE_TICKS (2 * 30)
 
 static struct
 {
@@ -69,6 +76,10 @@ static struct
 	short equipped_level[HALO_PORT_MAXIMUM_NETWORK_PLAYERS];
 	/* a weapon being given (gun_game_allow_pick_up allows it) */
 	boolean equipping;
+	/* a Tag Gun Game playing the map's weapons alone, not said yet, and the
+	ticks counted since every local player spawned */
+	boolean notice;
+	short notice_ticks;
 } gun_game;
 
 short gun_game_level_count(
@@ -241,6 +252,7 @@ static void gun_game_levels_build(
 	short index;
 
 	gun_game.level_count = 0;
+	gun_game.notice = FALSE;
 	for (index = 0; index < count; index++)
 	{
 		gun_game_level_add(game_engine_loadout_weapon_definition(gun_game_strongest_first[
@@ -253,6 +265,11 @@ static void gun_game_levels_build(
 
 		for (index = 0; index < shared_count; index++)
 			gun_game_level_add(shared[index]);
+		gun_game.notice = !shared_count;
+		gun_game.notice_ticks = 0;
+		if (!shared_count)
+			error(_error_silent, "gun game: Tag Gun Game without Tag Injector weapons, the map's %d alone",
+				(int)gun_game.level_count);
 	}
 	/* (the host's draw: only the host gives weapons) */
 	if (order == _gun_game_order_random && !network_game_distributed_client())
@@ -288,6 +305,34 @@ static void gun_game_player_update_each_tick(
 	if (gun_game.slayer.player_update_each_tick)
 		gun_game.slayer.player_update_each_tick(player_index);
 	gun_game_equip(player_index);
+}
+
+/* the HUD's line of a Tag Gun Game without the profile's weapons */
+static void gun_game_update(
+	void)
+{
+	short local_player_index;
+
+	if (gun_game.slayer.update)
+		gun_game.slayer.update();
+	if (!gun_game.notice)
+		return;
+	for (local_player_index = 0; local_player_index < local_player_count(); local_player_index++)
+	{
+		long player_index = local_player_get_player_index(local_player_index);
+
+		if (player_index == NONE || player_get(player_index)->unit_index == NONE)
+			return;
+	}
+	if (++gun_game.notice_ticks < GUN_GAME_NOTICE_TICKS)
+		return;
+	for (local_player_index = 0; local_player_index < local_player_count(); local_player_index++)
+	{
+		/* (the newest message is shown on top: the last line first) */
+		hud_print_message(local_player_index, L"The map's weapons alone are played");
+		hud_print_message(local_player_index, L"Tag Gun Game: no Tag Injector weapons in this game");
+	}
+	gun_game.notice = FALSE;
 }
 
 /* only the weapons given (and a weapon held, which readying it asks of) */
@@ -336,6 +381,7 @@ struct game_engine *gun_game_engine_get(
 	gun_game.engine = *slayer;
 	gun_game.engine.initialize_for_new_map = gun_game_initialize_for_new_map;
 	gun_game.engine.player_update_each_tick = gun_game_player_update_each_tick;
+	gun_game.engine.update = gun_game_update;
 	gun_game.engine.allow_pick_up = gun_game_allow_pick_up;
 	gun_game.engine.player_killed_player = gun_game_player_killed_player;
 	return &gun_game.engine;
