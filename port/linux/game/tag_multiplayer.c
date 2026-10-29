@@ -957,11 +957,20 @@ long tag_multiplayer_game_randomizer_profile(
 	void)
 {
 	char const *folder = tag_multiplayer.game_kind == _played_randomizer ? tag_multiplayer.game_profile : "";
+	long profile;
 
 	if (!hosting() || !folder[0])
 		return NONE;
-	port_tag_profiles_scan();
-	return port_tag_profiles_find(folder);
+	/* (found again by a scan of before, and else scanned: as the randomizer
+	asks this many times a frame, and a scan lets go of every profile, the
+	level's playing one among them) */
+	profile = port_tag_profiles_find(folder);
+	if (profile == NONE)
+	{
+		port_tag_profiles_scan();
+		profile = port_tag_profiles_find(folder);
+	}
+	return profile;
 }
 
 void tag_multiplayer_game_randomizer_profile_set(
