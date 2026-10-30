@@ -459,8 +459,8 @@ static char const *const port_game_data_input_names[] =
 	row; the Xbox's read only player_ui's gametype, not Server Setup's) */
 	"game settings lists text update", "get edit game settings name", "mp edit profile set rule text",
 	"port password update",
-	/* (the profile settings' picture: the Xbox's of the button settings,
-	on Gamepad Setup's row) */
+	/* (the profile settings' picture: on Gamepad Setup's row, the
+	button-layout overlay in its place) */
 	"port gamepad layout preview",
 	/* (the main menu's line under the version number: the renderer, and its driver) */
 	"port renderer textbox",
@@ -493,6 +493,9 @@ static char const *const port_game_data_input_names[] =
 	"port map vote update",
 	/* (HDR Calibration's patterns, drawn by the renderer) */
 	"port hdr calibration",
+	/* (Gamepad Setup's BUTTON LAYOUT, and the profile settings' picture of
+	it: a controller, and what the layout puts on its buttons) */
+	"port gamepad layout overlay",
 };
 
 static struct

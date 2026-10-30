@@ -1191,7 +1191,12 @@ int halo_push_to_talk_held(void)
 		if (input_held(&input, gamepad, bindings[HALO_KEYBOARD_PUSH_TO_TALK][slot]))
 			return 1;
 	}
-	return controller_remap_talk();
+	if (controller_remap_talk())
+		return 1;
+	/* (and the first controller's D-pad Down, the touch controls' too, in
+	the game: as its D-pad Up opens the text chat's keyboard, not a binding,
+	and the game still gets it, network_chat.c) */
+	return !input.menus && (chat_pad[0] & (1UL << HALO_CHAT_PAD_DOWN)) != 0;
 }
 
 /* A scroll of the wheel switches weapons once: it holds Y for WHEEL_PRESS_MS
@@ -2211,9 +2216,14 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 		BOOL held_back[INPUT_GAMEPAD_END - INPUT_GAMEPAD];
 		BOOL swap = menu_buttons_swapped(input.menus);
 		int index;
+		/* (a replay's playback has no voice chat and no game's controls: its
+		own take every button, a shoulder bound to talk its speed too:
+		port/linux/game/network_replay_playback.c) */
+		BOOL replay = network_replay_playing() != 0;
 
 		for (index = 0; index < INPUT_GAMEPAD_END - INPUT_GAMEPAD; index++)
-			held_back[index] = gamepad_bound_to_talk[index] || (!input.menus && gamepad_bound_in_game[index]);
+			held_back[index] = !replay &&
+				(gamepad_bound_to_talk[index] || (!input.menus && gamepad_bound_in_game[index]));
 		face_buttons_held_over_swap(gamepad, swap, held_back);
 		sdl_gamepad_state(gamepad, &physical, held_back, scoreboard_picking_port == 0, swap);
 	}

@@ -309,6 +309,13 @@ void network_distributed_own_actions(byte const *data, long size);
 /* (a replay's playback) the player (an absolute index) whose input such a
 record is, NONE if it cannot be read */
 short network_distributed_own_actions_player(byte const *data, long size);
+/* (a replay's playback) the players' facings a record holds, each found
+(its player, an absolute index; the tick it is of, the host's or for a
+client's own input its own; and its yaw and pitch as the wire has them,
+distributed_angle_unpack's): the relayed actions in a message the client
+read of its host (one in a batch too), or a client's own input's record */
+void network_distributed_replay_facings(byte const *data, long size, boolean own_actions,
+	void (*found)(void *context, short player_index, long tick, short yaw, short pitch), void *context);
 /* (a replay's playback) a keyframe put back: the times kept by this
 machine's clock (the host's last message's) are now's again, not the
 keyframe's */

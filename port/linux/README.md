@@ -236,8 +236,10 @@ computer (co-op, or split screen in a network game) and only one gamepad,
 that gamepad is controller 2 (player 2) and the keyboard and mouse stay
 controller 1; with more gamepads, SPACE on the ADD PLAYER screen does the
 same for the first (refer to the network games' split screen below). The gamepad changes controller only when none of its buttons
-is held. The profile's button layout (Settings > Gamepads) is the
-gamepads' only. Besides the Xbox's five, it has the Master Chief
+is held. The profile's button layout (Settings > Gamepads > BUTTON
+LAYOUT, which shows the layout chosen on a picture of the controller,
+what each button does by it) is the gamepads' only. Besides the Xbox's
+five, it has the Master Chief
 Collection's Bumper Jumper: jump on the left bumper, melee on the right,
 switching grenades on A, action and reload on B and the flashlight on X.
 Fishsticks has zoom on the left trigger and melee on the right stick's
@@ -265,7 +267,7 @@ grenades switched with the left bumper (the flashlight moves to X).
 | show the scores (hold) | tab |
 | pause menu | escape |
 | screenshot | F10 |
-| talk in voice chat (hold) | V |
+| talk in voice chat (hold) | V (with a controller, D-pad Down) |
 | type a chat line to everyone | T |
 | type a chat line to your team | Y |
 | vote yes in the vote running (to kick a player, to end the game) | F1 (a controller: the D-pad's left, while the vote runs) |
@@ -273,7 +275,8 @@ grenades switched with the left bumper (the flashlight moves to X).
 | while typing a chat line: to everyone, the team or the vehicle, in turn | Tab |
 
 With a controller, or the touch controls' D-pad, D-pad Up opens the text
-chat's on-screen keyboard (refer to "Text chat").
+chat's on-screen keyboard (refer to "Text chat"), and D-pad Down held talks
+in voice chat; both in a game, and the d-pad still moves the player too.
 
 Always: \` opens the developer console, F12 releases or captures the mouse,
 F11 changes between fullscreen and window. Screenshot (default F10,
@@ -1260,7 +1263,8 @@ host mutes: a player's `/mute` is not sent.
 ### Voice chat
 
 Network games have voice chat, on the local network and on the internet.
-Hold V (`controls.push_to_talk`, Settings > Controls Setup) to talk, or set
+Hold V (`controls.push_to_talk`, Settings > Controls Setup), or in a game a
+controller's D-pad Down (the touch controls' too), to talk, or set
 VOICE CHAT in Settings > Audio to OPEN MIC. VOICE VOLUME sets the volume of
 the other players. On Android, set VOICE CHAT to OPEN MIC to talk: the game
 then asks for the microphone.

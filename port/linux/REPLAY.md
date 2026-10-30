@@ -316,15 +316,25 @@ DELETE (pressed twice), EXPORT (Android) and BACK. A recording shorter than
   in a seat with a third-person camera (a Warthog's, a Ghost's), the
   game's view from behind it (`following_camera_unit_view`); and a free
   camera that flies as the game's debug camera does (the left stick moves
-  it level, toward where it looks across the ground, the right one turns
-  it, the left trigger takes it down and the right one up; it follows
+  it level, toward where it looks across the ground, as its tilt squared,
+  so a slight tilt moves it slowly, its speed eased up in 0.2 seconds and
+  down in 0.08; the right one turns it; the left trigger takes it down and
+  the right one up, from still to full in a quarter of a second, so a tap
+  of the Switch's ZL or ZR, which are buttons, is a small step; it follows
   the player as the view behind them does until one of those is touched,
   and flies from there; it slides
   along the level's walls, its scenery and its doors rather than flying
-  through them, `playback_free_camera_move`). A client's
-  recording has only its own players' eyes (those of its own input's
-  records, `_network_replay_own_actions`): Y goes past that view for the
-  others, whom it saw only as a client sees another.
+  through them, `playback_free_camera_move`). Through the eyes, the aim
+  turns smoothly between the facings the replay has of the player (all
+  of them indexed as it loads, `playback_index_facings`: the host's
+  relayed input and a client's own input's records), the aim the
+  facing at the frame's moment (`playback_eyes_aim`: a unit's own aim
+  lags each new facing by ticks), and the host's
+  corrections of where they are are glided over in a tenth of a second
+  rather than jumped (`playback_eyes_glide`). Every player's eyes can be
+  watched: a client's recording has the players far from its own, or out
+  of their sight, every second to sixth tick, so their aim between those
+  is the smooth turn, not theirs, and the top line says EYES (SMOOTHED).
 - **The controls.** A watches the next player alive, X the one before;
   one who dies is watched again when they spawn. The d-pad's left goes
   back to the last keyframe (the one before it, within two seconds of
@@ -339,8 +349,12 @@ DELETE (pressed twice), EXPORT (Android) and BACK. A recording shorter than
   again resumes it at its speed. A playback is a client of the
   distributed netcode, whose host's rules put a client's game speed back
   each tick (`cheats_network_client_enforce`); a playback's is its own.
-  A line at the top says who is watched, the view and the speed, and a
-  dark bar along the bottom edge shows the buttons, in the menus' small
+  A line at the top says who is watched, the view and the speed. Along
+  the bottom edge a seek bar shows where the replay is: the time (mm:ss)
+  at its left, the replay's length (to its last record) at its right, and
+  between them a Halo blue line, the playhead a circle on it, dimmer
+  after it; it only shows (`playback_draw_seek`). Above it a dark bar
+  shows the buttons, in the menus' small
   font, each as a picture of the controller's button: Kenney's Input
   Prompts, the Xbox Series' in common and the Switch's and the PS5's on
   them (`hud_hires_prompt_draw`; port/assets/buttons/README.md, "Replay
@@ -368,8 +382,17 @@ DELETE (pressed twice), EXPORT (Android) and BACK. A recording shorter than
   (`game_state_port_restore`, its procedures before and after), then the
   block, then sets right what is this machine's rather than the game's
   (the host's last message's time, the frame's interpolation, the
-  first-person weapon, the playback's speed). Going on to a keyframe not
-  yet taken plays to it at 8 times (SKIPPING), where it is taken. They
+  first-person weapon, the playback's speed). With no keyframe ahead, it
+  plays ten seconds on from where it is (2:34 to 2:44) at 50 times, up to
+  60 ticks a frame and never past it nor past the next keyframe's tick,
+  where that keyframe is taken (2:40: `network_replay_ticks_per_frame`).
+  The frame it was asked in is held: drawn again with no tick run, its 3D
+  view copied (`rasterizer_port_hold_capture`), and drawn back in place of
+  the view each frame until the skip is there (`rasterizer_port_hold_draw`),
+  the replay's lines over it as they change (the seek bar's playhead
+  moving), and the sound paused; then the playback is at normal speed. The replay's records go to the game before each
+  tick (`network_replay_playback_tick`), as a client reads its host's
+  between ticks, so a frame of many ticks plays as the recording did. They
   take up to 256 MB (a log line says each one's size and how long its
   compression took); past that, none more are taken.
 

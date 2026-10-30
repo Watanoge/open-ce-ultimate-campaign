@@ -528,6 +528,24 @@ int master_list_get(const char *url, int *status, char **body, unsigned long *si
 	return 1;
 }
 
+int master_list_https_get(const char *url, int *status, char **body, unsigned long *size)
+{
+	struct fetched fetched;
+
+	memset(&fetched, 0, sizeof(fetched));
+	if (!fetch(url, &fetched) || !fetched.body)
+		return 0;
+	*status = fetched.status;
+	*body = fetched.body;
+	*size = fetched.size;
+	return 1;
+}
+
+void master_list_https_free(char *body)
+{
+	free(body);
+}
+
 int master_list_client_masters(char (*urls)[MASTER_LIST_URL_SIZE], unsigned char (*keys)[MASTER_LIST_KEY_SIZE])
 {
 	int count = master_list_read_file(config_string("network.masters_file"), urls, keys, MASTER_LIST_MAXIMUM_MASTERS);

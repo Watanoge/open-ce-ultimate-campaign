@@ -113,6 +113,7 @@ their handlers open opens.
 #include "cseries.h"
 #include "cseries/errors.h"
 #include "input/input.h"
+#include "input/input_abstraction.h"
 #include "interface/event_manager.h"
 #include "interface/player_ui.h"
 #include "interface/ui_widget.h"
@@ -153,6 +154,7 @@ their handlers open opens.
 #include "../src/master_list.h"
 #include "../src/player_link.h" /* port: port/linux/src/player_link.c */
 #include "../src/server_master.h"
+#include "../src/server_json.h"
 #include "text_filter.h"
 
 #include <ctype.h>
@@ -4767,36 +4769,172 @@ static boolean color_choose(void)
 	return TRUE;
 }
 
-/* ---------- Edit Profile Settings: its picture of Gamepad Setup, the
-profile's button settings as the Xbox's Controller Setup shows them */
+/* ---------- the button-layout overlay (tools/port_settings.py's
+CONTROLLERS): a picture of the platform's controller, and by each of its
+buttons what the layout puts on it: on Gamepad Setup's BUTTON LAYOUT screen
+("overlay"), the layouts its spinners show. The profile settings' row of
+Gamepad Setup shows the controller alone ("overlay_small") */
 
-/* the picture's frames (the bitmap's: tools/port_settings.py's
-BITMAP_FRAMES): Gamepad Setup's row's, as the list numbers its rows
-(player_profile_edit_select_menu_update_extended_description), and after
-the PC version's nine the Xbox's five of the button settings. The port's
-own presets (Boxer and the others after the Xbox's five) have no picture
-of their own: Gamepad Setup's is shown for them */
+#define LAYOUT_WORDS "pc\\main_menu\\settings_select\\player_setup\\player_profile_edit\\gamepad_setup\\layout\\words"
+#define LAYOUT_LABEL_LENGTH 64
+/* the picture's frames (Edit Profile Settings' list numbers its rows:
+player_profile_edit_select_menu_update_extended_description): Gamepad
+Setup's, over which the overlay is shown */
 #define PROFILE_GAMEPAD_FRAME 2
-#define PROFILE_FIRST_LAYOUT_FRAME 9
-#define PROFILE_LAYOUT_FRAMES 5
 
-/* "port gamepad layout preview" (the picture's own): on Gamepad Setup's
-row, the edited profile's button settings; the port's own (Bumper Jumper),
-of which the Xbox has no picture, keeps the row's */
+/* the words: the game's twelve controls (input_abstraction.c's), then these */
+enum
+{
+	_layout_word_move = 12,
+	_layout_word_look,
+	_layout_word_move_turn,
+	_layout_word_strafe_look,
+	_layout_word_press,
+	_layout_word_dpad_up,
+	_layout_word_dpad_down,
+	_layout_word_dpad_left,
+	_layout_word_dpad_right,
+};
+
+/* what the left stick and the right do in each stick layout (player_profile.h's,
+as input_abstraction_update reads them); the D-pad does as the left stick */
+static short const layout_stick_words[][2] =
+{
+	{ _layout_word_move, _layout_word_look },
+	{ _layout_word_look, _layout_word_move },
+	{ _layout_word_move_turn, _layout_word_strafe_look },
+	{ _layout_word_strafe_look, _layout_word_move_turn },
+};
+
+/* the labels of one control each, by the Xbox's buttons (input.h's: the
+others' by place, as xinput_sdl.c reads them) */
+static struct
+{
+	char const *label;
+	short button;
+} const layout_labels[] =
+{
+	{ "label_a", _gamepad_analog_button_a },
+	{ "label_b", _gamepad_analog_button_b },
+	{ "label_x", _gamepad_analog_button_x },
+	{ "label_y", _gamepad_analog_button_y },
+	{ "label_black", _gamepad_analog_button_black },
+	{ "label_white", _gamepad_analog_button_white },
+	{ "label_trigger_left", _gamepad_analog_button_left_trigger },
+	{ "label_trigger_right", _gamepad_analog_button_right_trigger },
+	{ "label_start", _gamepad_binary_button_start },
+	{ "label_back", _gamepad_binary_button_back },
+};
+
+/* the control the layout puts on the button, else NONE */
+static short layout_control(struct game_input_preferences const *preferences, short button)
+{
+	short control;
+
+	for (control = 0; control < NUMBEROF(preferences->game_control_to_xbox_buttons); control++)
+	{
+		if (preferences->game_control_to_xbox_buttons[control] == button)
+			return control;
+	}
+	return NONE;
+}
+
+/* the word added to text (of LAYOUT_LABEL_LENGTH), after separator */
+static void layout_word_append(wchar_t *text, wchar_t const *separator, char const *words, short word)
+{
+	wchar_t part[LAYOUT_LABEL_LENGTH];
+	size_t length;
+
+	words_get(words, word, part, NUMBEROF(part));
+	length = ustrlen(text);
+	ustrncpy(text + length, separator, LAYOUT_LABEL_LENGTH - 1 - length);
+	text[LAYOUT_LABEL_LENGTH - 1] = 0;
+	length = ustrlen(text);
+	ustrncpy(text + length, part, LAYOUT_LABEL_LENGTH - 1 - length);
+	text[LAYOUT_LABEL_LENGTH - 1] = 0;
+}
+
+/* a stick's label (the D-pad's: its directions): what it does, and on a
+line each, what the layout puts on its buttons ("PRESS: CROUCH"); a line
+ends with '\r', the strings' line break (a "\r\n" was two of them, and put
+the second line below the label) */
+static void layout_stick_label(struct widget_instance *label, struct game_input_preferences const *preferences,
+	char const *words, short stick_word, short first_button, short button_count, short first_word)
+{
+	wchar_t text[LAYOUT_LABEL_LENGTH] = { 0 };
+	short index;
+
+	layout_word_append(text, L"", words, stick_word);
+	for (index = 0; index < button_count; index++)
+	{
+		short control = layout_control(preferences, (short)(first_button + index));
+
+		if (control != NONE)
+		{
+			layout_word_append(text, L"\r", words, (short)(first_word + index));
+			layout_word_append(text, L" ", words, control);
+		}
+	}
+	text_set_length(label, text, LAYOUT_LABEL_LENGTH);
+}
+
+static void layout_overlay_show(struct widget_instance *overlay, short button_preset, short joystick_preset)
+{
+	char const *words = LAYOUT_WORDS;
+	struct game_input_preferences preferences = { 0 };
+	short const *sticks = layout_stick_words[joystick_preset >= 0 && joystick_preset < NUMBEROF(layout_stick_words) ?
+		joystick_preset : _joystick_preset_standard];
+	short index;
+
+	player_ui_button_preset_preferences(button_preset, &preferences);
+	for (index = 0; index < NUMBEROF(layout_labels); index++)
+	{
+		wchar_t text[LAYOUT_LABEL_LENGTH] = { 0 };
+		short control = layout_control(&preferences, layout_labels[index].button);
+
+		if (control != NONE)
+			layout_word_append(text, L"", words, control);
+		text_set_length(named(overlay, layout_labels[index].label, 0), text, LAYOUT_LABEL_LENGTH);
+	}
+	layout_stick_label(named(overlay, "label_stick_left", 0), &preferences, words, sticks[0],
+		_gamepad_binary_button_left_thumb, 1, _layout_word_press);
+	layout_stick_label(named(overlay, "label_stick_right", 0), &preferences, words, sticks[1],
+		_gamepad_binary_button_right_thumb, 1, _layout_word_press);
+	layout_stick_label(named(overlay, "label_dpad", 0), &preferences, words, sticks[0],
+		_gamepad_binary_button_dpad_up, 4, _layout_word_dpad_up);
+}
+
+/* the value of a spinner of profile.button_preset or joystick_preset */
+static void layout_spinner_value(struct widget_instance *spinner, short *value)
+{
+	struct pc_menu_setting *setting = spinner ? pc_menu_setting_get(spinner->definition_tag_index) : NULL;
+	short index = spinner ? spinner->parameters.list.selected_index : NONE;
+
+	if (setting && index >= 0 && index < setting->value_count)
+		*value = (short)atoi(setting->values[index]);
+}
+
+/* "port gamepad layout overlay" (the overlay's own) */
+static void gamepad_layout_overlay(struct widget_instance *overlay)
+{
+	short button_preset = _button_preset_standard;
+	short joystick_preset = _joystick_preset_standard;
+
+	layout_spinner_value(named(screen_of(overlay), "button_preset_spinner", 0), &button_preset);
+	layout_spinner_value(named(screen_of(overlay), "joystick_preset_spinner", 0), &joystick_preset);
+	layout_overlay_show(overlay, button_preset, joystick_preset);
+}
+
+/* "port gamepad layout preview" (the profile settings' picture): on
+Gamepad Setup's row the overlay's controller, in its place */
 static void profile_gamepad_layout(struct widget_instance *picture)
 {
-	struct player_profile *profile = player_ui_get_edit_player_profile();
-	short frame = picture->animation.current_frame_index;
+	struct widget_instance *overlay = picture->parent ? named(picture->parent, "overlay_small", 0) : NULL;
+	boolean gamepad = picture->animation.current_frame_index == PROFILE_GAMEPAD_FRAME;
 
-	if (frame == PROFILE_GAMEPAD_FRAME ||
-		(frame >= PROFILE_FIRST_LAYOUT_FRAME && frame < PROFILE_FIRST_LAYOUT_FRAME + PROFILE_LAYOUT_FRAMES))
-	{
-		short preset = profile && profile->controller_settings.button_preset < NUMBER_OF_BUTTON_PRESETS ?
-			profile->controller_settings.button_preset : _button_preset_standard;
-
-		picture->animation.current_frame_index = preset < PROFILE_LAYOUT_FRAMES ?
-			(short)(PROFILE_FIRST_LAYOUT_FRAME + preset) : PROFILE_GAMEPAD_FRAME;
-	}
+	picture->visible = !gamepad || !overlay;
+	if (overlay)
+		overlay->visible = gamepad;
 }
 
 /* ---------- Profiles: the player profiles, and a row to make one (as the
@@ -9382,7 +9520,14 @@ static void theater_update(struct widget_instance *list)
 		mods_wide_text(line, wide, ROW_TEXT_LENGTH);
 		text_set(named(row, "theater_replay_length", 0), wide);
 	}
-	text_set(named(list, "button_record", 0), recording ? L"RECORD: ON" : L"RECORD: OFF");
+	/* (its string list's OFF or ON: a text widget's words are its string
+	list's again each time it is drawn, so words set on it never showed) */
+	{
+		struct widget_instance *record = named(list, "button_record", 0);
+
+		if (record)
+			record->parameters.text_box.string_list_index = recording ? 1 : 0;
+	}
 	if (!details)
 		return;
 	network_replay_summary(&count, &bytes);
@@ -16871,6 +17016,8 @@ void pc_menu_game_data_function_invoke(
 		saved_game_list_update(widget);
 	else if (!strcmp(name, "port gamepad layout preview"))
 		profile_gamepad_layout(widget);
+	else if (!strcmp(name, "port gamepad layout overlay"))
+		gamepad_layout_overlay(widget);
 	else if (!strcmp(name, "port renderer textbox"))
 		renderer_text_update(widget);
 	else if (!strcmp(name, "randomizer profiles update"))
