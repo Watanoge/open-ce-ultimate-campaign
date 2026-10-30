@@ -13,7 +13,7 @@
 		<child widget="main_menu/theater/theater_list"/>
 		<child widget="main_menu/theater/header_theater"/>
 		<child widget="main_menu/theater/theater_qr_text" platform="switch ps5"/>
-		<child widget="main_menu/theater/theater_delete_hint" x="130" y="415" platform="switch ps5"/>
+		<child widget="main_menu/theater/theater_delete_hint" x="138" y="415" platform="switch ps5"/>
 	</widget>
 	<widget name="main_menu/theater/header_theater" controller="1" left="35" top="11" width="363" height="59" bitmap="main_menu/theater/header_theater">
 	</widget>
@@ -35,6 +35,7 @@
 		<on event="a" run="port theater watch"/>
 		<on event="start" run="port theater watch"/>
 		<on event="x" run="port theater delete"/>
+		<on event="y" run="port theater record"/>
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<child widget="main_menu/theater/theater_replay_name" x="12"/>
 		<child widget="main_menu/theater/theater_replay_length" x="290"/>
@@ -43,6 +44,7 @@
 		<on event="a" run="port theater watch"/>
 		<on event="start" run="port theater watch"/>
 		<on event="x" run="port theater delete"/>
+		<on event="y" run="port theater record"/>
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<child widget="main_menu/theater/theater_replay_name" x="12"/>
 		<child widget="main_menu/theater/theater_replay_length" x="290"/>
@@ -51,6 +53,7 @@
 		<on event="a" run="port theater watch"/>
 		<on event="start" run="port theater watch"/>
 		<on event="x" run="port theater delete"/>
+		<on event="y" run="port theater record"/>
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<child widget="main_menu/theater/theater_replay_name" x="12"/>
 		<child widget="main_menu/theater/theater_replay_length" x="290"/>
@@ -59,6 +62,7 @@
 		<on event="a" run="port theater watch"/>
 		<on event="start" run="port theater watch"/>
 		<on event="x" run="port theater delete"/>
+		<on event="y" run="port theater record"/>
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<child widget="main_menu/theater/theater_replay_name" x="12"/>
 		<child widget="main_menu/theater/theater_replay_length" x="290"/>
@@ -67,6 +71,7 @@
 		<on event="a" run="port theater watch"/>
 		<on event="start" run="port theater watch"/>
 		<on event="x" run="port theater delete"/>
+		<on event="y" run="port theater record"/>
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<child widget="main_menu/theater/theater_replay_name" x="12"/>
 		<child widget="main_menu/theater/theater_replay_length" x="290"/>
@@ -75,6 +80,7 @@
 		<on event="a" run="port theater watch"/>
 		<on event="start" run="port theater watch"/>
 		<on event="x" run="port theater delete"/>
+		<on event="y" run="port theater record"/>
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<child widget="main_menu/theater/theater_replay_name" x="12"/>
 		<child widget="main_menu/theater/theater_replay_length" x="290"/>
@@ -83,6 +89,7 @@
 		<on event="a" run="port theater watch"/>
 		<on event="start" run="port theater watch"/>
 		<on event="x" run="port theater delete"/>
+		<on event="y" run="port theater record"/>
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<child widget="main_menu/theater/theater_replay_name" x="12"/>
 		<child widget="main_menu/theater/theater_replay_length" x="290"/>
@@ -91,6 +98,7 @@
 		<on event="a" run="port theater watch"/>
 		<on event="start" run="port theater watch"/>
 		<on event="x" run="port theater delete"/>
+		<on event="y" run="port theater record"/>
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<child widget="main_menu/theater/theater_replay_name" x="12"/>
 		<child widget="main_menu/theater/theater_replay_length" x="290"/>
@@ -99,6 +107,7 @@
 		<on event="a" run="port theater watch"/>
 		<on event="start" run="port theater watch"/>
 		<on event="x" run="port theater delete"/>
+		<on event="y" run="port theater record"/>
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<child widget="main_menu/theater/theater_replay_name" x="12"/>
 		<child widget="main_menu/theater/theater_replay_length" x="290"/>
@@ -107,6 +116,7 @@
 		<on event="a" run="port theater watch"/>
 		<on event="start" run="port theater watch"/>
 		<on event="x" run="port theater delete"/>
+		<on event="y" run="port theater record"/>
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<child widget="main_menu/theater/theater_replay_name" x="12"/>
 		<child widget="main_menu/theater/theater_replay_length" x="290"/>
@@ -142,7 +152,7 @@
 		<on event="start" run="port theater delete"/>
 		<on event="left_mouse" run="mouse emit accept event"/>
 	</widget>
-	<widget name="main_menu/theater/theater_delete_hint" type="text" controller="1" width="128" height="24" text="%x-button DELETE" font="ui\small_ui" color="#FFFFFFFF" align="center" text_y="2" text_flags="no_focus_test">
+	<widget name="main_menu/theater/theater_delete_hint" type="text" controller="1" width="200" height="24" text="%x-button DELETE" font="ui\small_ui" color="#FFFFFFFF" text_y="2" text_flags="no_focus_test">
 	</widget>
 	<widget name="main_menu/theater/button_export" type="text" width="128" height="24" bitmap="bitmaps/text_button_background" text="EXPORT" font="ui\small_ui" color="#FFFFFFFF" align="center" text_y="2">
 		<on event="a" run="port theater export"/>

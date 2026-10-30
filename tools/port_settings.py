@@ -2895,9 +2895,9 @@ def _theater() -> list:
                       f'<child widget="{base}/header_theater"/>',
                       f'<child widget="{base}/theater_qr_text" platform="switch ps5"/>',
                       # (the consoles' DELETE: a hint of the west button
-                      # where the button bar's would be, which a touchscreen
-                      # keeps; under its row's place, theater_list's bar at 414)
-                      f'<child widget="{base}/theater_delete_hint" x="130" y="415" platform="switch ps5"/>'])
+                      # beside RECORD, where the button bar's DELETE would be,
+                      # which a touchscreen keeps; theater_list's bar at 414)
+                      f'<child widget="{base}/theater_delete_hint" x="138" y="415" platform="switch ps5"/>'])
     lines += _header(f"{base}/header_theater", f"{base}/header_theater")
     rows = []
     for index in range(THEATER_ROWS):
@@ -2913,8 +2913,11 @@ def _theater() -> list:
                           ("color", "#FF2896FF")],
                          ['<on event="a" run="port theater watch"/>', '<on event="start" run="port theater watch"/>',
                           # (the west face button - X, a Switch's Y, a PS5's
-                          # Square - deletes the replay, asking first)
+                          # Square - deletes the replay, asking first; the
+                          # north - Y, a Switch's X, a PS5's Triangle - turns
+                          # RECORD on or off)
                           '<on event="x" run="port theater delete"/>',
+                          '<on event="y" run="port theater record"/>',
                           '<on event="left_mouse" run="mouse emit accept event"/>',
                           f'<child widget="{base}/theater_replay_name" x="12"/>',
                           f'<child widget="{base}/theater_replay_length" x="290"/>'])
@@ -2955,10 +2958,10 @@ def _theater() -> list:
     lines += _strings(f"{base}/record_strings", ["RECORD: OFF", "RECORD: ON"])
     lines += _text_button(f"{base}/button_delete", "%x-button DELETE", ['<on event="a" run="port theater delete"/>',
                                                                       '<on event="start" run="port theater delete"/>'])
-    lines += _widget(f"{base}/theater_delete_hint", [("type", "text"), ("controller", 1), ("width", 128),
+    lines += _widget(f"{base}/theater_delete_hint", [("type", "text"), ("controller", 1), ("width", 200),
                                                      ("height", 24), ("text", "%x-button DELETE"),
                                                      ("font", "ui\\small_ui"), ("color", "#FFFFFFFF"),
-                                                     ("align", "center"), ("text_y", 2),
+                                                     ("text_y", 2),
                                                      ("text_flags", "no_focus_test")], [])
     lines += _text_button(f"{base}/button_export", "EXPORT", ['<on event="a" run="port theater export"/>',
                                                              '<on event="start" run="port theater export"/>'])
