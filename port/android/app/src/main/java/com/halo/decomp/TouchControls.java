@@ -120,6 +120,22 @@ public final class TouchControls extends View implements SensorEventListener, In
     private static final int TARGET_FIELDS = 5;
     private static final int TARGET = 1000;
 
+    /**
+     * a replay's own controls, beside the game's buttons: a column at the
+     * right edge (the view swipe's side) of the free camera's up and down
+     * (the triggers, held) and PLAYER (the D-pad's Down: the free camera put
+     * behind the player watched, network_replay_playback.c); each its kind
+     * (KINDS' index), its word and its height (parts of the display's); a
+     * finger on one owns REPLAY_CONTROL + its index
+     */
+    private static final int REPLAY_CONTROL = 2000;
+    private static final int[] REPLAY_CONTROL_KINDS = {4, 5, 13};
+    private static final String[] REPLAY_CONTROL_NAMES = {"Up", "Down", "Player"};
+    private static final float[] REPLAY_CONTROL_HEIGHTS = {0.28f, 0.44f, 0.60f};
+    private static final float REPLAY_CONTROL_RADIUS = 38;
+    /** (their centres from the right edge, the system's inset aside) */
+    private static final float REPLAY_CONTROL_MARGIN = 70;
+
     private static final String PREFERENCES = "touch-layout-v1";
     private static final String KEY_CONFIGURATION = "configuration";
     private static final String KEY_HIDDEN = "hidden";
@@ -525,6 +541,14 @@ public final class TouchControls extends View implements SensorEventListener, In
         axes[5] = 0;
         for (int i = 0; i < owners.size(); i++) {
             int control = owners.valueAt(i);
+            if (control >= REPLAY_CONTROL && control < REPLAY_CONTROL + REPLAY_CONTROL_KINDS.length) {
+                Kind kind = KINDS[REPLAY_CONTROL_KINDS[control - REPLAY_CONTROL]];
+                if (kind.bit >= 0)
+                    bits |= 1 << kind.bit;
+                if (kind.trigger >= 0)
+                    axes[kind.trigger] = 32767;
+                continue;
+            }
             if (control >= TARGET && control < TARGET + targets[0]) {
                 // (a replay's button: the game's controller button, as a kind sends it)
                 int button = targets[1 + (control - TARGET) * TARGET_FIELDS + 4];
@@ -626,6 +650,12 @@ public final class TouchControls extends View implements SensorEventListener, In
             int target = hitTarget(x, y);
             if (target != NOTHING)
                 return target;
+            if (!hidden) {
+                for (int i = 0; i < REPLAY_CONTROL_KINDS.length; i++) {
+                    if (inside(x, y, replayControlX(), replayControlY(i), replayControlRadius()))
+                        return REPLAY_CONTROL + i;
+                }
+            }
         }
         for (int i = 0; i < layout.size() && !replay; i++) {
             if (layout.shown(i) && layout.type(i) != TouchLayout.LEFT
@@ -881,16 +911,33 @@ public final class TouchControls extends View implements SensorEventListener, In
         targets[0] = Math.max(0, Math.min(targets[0], MAXIMUM_TARGETS));
     }
 
+    private float replayControlX() {
+        return logicalWidth - insetRight / scale - REPLAY_CONTROL_MARGIN;
+    }
+
+    private float replayControlY(int index) {
+        return logicalHeight * REPLAY_CONTROL_HEIGHTS[index];
+    }
+
+    /** (a finger's size at least) */
+    private float replayControlRadius() {
+        return Math.max(REPLAY_CONTROL_RADIUS, minimumRadius());
+    }
+
     private boolean replay() {
         return (scene & SCENE_REPLAY) != 0;
     }
 
     /**
-     * the replay's button under a point (logical units), or NOTHING: its
-     * rectangle, made a finger's height at least (the game's are its bar's)
+     * the replay's button under a point (logical units), or NOTHING: the one
+     * whose rectangle it is in, else the nearest whose rectangle made a
+     * finger's height (the game's are its bar's) it is in; the game's boxes
+     * can be in two rows, whose grown rectangles overlap
      */
     private int hitTarget(float x, float y) {
         float finger = minimumRadius();
+        int nearest = NOTHING;
+        float nearestDistance = Float.MAX_VALUE;
         for (int i = 0; i < targets[0]; i++) {
             int field = 1 + i * TARGET_FIELDS;
             float x0 = logicalWidth * targets[field] / 10000f;
@@ -898,10 +945,17 @@ public final class TouchControls extends View implements SensorEventListener, In
             float x1 = logicalWidth * targets[field + 2] / 10000f;
             float y1 = logicalHeight * targets[field + 3] / 10000f;
             float grow = Math.max(0, (2 * finger - (y1 - y0)) / 2);
-            if (x >= x0 && x < x1 && y >= y0 - grow && y < y1 + grow)
+            if (x < x0 || x >= x1 || y < y0 - grow || y >= y1 + grow)
+                continue;
+            if (y >= y0 && y < y1)
                 return TARGET + i;
+            float distance = y < y0 ? y0 - y : y - y1;
+            if (distance < nearestDistance) {
+                nearestDistance = distance;
+                nearest = TARGET + i;
+            }
         }
-        return NOTHING;
+        return nearest;
     }
 
     private void readBindings() {
@@ -1440,7 +1494,12 @@ public final class TouchControls extends View implements SensorEventListener, In
         if (!hidden || editing) {
             if (layout.shown(TouchLayout.LEFT))
                 drawStick(canvas);
-            // (a replay's buttons are the game's, drawn on its screen)
+            // (a replay's own controls; its buttons are the game's, drawn on its screen)
+            if (replay() && !editing) {
+                for (int i = 0; i < REPLAY_CONTROL_KINDS.length; i++)
+                    circle(canvas, replayControlX(), replayControlY(i), replayControlRadius(), REPLAY_CONTROL_NAMES[i],
+                        held(REPLAY_CONTROL + i), 13, layout.opacity);
+            }
             for (int i = 0; i < layout.size() && !(replay() && !editing); i++) {
                 if (!layout.shown(i) || layout.type(i) == TouchLayout.LEFT)
                     continue;

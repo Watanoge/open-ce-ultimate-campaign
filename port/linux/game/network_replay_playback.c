@@ -36,8 +36,8 @@ up from still (the Switch's are buttons: playback_free_camera_rise),
 sliding along walls rather than through them (playback_free_camera_move);
 a tripod, placed where behind's would be when it is chosen, tracking the
 player (playback_free_camera_track) as it moves until the right stick takes
-the aim (R3 or D-pad Up tracks again, or stops; D-pad Down puts it behind
-the player again, tracking them, as when it was chosen), and zooming on them
+the aim (R3 or D-pad Up tracks again, or stops; D-pad Down or L3 puts it
+behind the player again, tracking them, as when it was chosen), and zooming on them
 as they go further until it first moves (playback_free_camera_zoom). D-pad
 Up turns behind with the player again too, as R3 does.
 Through the eyes, the aim turns smoothly between the facings the replay
@@ -304,6 +304,8 @@ picture's), the bar's room either side of them and its colour */
 #define REPLAY_HINT_HEIGHT 26
 #define REPLAY_HINT_PADDING 10
 #define REPLAY_HINT_BAR_COLOR 0xA0000000
+/* the room between the buttons' bar and the camera's above it */
+#define REPLAY_HINT_ROW_GAP 4
 /* a button's picture's size, the room after it, and between two hints */
 #define REPLAY_HINT_ICON_SIZE 18
 #define REPLAY_HINT_ICON_GAP 3
@@ -336,7 +338,10 @@ controls press the controller's button under it): their height, the room
 between two and how wide one is at most; and their fill, held */
 #define REPLAY_TOUCH_HEIGHT 40
 #define REPLAY_TOUCH_GAP 4
-#define REPLAY_TOUCH_MAXIMUM_WIDTH 90
+#define REPLAY_TOUCH_MAXIMUM_WIDTH 130
+/* ... and in two rows past this many (one row of them all left each too
+narrow for its word) */
+#define REPLAY_TOUCH_ONE_ROW 6
 #define REPLAY_TOUCH_HELD_COLOR 0xC02896FF
 /* a stick's or a trigger's dead middle, of its whole */
 #define STICK_DEAD_ZONE 0.15f
@@ -347,6 +352,13 @@ struct playback_hint
 {
 	short buttons[2];
 	wchar_t const *action;
+};
+
+/* the sticks, in a hint (no button: past the gamepad's) */
+enum
+{
+	_replay_hint_stick_left = NUMBER_OF_GAMEPAD_BUTTONS,
+	_replay_hint_stick_right,
 };
 
 /* a skip ahead's held frame (skip_hold) */
@@ -1660,12 +1672,12 @@ boolean network_replay_playback_idle(
 		else if (playback.view == _replay_view_free && !playback.free_placing)
 			playback.free_tracking = !playback.free_tracking;
 	}
-	/* (D-pad Down: the free camera placed behind the player again, as when
+	/* (D-pad Down, or L3: the free camera placed behind the player again, as when
 	it is chosen, and left there tracking them, whether it tracked them or
 	held its aim; once a press, the next heard no sooner than
 	REPLAY_CAMERA_RESET_MILLISECONDS after) */
-	if (playback_pressed(_gamepad_binary_button_dpad_down) && playback.view == _replay_view_free &&
-		!playback.free_placing &&
+	if ((playback_pressed(_gamepad_binary_button_dpad_down) | playback_pressed(_gamepad_binary_button_left_thumb)) &&
+		playback.view == _replay_view_free && !playback.free_placing &&
 		now - playback.free_reset_at >= REPLAY_CAMERA_RESET_MILLISECONDS)
 	{
 		playback.free_placing = TRUE;
@@ -2500,9 +2512,14 @@ static char const *playback_button_prompt(
 	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_black: return "black";
 	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_white: return "white";
 	case _gamepad_binary_button_dpad_left: return "dpad_horizontal";
+	case _gamepad_binary_button_dpad_up: return "dpad_up";
+	case _gamepad_binary_button_dpad_down: return "dpad_down";
 	case _gamepad_binary_button_back: return "back";
 	case _gamepad_binary_button_start: return "start";
 	case _gamepad_binary_button_right_thumb: return "stick_right_press";
+	case _gamepad_binary_button_left_thumb: return "stick_left_press";
+	case _replay_hint_stick_left: return "stick_left";
+	case _replay_hint_stick_right: return "stick_right";
 	}
 	return "";
 }
@@ -2519,6 +2536,8 @@ static wchar_t const *playback_button_label(
 	switch (button)
 	{
 	case _gamepad_binary_button_dpad_left: return L"D-PAD";
+	case _gamepad_binary_button_dpad_up: return L"UP";
+	case _gamepad_binary_button_dpad_down: return L"DOWN";
 #if defined(HALO_SWITCH)
 	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_a: return swapped ? L"A" : L"B";
 	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_b: return swapped ? L"B" : L"A";
@@ -2529,6 +2548,9 @@ static wchar_t const *playback_button_label(
 	case _gamepad_binary_button_back: return L"-";
 	case _gamepad_binary_button_start: return L"+";
 	case _gamepad_binary_button_right_thumb: return L"RS";
+	case _gamepad_binary_button_left_thumb: return L"LS";
+	case _replay_hint_stick_left: return L"LEFT STICK";
+	case _replay_hint_stick_right: return L"RIGHT STICK";
 #elif defined(HALO_PS5)
 	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_a: return xbox_buttons ? L"A" : L"CROSS";
 	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_b: return xbox_buttons ? L"B" : L"CIRCLE";
@@ -2539,6 +2561,9 @@ static wchar_t const *playback_button_label(
 	case _gamepad_binary_button_back: return xbox_buttons ? L"BACK" : L"CREATE";
 	case _gamepad_binary_button_start: return xbox_buttons ? L"START" : L"OPTIONS";
 	case _gamepad_binary_button_right_thumb: return xbox_buttons ? L"RS" : L"R3";
+	case _gamepad_binary_button_left_thumb: return xbox_buttons ? L"LS" : L"L3";
+	case _replay_hint_stick_left: return L"LEFT STICK";
+	case _replay_hint_stick_right: return L"RIGHT STICK";
 #else
 	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_a: return L"A";
 	case FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_b: return L"B";
@@ -2549,6 +2574,9 @@ static wchar_t const *playback_button_label(
 	case _gamepad_binary_button_back: return L"BACK";
 	case _gamepad_binary_button_start: return L"START";
 	case _gamepad_binary_button_right_thumb: return L"RS";
+	case _gamepad_binary_button_left_thumb: return L"LS";
+	case _replay_hint_stick_left: return L"LEFT STICK";
+	case _replay_hint_stick_right: return L"RIGHT STICK";
 #endif
 	}
 	return L"?";
@@ -2768,7 +2796,8 @@ static boolean playback_touch(
 #endif
 }
 
-/* on a touchscreen, the hints as boxes in a row above the seek bar, each
+/* on a touchscreen, the hints as boxes in a row above the seek bar (two,
+the first above, past REPLAY_TOUCH_ONE_ROW), each
 its action's word, brighter while its button is held; and where each is,
 for the touch controls to press its button under a finger
 (touch_input_replay_targets: their places as parts of the screen) */
@@ -2790,8 +2819,11 @@ static void playback_draw_touch_hints(
 	long screen_width = MAX(1, viewport.x1 - viewport.x0);
 	long screen_height = MAX(1, viewport.y1 - viewport.y0);
 	short shown = (short)MIN(count, REPLAY_TOUCH_MAXIMUM_TARGETS);
+	short per_row = shown > REPLAY_TOUCH_ONE_ROW ? (short)((shown + 1) / 2) : shown;
+	short rows;
+	short bottom;
 	short width;
-	short x;
+	short x = 0;
 	short index;
 	rectangle2d box;
 
@@ -2802,17 +2834,28 @@ static void playback_draw_touch_hints(
 #endif
 		return;
 	}
-	width = (short)((window.x1 - window.x0 - 2 * REPLAY_SEEK_INSET - (shown - 1) * REPLAY_TOUCH_GAP) / shown);
+	rows = (short)((shown + per_row - 1) / per_row);
+	width = (short)((window.x1 - window.x0 - 2 * REPLAY_SEEK_INSET - (per_row - 1) * REPLAY_TOUCH_GAP) / per_row);
 	width = (short)MIN(width, REPLAY_TOUCH_MAXIMUM_WIDTH);
-	x = (short)((window.x0 + window.x1 - (shown * width + (shown - 1) * REPLAY_TOUCH_GAP)) / 2);
-	/* (where the controller's bar is: above the seek bar) */
-	box.y1 = (short)(window.y1 - REPLAY_SCREEN_MARGIN / 2 - MAX(height, REPLAY_SEEK_HEIGHT) - 4 - REPLAY_SCREEN_MARGIN / 2);
-	box.y0 = (short)(box.y1 - REPLAY_TOUCH_HEIGHT);
+	/* (where the controller's bar is: above the seek bar; the last row's
+	bottom there, the first above it) */
+	bottom = (short)(window.y1 - REPLAY_SCREEN_MARGIN / 2 - MAX(height, REPLAY_SEEK_HEIGHT) - 4 - REPLAY_SCREEN_MARGIN / 2);
 	for (index = 0; index < shown; index++)
 	{
 		short button = hints[index].buttons[0];
 		int *target = targets + index * REPLAY_TOUCH_TARGET_FIELDS;
+		short row = (short)(index / per_row);
 		rectangle2d text;
+
+		/* (a row's first: its boxes centred, the row's own count of them) */
+		if (index % per_row == 0)
+		{
+			short in_row = (short)MIN(per_row, shown - index);
+
+			x = (short)((window.x0 + window.x1 - (in_row * width + (in_row - 1) * REPLAY_TOUCH_GAP)) / 2);
+			box.y1 = (short)(bottom - (rows - 1 - row) * (REPLAY_TOUCH_HEIGHT + REPLAY_TOUCH_GAP));
+			box.y0 = (short)(box.y1 - REPLAY_TOUCH_HEIGHT);
+		}
 
 		box.x0 = x;
 		box.x1 = (short)(x + width);
@@ -2837,10 +2880,12 @@ static void playback_draw_touch_hints(
 /* the buttons' hints on a dark bar that fits them, above the seek bar at
 the bottom edge (their width from a pass drawn unseen first); a
 touchscreen's as boxes to press (playback_draw_touch_hints) */
-static void playback_draw_hints(
+/* a bar of hints, centred, its bottom at bottom; its top */
+static short playback_draw_hint_bar(
 	long font_index,
 	struct playback_hint const *hints,
-	short count)
+	short count,
+	short bottom)
 {
 	struct font_header *font = font_definition_get(font_index);
 	short height = (short)(font->ascending_height + font->descending_height);
@@ -2849,24 +2894,46 @@ static void playback_draw_hints(
 	rectangle2d bar;
 	short width;
 
+	line = window;
+	line.y0 = (short)(window.y1 - REPLAY_HINT_HEIGHT);
+	width = (short)(playback_draw_hint_line(font_index, &line, window.x0, hints, count, FALSE) - window.x0);
+	bar.x0 = (short)((window.x0 + window.x1 - width) / 2 - REPLAY_HINT_PADDING);
+	bar.x1 = (short)(bar.x0 + width + 2 * REPLAY_HINT_PADDING);
+	bar.y1 = bottom;
+	bar.y0 = (short)(bar.y1 - MAX(height, REPLAY_HINT_HEIGHT) - 6);
+	draw_quad(&bar, REPLAY_HINT_BAR_COLOR);
+	line.y0 = (short)(bar.y0 + 3);
+	line.y1 = bar.y1;
+	playback_draw_hint_line(font_index, &line, (short)(bar.x0 + REPLAY_HINT_PADDING), hints, count, TRUE);
+	return bar.y0;
+}
+
+/* the buttons' hints on a dark bar, and the camera's (the view's sticks
+and buttons: none for a touchscreen, whose own controls they are) on
+another above it */
+static void playback_draw_hints(
+	long font_index,
+	struct playback_hint const *hints,
+	short count,
+	struct playback_hint const *camera,
+	short camera_count)
+{
+	struct font_header *font = font_definition_get(font_index);
+	short height = (short)(font->ascending_height + font->descending_height);
+	rectangle2d window = render.camera.window_bounds;
+	short top;
+
 	if (playback_touch())
 	{
 		playback_draw_touch_hints(font_index, hints, count);
 		playback_draw_seek(font_index);
 		return;
 	}
-	line = window;
-	line.y0 = (short)(window.y1 - REPLAY_HINT_HEIGHT);
-	width = (short)(playback_draw_hint_line(font_index, &line, window.x0, hints, count, FALSE) - window.x0);
-	bar.x0 = (short)((window.x0 + window.x1 - width) / 2 - REPLAY_HINT_PADDING);
-	bar.x1 = (short)(bar.x0 + width + 2 * REPLAY_HINT_PADDING);
 	/* (above the seek bar: playback_draw_seek) */
-	bar.y1 = (short)(window.y1 - REPLAY_SCREEN_MARGIN / 2 - MAX(height, REPLAY_SEEK_HEIGHT) - 4 - REPLAY_SCREEN_MARGIN / 2);
-	bar.y0 = (short)(bar.y1 - MAX(height, REPLAY_HINT_HEIGHT) - 6);
-	draw_quad(&bar, REPLAY_HINT_BAR_COLOR);
-	line.y0 = (short)(bar.y0 + 3);
-	line.y1 = bar.y1;
-	playback_draw_hint_line(font_index, &line, (short)(bar.x0 + REPLAY_HINT_PADDING), hints, count, TRUE);
+	top = playback_draw_hint_bar(font_index, hints, count,
+		(short)(window.y1 - REPLAY_SCREEN_MARGIN / 2 - MAX(height, REPLAY_SEEK_HEIGHT) - 4 - REPLAY_SCREEN_MARGIN / 2));
+	if (camera_count > 0)
+		playback_draw_hint_bar(font_index, camera, camera_count, (short)(top - REPLAY_HINT_ROW_GAP));
 	playback_draw_seek(font_index);
 }
 
@@ -2891,7 +2958,7 @@ static void playback_draw_pause_menu(
 	bounds.y1 = (short)(bounds.y0 + height + 4);
 	draw_string_set_draw_mode(font_index, NONE, 2, 0, &color);
 	rasterizer_draw_unicode_string(&bounds, NULL, NULL, 0, L"PAUSED");
-	playback_draw_hints(font_index, hints, NUMBEROF(hints));
+	playback_draw_hints(font_index, hints, NUMBEROF(hints), NULL, 0);
 }
 
 void network_replay_playback_draw(
@@ -2927,6 +2994,19 @@ void network_replay_playback_draw(
 		{ { _gamepad_binary_button_back, NONE }, L"SCORES" },
 		{ { FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_b, NONE }, L"HIDE" },
 		{ { _gamepad_binary_button_start, NONE }, L"PAUSE" },
+	};
+	/* (a controller's camera bar, above the buttons': the free camera's
+	sticks, its tracking and its return behind the player; behind's) */
+	static struct playback_hint const free_camera_hints[] = {
+		{ { _replay_hint_stick_left, NONE }, L"MOVE" },
+		{ { _replay_hint_stick_right, NONE }, L"AIM" },
+		{ { _gamepad_binary_button_right_thumb, _gamepad_binary_button_dpad_up }, L"TRACK" },
+		{ { _gamepad_binary_button_left_thumb, _gamepad_binary_button_dpad_down }, L"FOLLOW PLAYER" },
+	};
+	static struct playback_hint const behind_camera_hints[] = {
+		{ { _replay_hint_stick_left, NONE }, L"ZOOM" },
+		{ { _replay_hint_stick_right, NONE }, L"ORBIT" },
+		{ { _gamepad_binary_button_right_thumb, _gamepad_binary_button_dpad_up }, L"RESET" },
 	};
 	static struct playback_hint const touch_show[] = {
 		{ { FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_b, NONE }, L"SHOW" },
@@ -3030,18 +3110,27 @@ void network_replay_playback_draw(
 				shown[shown_count++].action = L"TRACK";
 			}
 		}
-		playback_draw_hints(font_index, shown, shown_count);
+		playback_draw_hints(font_index, shown, shown_count, NULL, 0);
 		return;
 	}
+	/* (a controller's: R3 is in the camera's bar above, the view's) */
 	for (index = 0; index < (short)NUMBEROF(hints); index++)
 	{
-		if (index != 2 || (playback.view == _replay_view_behind && playback.behind_orbiting))
+		if (index != 2)
 			shown[shown_count++] = hints[index];
-		else if (playback.view == _replay_view_free)
-		{
-			shown[shown_count] = hints[index];
-			shown[shown_count++].action = L"TRACK";
-		}
 	}
-	playback_draw_hints(font_index, shown, shown_count);
+	if (playback.view == _replay_view_free)
+	{
+		/* (R3 and D-pad Up toggle the tracking: what it does now) */
+		struct playback_hint camera[NUMBEROF(free_camera_hints)];
+
+		csmemcpy(camera, free_camera_hints, sizeof(camera));
+		if (playback.free_tracking && !playback.free_placing)
+			camera[2].action = L"FREE";
+		playback_draw_hints(font_index, shown, shown_count, camera, NUMBEROF(camera));
+	}
+	else if (playback.view == _replay_view_behind)
+		playback_draw_hints(font_index, shown, shown_count, behind_camera_hints, NUMBEROF(behind_camera_hints));
+	else
+		playback_draw_hints(font_index, shown, shown_count, NULL, 0);
 }
