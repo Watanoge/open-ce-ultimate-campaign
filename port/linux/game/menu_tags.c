@@ -397,12 +397,14 @@ static char const *const port_function_names[] =
 	"new campaign decision",
 	/* (the main menu's Mods: menu_functions.c) */
 	"port mods init", "port mods close", "port mods toggle", "port mods move up", "port mods move down",
-	"port mods save",
+	"port mods save", "port mods accept",
 	/* (the main menu's news: menu_functions.c) */
 	"port news init", "port news close", "port news up", "port news down", "port news page up",
 	"port news page down",
 	/* (the main menu's Theater: menu_functions.c) */
 	"port theater record", "port theater export", "port theater watch", "port theater delete",
+	/* (the server browser's buttons' shortcuts: menu_functions.c) */
+	"port browser refresh", "port browser filters", "port browser mode previous", "port browser mode next",
 	/* (a dedicated server's map vote: menu_functions.c) */
 	"port map vote open", "port map vote choose",
 };

@@ -3235,7 +3235,9 @@ static boolean mods_screen_reset(void)
 is, so that it is still off when it can be) */
 static boolean mods_toggle(struct widget_instance *widget)
 {
-	short place = mod_row_place(mod_row(widget));
+	struct widget_instance *row = mod_row(widget);
+	/* (the list's north button: the one chosen) */
+	short place = row ? mod_row_place(row) : (mods_screen.chosen < (short)port_mods_count() ? mods_screen.chosen : NONE);
 	long mod = mod_at_place(place);
 
 	if (place == NONE)
@@ -3269,6 +3271,9 @@ static boolean mods_move(struct widget_instance *widget, short places)
 		mods_screen.first = (short)(moved - MOD_ROWS + 1);
 	if (row && row->parent)
 		focus_row(row->parent, (short)(moved - mods_screen.first));
+	/* (the list's shoulders: its focus follows the mod too) */
+	else if (!row && widget && !strcmp(widget->name + MAX(0, (long)strlen(widget->name) - 9), "mods_list"))
+		focus_row(widget, (short)(moved - mods_screen.first));
 	return TRUE;
 }
 
@@ -3423,6 +3428,23 @@ static boolean mods_save(void)
 	port_mods_save();
 	mods_apply();
 	return TRUE;
+}
+
+/* "port mods accept" (A, or Start, on a row): the Switch's and the PS5's
+save and go back, as OK, the north button turning a mod on or off; a
+touchscreen's tap, and the other platforms' A, turn it on or off */
+static boolean mods_accept(struct widget_instance *widget, boolean *widget_deleted)
+{
+#if defined(HALO_SWITCH) || defined(HALO_PS5)
+	mods_save();
+	ui_play_audio_feedback_sound(SOUND_FORWARD);
+	ui_widget_port_go_back(widget);
+	*widget_deleted = TRUE;
+	return TRUE;
+#else
+	(void)widget_deleted;
+	return mods_toggle(widget);
+#endif
 }
 
 /* ---------- the main menu's Theater (port/linux/REPLAY.md): the replays a
@@ -5234,6 +5256,7 @@ static void lobby_browser_begin(void);
 static void lobby_browser_update(struct widget_instance *list);
 static boolean lobby_browser_select(struct widget_instance *widget, short controller, short row,
 	boolean *widget_deleted);
+static void browser_list_show(struct widget_instance *screen, boolean shown);
 
 /* "gamespy screen init": the mode's title and parts; the games' client */
 static boolean browser_initialize(struct widget_instance *screen, struct event_record *event,
@@ -5263,6 +5286,8 @@ static boolean browser_initialize(struct widget_instance *screen, struct event_r
 	visible_set(named(screen, "button_clipboard", 0), multiplayer.mode == _multiplayer_mode_direct_link);
 #endif
 	visible_set(named(screen, "join_game_button_refresh", 0), multiplayer.mode == _multiplayer_mode_server_browser);
+	/* (the Switch's and the PS5's hints in the buttons' place: the mode's) */
+	browser_list_show(screen, TRUE);
 	{
 		struct widget_instance *list = named(screen, "join_game_items_list", 0);
 		struct widget_instance *child;
@@ -5904,8 +5929,22 @@ static void lobby_browser_sort_arrows(struct widget_instance *list)
 them through) */
 static void browser_list_show(struct widget_instance *screen, boolean shown)
 {
+	boolean server_browser = multiplayer.mode == _multiplayer_mode_server_browser;
+
 	visible_set(named(screen, "join_game_items_list", 0), shown);
 	visible_set(named(screen, "header_join_game", 0), shown);
+	/* (the Switch's and the PS5's hints with it, the mode's: under a panel
+	its own buttons are the ones to press; LAN's and Direct Link's join and
+	go back alone) */
+	visible_set(named(screen, "browser_hint_join", 0), shown);
+	visible_set(named(screen, "browser_hint_back", 0), shown);
+	visible_set(named(screen, "browser_hint_refresh", 0), shown && server_browser);
+	visible_set(named(screen, "browser_hint_filters", 0), shown && server_browser);
+	visible_set(named(screen, "browser_hint_mode", 0), shown && server_browser);
+	visible_set(named(screen, "browser_hint_l_switch", 0), shown && server_browser);
+	visible_set(named(screen, "browser_hint_r_switch", 0), shown && server_browser);
+	visible_set(named(screen, "browser_hint_l_ps5", 0), shown && server_browser);
+	visible_set(named(screen, "browser_hint_r_ps5", 0), shown && server_browser);
 }
 
 /* the error panel over the list, with its words (NONE: hidden, the focus
@@ -5986,6 +6025,49 @@ static boolean browser_panel_close(struct widget_instance *widget)
 		return TRUE;
 	}
 	return FALSE;
+}
+
+/* the server browser's buttons by the controller's, whatever row has the
+focus (tools/port_settings.py: the north refreshes, the west opens the
+filters, the shoulders change the source tab); nothing while a panel is up
+over the list, a join is under way, or in LAN's and Direct Link's lists */
+static boolean browser_shortcut(struct widget_instance *widget, char const *name)
+{
+	struct widget_instance *screen = screen_of(widget);
+	struct widget_instance *filters = named(screen, "filters_screen", 0);
+	struct widget_instance *panel = named(screen, "gamespy_error_fullscreen", 0);
+
+	if (multiplayer.mode != _multiplayer_mode_server_browser || lobby_browser.joining ||
+		(filters && filters->visible) || (panel && panel->visible))
+	{
+		return TRUE;
+	}
+	if (!strcmp(name, "port browser refresh"))
+	{
+		p2p_lobby_refresh();
+		lobby_browser.begin_time = system_milliseconds();
+		ui_play_audio_feedback_sound(SOUND_FORWARD);
+	}
+	else if (!strcmp(name, "port browser filters"))
+	{
+		filters_show(screen, TRUE, FALSE);
+		ui_play_audio_feedback_sound(SOUND_FORWARD);
+	}
+	else
+	{
+		/* (the tab's spinner one way or the other, round; the list's update
+		takes it up: lobby_browser_source) */
+		struct widget_instance *spinner = named(screen, "browser_mode_spinner", 0);
+		struct pc_menu_setting *setting = spinner ? pc_menu_setting_get(spinner->definition_tag_index) : NULL;
+		short step = !strcmp(name, "port browser mode next") ? 1 : -1;
+
+		if (!spinner || !setting || setting->value_count <= 0 || master_list_policy() != _master_listings_both)
+			return TRUE;
+		spinner->parameters.list.selected_index = (short)((spinner->parameters.list.selected_index + step +
+			setting->value_count) % setting->value_count);
+		ui_play_audio_feedback_sound(SOUND_CURSOR);
+	}
+	return TRUE;
 }
 
 /* Filters' help: its row's, for the value shown (the PC version's
@@ -9531,6 +9613,10 @@ boolean pc_menu_event_function_invoke(
 		{
 			return lobby_browser_sort_choose(widget);
 		}
+		else if (!strncmp(name, "port browser ", 13))
+		{
+			return browser_shortcut(widget, name);
+		}
 		else if (!strcmp(name, "gamespy update filter settings"))
 		{
 			filters_show(screen_of(widget), FALSE, TRUE);
@@ -9718,6 +9804,10 @@ boolean pc_menu_event_function_invoke(
 		else if (!strcmp(name, "port mods toggle"))
 		{
 			return mods_toggle(widget);
+		}
+		else if (!strcmp(name, "port mods accept"))
+		{
+			return mods_accept(widget, widget_deleted);
 		}
 		else if (!strcmp(name, "port mods move up") || !strcmp(name, "port mods move down"))
 		{
