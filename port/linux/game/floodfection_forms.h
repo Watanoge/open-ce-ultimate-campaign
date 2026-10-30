@@ -21,8 +21,9 @@ enum
 zombie drawn as one yet (infection.c's initialize_for_new_map) */
 void floodfection_forms_reset(void);
 /* each tick, each player (infection.c, every machine): whether a
-Floodfection zombie (else none of this) */
-void floodfection_forms_update(long player_index, boolean zombie);
+Floodfection zombie (else none of this), and one of the first (an elite's
+form; the others a human's) */
+void floodfection_forms_update(long player_index, boolean zombie, boolean original);
 /* how the object is drawn (render_objects.c), with what in place of its own */
 short floodfection_forms_render(long object_index, long *model_index, struct real_matrix4x3 const **node_matrices,
 	byte const **region_permutations);

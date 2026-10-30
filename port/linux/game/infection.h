@@ -55,5 +55,15 @@ long infection_remaining_ticks(void);
 /* the state the host sends its clients (game_engine_write_network_state) */
 long infection_write_network_state(byte *buffer, long size);
 boolean infection_read_network_state(byte const *buffer, long size, boolean first);
+/* a Floodfection game's first zombies, which the host tells its clients
+apart from the state (_distributed_message_floodfection_originals: a build
+without it takes the state as Infection's): to a client when it is ready
+(NONE: to every client, if they changed) */
+void infection_send_originals(long machine_index);
+int infection_handles_message(unsigned short const *message, unsigned short size);
+void infection_handle_message(long machine_index, unsigned short const *message, unsigned short size);
+/* (game_engine_render_nav_points, each frame) the last human, shown to a
+Floodfection game's zombies */
+void infection_render_nav_points(short local_player_index);
 
 #endif

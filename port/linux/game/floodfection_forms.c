@@ -2,9 +2,9 @@
 FLOODFECTION_FORMS.C
 
 Floodfection's zombies as the Flood (infection.c): each living zombie's
-Spartan is drawn as a Flood combat form, a human's or an elite's (one or
-the other for each body, the same on every machine: by the unit's index,
-which a network game's machines share), running, standing, jumping,
+Spartan is drawn as a Flood combat form, an elite's for the round's first
+zombies and a human's for the rest (as the host has them, alike on every
+machine: infection.c), running, standing, jumping,
 landing and striking as the Spartan does. Its own player still sees their
 Spartan's arms and the skull in first person. A zombie's body is not drawn
 once it dies (Floodfection's burst plays there: infection.c).
@@ -312,7 +312,8 @@ static short form_choose_action(
 
 void floodfection_forms_update(
 	long player_index,
-	boolean zombie)
+	boolean zombie,
+	boolean original)
 {
 	long slot = DATUM_INDEX_TO_ABSOLUTE_INDEX(player_index);
 	struct player_datum *player = player_get(player_index);
@@ -347,15 +348,19 @@ void floodfection_forms_update(
 		state->unit_index = NONE;
 		return;
 	}
-	if (state->unit_index != player->unit_index)
+	/* (the first zombies an elite, the rest a human; the other when the
+	level has not this one. A first zombie told so after its turn, as the
+	host's word may come later than its role, changes form) */
+	form = original ? _form_elite : _form_human;
+	if (forms.model_index[form] == NONE)
+		form ^= 1;
+	if (forms.model_index[form] == NONE)
 	{
-		/* (one form or the other for each body, alike everywhere; the other
-		when the level has not this one) */
-		form = (short)((((unsigned long)player->unit_index * 2654435761UL) >> 16) & 1);
-		if (forms.model_index[form] == NONE)
-			form ^= 1;
-		if (forms.model_index[form] == NONE)
-			return;
+		state->unit_index = NONE;
+		return;
+	}
+	if (state->unit_index != player->unit_index || state->form != form)
+	{
 		csmemset(state, 0, sizeof(*state));
 		state->unit_index = player->unit_index;
 		state->form = form;

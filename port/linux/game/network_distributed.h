@@ -175,6 +175,11 @@ enum
 	the hash and size of the host's share (or none), to each client, reliably,
 	in the lobby too, when it changes and every ten seconds */
 	_distributed_message_tag_share = 163,
+	/* a Floodfection game's first zombies (port/linux/game/infection.c): the
+	host's, to every client, reliably, when they change and to a client when
+	it is ready. A build without it (upstream's) drops it as a kind it does
+	not know, and plays the game as Infection */
+	_distributed_message_floodfection_originals = 164,
 
 	NUMBER_OF_DISTRIBUTED_MESSAGES
 };

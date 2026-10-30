@@ -153,8 +153,10 @@ there (_distributed_message_skulls_outbreak_burst); 4 plays the Tag Injector's
 multiplayer profiles (_distributed_message_tag_share, and map sharing's
 shared weapons); 5 its campaign profiles in co-op (the same share, of a
 campaign level); 6 copies Floodfection's burst into a level before a
-multiplayer profile's tags, which moves theirs (randomizer.c) */
-#define HALO_PORT_MOD_NETWORK_VERSION 6
+multiplayer profile's tags, which moves theirs (randomizer.c); 7 its
+zombies' cries too, which move them again, and tells its first zombies
+(_distributed_message_floodfection_originals) */
+#define HALO_PORT_MOD_NETWORK_VERSION 7
 #define HALO_PORT_MODDED_VERSION_MARK 0xFF00
 #define HALO_PORT_ADVERTISED_MODDED_VERSION (HALO_PORT_MODDED_VERSION_MARK | HALO_PORT_MOD_NETWORK_VERSION)
 

@@ -6314,6 +6314,10 @@ short game_engine_player_get_custom_motion_sensor_positions(
 void game_engine_render_nav_points(
 	short local_player_index)
 {
+	/* port: Floodfection's last human (port/linux/game/infection.c) */
+	if (game_engine)
+		infection_render_nav_points(local_player_index);
+
 	if (game_engine &&
 		global_variant.universal_variant.goal_radar == _radar_nav_point &&
 		local_player_index != NONE)

@@ -76,6 +76,7 @@ machine (their datum identifiers need not be).
 #include "units/bipeds.h"
 #include "network_coop.h"
 #include "network_distributed.h"
+#include "infection.h"
 #include "network_link.h"
 #include "network_voice.h"
 #include "network_chat.h"
@@ -5000,6 +5001,12 @@ void network_distributed_handle_message(
 		skulls_outbreak_handle_message(machine_index, message, size);
 		return;
 	}
+	/* (a Floodfection game's first zombies: port/linux/game/infection.c) */
+	if (infection_handles_message(message, size))
+	{
+		infection_handle_message(machine_index, message, size);
+		return;
+	}
 	if (skulls_tags_handles_message(message, size))
 	{
 		skulls_tags_handle_message(machine_index, message, size);
@@ -5429,6 +5436,7 @@ void network_distributed_handle_message(
 		network_aim_assist_send_policy(machine_index);
 		skulls_send_state(machine_index);
 		skulls_send_tags(machine_index);
+		infection_send_originals(machine_index);
 		network_shield_effects_send(machine_index);
 		network_objects_client_asked(machine_index, header.count != 0);
 		/* (a machine new at its index, which may have joined the game in
