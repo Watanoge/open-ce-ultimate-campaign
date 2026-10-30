@@ -56,6 +56,8 @@ int config_boolean(char const *name);
 long config_integer(char const *name);
 const char *platform_data_root(void);
 FILE *platform_fopen_host(char const *path, char const *mode);
+int platform_remove_host(char const *path);
+int platform_rename_host(char const *old_path, char const *new_path);
 void platform_log(char const *format, ...);
 void main_build_identity(long *number, char *flavor, size_t flavor_size, char *repository, size_t repository_size,
 	char *version, size_t version_size);
@@ -173,9 +175,10 @@ boolean network_replay_delete(
 		return FALSE;
 	network_replay_folder(path, REPLAY_PATH_SIZE);
 	snprintf(path + strlen(path), sizeof(path) - strlen(path), "/%s", name);
-	/* (the path the card's, as it is: DeleteFileA takes the game's, and put
-	this one under the data folder again, where there is no such file) */
-	return remove(path) == 0;
+	/* (the path the card's, as it is: DeleteFileA, and the game's remove,
+	take the game's, and put this one under the data folder again, where
+	there is no such file) */
+	return platform_remove_host(path) == 0;
 }
 
 static unsigned long replay_get_long(
@@ -703,7 +706,7 @@ void network_replay_stop(
 		if (ticks < REPLAY_MINIMUM_TICKS)
 		{
 			error(_error_log, "replay: %s was %ld ticks long, under %d seconds: %s", replay.path, ticks,
-				REPLAY_MINIMUM_TICKS / TICKS_PER_SECOND, remove(replay.path) == 0 ? "deleted" : "NOT deleted");
+				REPLAY_MINIMUM_TICKS / TICKS_PER_SECOND, platform_remove_host(replay.path) == 0 ? "deleted" : "NOT deleted");
 			replay.considered = FALSE;
 			replay.client = FALSE;
 			return;
