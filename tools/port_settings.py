@@ -1121,7 +1121,8 @@ def browser_hint_pictures() -> list:
     """the server browser's shoulder pictures (BROWSER_HINT_PICTURES):
     Kenney's, as large as a hint's: (name, frames), as layout_overlay_pictures"""
     sources = {"hints/switch_l": "switch/kenney/switch_button_l", "hints/switch_r": "switch/kenney/switch_button_r",
-               "hints/ps5_l1": "ps5/kenney/playstation_trigger_l1", "hints/ps5_r1": "ps5/kenney/playstation_trigger_r1"}
+               "hints/ps5_l1": "ps5/kenney/playstation_trigger_l1", "hints/ps5_r1": "ps5/kenney/playstation_trigger_r1",
+               "hints/switch_dpad": "switch/kenney/switch_dpad_all", "hints/ps5_dpad": "ps5/kenney/playstation_dpad_all"}
     pictures = []
     for name, source in sources.items():
         text = (Path(__file__).resolve().parents[1] / "port/assets/buttons/platforms" / f"{source}.svg").read_text()
@@ -1409,17 +1410,23 @@ NEWS_PANEL = (17, 14)
 # Link's join and go back alone)
 BROWSER_HINTS = [("browser_hint_join", "%a-button JOIN GAME"), ("browser_hint_refresh", "%y-button REFRESH"),
                  ("browser_hint_filters", "%x-button FILTERS"), ("browser_hint_mode", "MODE"),
-                 ("browser_hint_back", "%b-button BACK")]
+                 ("browser_hint_sort", "SORT"), ("browser_hint_back", "%b-button BACK")]
 # (the shoulders' pictures before MODE, Kenney's: the menus' text has the
 # Xbox's black and white alone; port/assets/menus/ce/port/hints)
 BROWSER_HINT_PICTURES = [("browser_hint_l_switch", "hints/switch_l"), ("browser_hint_r_switch", "hints/switch_r"),
-                         ("browser_hint_l_ps5", "hints/ps5_l1"), ("browser_hint_r_ps5", "hints/ps5_r1")]
+                         ("browser_hint_l_ps5", "hints/ps5_l1"), ("browser_hint_r_ps5", "hints/ps5_r1"),
+                         # (the d-pad: left and right the column, up and
+                         # down its order)
+                         ("browser_hint_dpad_switch", "hints/switch_dpad"),
+                         ("browser_hint_dpad_ps5", "hints/ps5_dpad")]
 # (the first four together at the left, BACK at the right, as the buttons were)
 BROWSER_HINT_PLACES = [("browser_hint_join", 24, 452, "switch ps5"), ("browser_hint_refresh", 135, 452, "switch ps5"),
                        ("browser_hint_filters", 229, 452, "switch ps5"),
                        ("browser_hint_l_switch", 327, 455, "switch"), ("browser_hint_r_switch", 343, 455, "switch"),
                        ("browser_hint_l_ps5", 327, 455, "ps5"), ("browser_hint_r_ps5", 343, 455, "ps5"),
-                       ("browser_hint_mode", 361, 452, "switch ps5"), ("browser_hint_back", 540, 452, "switch ps5")]
+                       ("browser_hint_mode", 361, 452, "switch ps5"),
+                       ("browser_hint_dpad_switch", 417, 455, "switch"), ("browser_hint_dpad_ps5", 417, 455, "ps5"),
+                       ("browser_hint_sort", 435, 452, "switch ps5"), ("browser_hint_back", 540, 452, "switch ps5")]
 
 # the Switch's and the PS5's Mods buttons as hints (_mods): A saves, the
 # north turns the mod on or off, the shoulders move it, B cancels
@@ -1630,7 +1637,13 @@ WIDGET_PATCHES = {
     # change the source tab: menu_functions.c's browser_shortcut)
     f"{MT}/join_game/join_game_items_list": {"handlers": [
         '<on event="y" run="port browser refresh"/>', '<on event="x" run="port browser filters"/>',
-        '<on event="white" run="port browser mode previous"/>', '<on event="black" run="port browser mode next"/>']},
+        '<on event="white" run="port browser mode previous"/>', '<on event="black" run="port browser mode next"/>',
+        # (the d-pad: left and right highlight a column, up sorts by it the
+        # fewest or A first, down the most or Z first, as the column's arrow
+        # points; the stick goes through the rows: ui_widget.c's
+        # ui_widget_port_dpad_updown_taken)
+        '<on event="left" run="port browser column previous"/>', '<on event="right" run="port browser column next"/>',
+        '<on event="up" run="port browser sort increasing"/>', '<on event="down" run="port browser sort decreasing"/>']},
     # (Select Profile's buttons as hints on the Switch and the PS5,
     # PROFILE_HINTS; a touchscreen keeps them)
     f"{PROFILE}/profile_manager_button_bar": {"child_platforms": {

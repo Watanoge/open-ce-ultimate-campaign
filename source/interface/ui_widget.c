@@ -8141,8 +8141,12 @@ static void widget_instance_process_one_event_recursive(
 				widget->focused_child &&
 				!widget_deleted)
 			{
+				/* port: a list whose d-pad up and down are its own
+				handlers' (the server browser's sort): the stick alone goes
+				through its rows (port/linux/game/menu_functions.c) */
 				if (event->type == _event_type_button &&
-					event->data.button.value == 1)
+					event->data.button.value == 1 &&
+					!ui_widget_port_dpad_updown_taken(widget))
 				{
 					switch (event->data.button.index)
 					{

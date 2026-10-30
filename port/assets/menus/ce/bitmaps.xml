@@ -427,6 +427,12 @@
 	<bitmap name="hints/ps5_r1">
 		<frame png="ce/port/hints/ps5_r1__0.png" width="14" height="14"/>
 	</bitmap>
+	<bitmap name="hints/switch_dpad">
+		<frame png="ce/port/hints/switch_dpad__0.png" width="14" height="14"/>
+	</bitmap>
+	<bitmap name="hints/ps5_dpad">
+		<frame png="ce/port/hints/ps5_dpad__0.png" width="14" height="14"/>
+	</bitmap>
 	<bitmap name="blank">
 		<frame png="ce/port/blank__0.png" width="4" height="4"/>
 	</bitmap>

@@ -5541,6 +5541,10 @@ static struct
 	{ "op_sort_header_ping", NONE },
 };
 
+/* the columns the d-pad's left and right go through, as they are on the
+screen, left to right (sort_headers' indices: those that sort) */
+static short const sort_columns[] = { 4, 5, 0, 1, 2, 3 };
+
 static struct
 {
 	struct p2p_listing games[LOBBY_BROWSER_GAMES];
@@ -5553,6 +5557,9 @@ static struct
 	/* the order (network.browser_sort's); the source the tab showed */
 	short order;
 	boolean reverse;
+	/* the column the d-pad's left and right highlight, which its up and
+	down sort by (a sort_columns' index; NONE: the order's) */
+	short column;
 	short source;
 	/* the error panel was shown since the browser opened */
 	boolean error_shown;
@@ -5697,6 +5704,7 @@ static void lobby_browser_begin(void)
 	lobby_browser.source = NONE;
 	lobby_browser.order = (short)p2p_lobby_sort_parse(config_string("network.browser_sort"), &reverse);
 	lobby_browser.reverse = reverse != 0;
+	lobby_browser.column = NONE;
 	/* (going on with the join the password screen began) */
 	lobby_browser.joining = lobby_browser.password_joined;
 	lobby_browser.ready = FALSE;
@@ -5898,9 +5906,25 @@ static void lobby_browser_focus_row(struct widget_instance *list, short row)
 /* the column titles' arrows: the one the list is sorted by shows the way
 (up: A to Z, or the fewest first), in white (its bitmaps' second frame: the
 first, blue, is lost on the title's blue) */
+/* the column highlighted: the d-pad's, else the order's */
+static short lobby_browser_column(void)
+{
+	short index;
+
+	if (lobby_browser.column != NONE)
+		return lobby_browser.column;
+	for (index = 0; index < NUMBEROF(sort_columns); index++)
+	{
+		if (sort_headers[sort_columns[index]].order == lobby_browser.order)
+			return index;
+	}
+	return 0;
+}
+
 static void lobby_browser_sort_arrows(struct widget_instance *list)
 {
 	short index;
+	short highlighted = sort_columns[lobby_browser_column()];
 
 	for (index = 0; index < NUMBEROF(sort_headers); index++)
 	{
@@ -5918,6 +5942,10 @@ static void lobby_browser_sort_arrows(struct widget_instance *list)
 		visible_set(arrows, sorted);
 		visible_set(up_arrow, up);
 		visible_set(down_arrow, !up);
+		/* (the column the d-pad highlights as it is, the others dimmed, as
+		the source tab while it has not the focus) */
+		if (header)
+			header->alpha_modifier = index == highlighted ? 1.0f : TAB_UNFOCUSED_ALPHA;
 		if (up_arrow)
 			up_arrow->animation.current_frame_index = 1;
 		if (down_arrow)
@@ -5945,6 +5973,9 @@ static void browser_list_show(struct widget_instance *screen, boolean shown)
 	visible_set(named(screen, "browser_hint_r_switch", 0), shown && server_browser);
 	visible_set(named(screen, "browser_hint_l_ps5", 0), shown && server_browser);
 	visible_set(named(screen, "browser_hint_r_ps5", 0), shown && server_browser);
+	visible_set(named(screen, "browser_hint_sort", 0), shown && server_browser);
+	visible_set(named(screen, "browser_hint_dpad_switch", 0), shown && server_browser);
+	visible_set(named(screen, "browser_hint_dpad_ps5", 0), shown && server_browser);
 }
 
 /* the error panel over the list, with its words (NONE: hidden, the focus
@@ -6027,6 +6058,26 @@ static boolean browser_panel_close(struct widget_instance *widget)
 	return FALSE;
 }
 
+/* whether the server browser's source tab has the list's focus */
+static boolean list_focused_tab(struct widget_instance *screen)
+{
+	struct widget_instance *list = named(screen, "join_game_items_list", 0);
+
+	return list && list->focused_child && !strcmp(list->focused_child->name + MAX(0,
+		(long)strlen(list->focused_child->name) - 15), "op_browser_mode");
+}
+
+/* halo_linux_source_fixups.h: the server browser's list sorts with the
+d-pad's up and down (its stick goes through the rows) */
+unsigned char ui_widget_port_dpad_updown_taken(void *instance)
+{
+	struct widget_instance *widget = instance;
+	size_t length = widget && widget->name ? strlen(widget->name) : 0;
+
+	return multiplayer.mode == _multiplayer_mode_server_browser && length >= 20 &&
+		!strcmp(widget->name + length - 20, "join_game_items_list");
+}
+
 /* the server browser's buttons by the controller's, whatever row has the
 focus (tools/port_settings.py: the north refreshes, the west opens the
 filters, the shoulders change the source tab); nothing while a panel is up
@@ -6040,6 +6091,38 @@ static boolean browser_shortcut(struct widget_instance *widget, char const *name
 	if (multiplayer.mode != _multiplayer_mode_server_browser || lobby_browser.joining ||
 		(filters && filters->visible) || (panel && panel->visible))
 	{
+		return TRUE;
+	}
+	/* (the d-pad's left and right on the source tab change it, as its own
+	did: the list takes them from its rows) */
+	if ((!strcmp(name, "port browser column previous") || !strcmp(name, "port browser column next")) &&
+		list_focused_tab(screen))
+	{
+		name = !strcmp(name, "port browser column next") ? "port browser mode next" : "port browser mode previous";
+	}
+	if (!strcmp(name, "port browser column previous") || !strcmp(name, "port browser column next"))
+	{
+		short count = (short)NUMBEROF(sort_columns);
+
+		lobby_browser.column = (short)((lobby_browser_column() + (!strcmp(name, "port browser column next") ? 1 : -1) +
+			count) % count);
+		ui_play_audio_feedback_sound(SOUND_CURSOR);
+		return TRUE;
+	}
+	if (!strcmp(name, "port browser sort decreasing") || !strcmp(name, "port browser sort increasing"))
+	{
+		short order = sort_headers[sort_columns[lobby_browser_column()]].order;
+		/* (names, maps and types first go A to Z, increasing; players and
+		the others the most first, decreasing: lobby_browser_sort_arrows) */
+		boolean text = order == P2P_LOBBY_SORT_NAME || order == P2P_LOBBY_SORT_MAP || order == P2P_LOBBY_SORT_TYPE;
+		boolean decreasing = !strcmp(name, "port browser sort decreasing");
+		char text_order[32];
+
+		lobby_browser.order = order;
+		lobby_browser.reverse = text == decreasing;
+		p2p_lobby_sort_text(lobby_browser.order, lobby_browser.reverse, text_order, sizeof(text_order));
+		config_write("network.browser_sort", text_order);
+		ui_play_audio_feedback_sound(SOUND_CURSOR);
 		return TRUE;
 	}
 	if (!strcmp(name, "port browser refresh"))

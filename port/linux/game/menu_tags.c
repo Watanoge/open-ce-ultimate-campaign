@@ -405,6 +405,8 @@ static char const *const port_function_names[] =
 	"port theater record", "port theater export", "port theater watch", "port theater delete",
 	/* (the server browser's buttons' shortcuts: menu_functions.c) */
 	"port browser refresh", "port browser filters", "port browser mode previous", "port browser mode next",
+	"port browser column previous", "port browser column next", "port browser sort decreasing",
+	"port browser sort increasing",
 	/* (a dedicated server's map vote: menu_functions.c) */
 	"port map vote open", "port map vote choose",
 };

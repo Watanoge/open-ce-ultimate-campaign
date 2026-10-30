@@ -82,6 +82,10 @@
 		<on event="x" run="port browser filters"/>
 		<on event="white" run="port browser mode previous"/>
 		<on event="black" run="port browser mode next"/>
+		<on event="left" run="port browser column previous"/>
+		<on event="right" run="port browser column next"/>
+		<on event="up" run="port browser sort increasing"/>
+		<on event="down" run="port browser sort decreasing"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/op_browser_mode" x="10" y="55"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/join_game_header" y="83"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/scroll_up_button" x="20" y="102"/>
@@ -122,6 +126,9 @@
 		<child widget="main_menu/multiplayer_type_select/join_game/browser_hint_l_ps5" x="327" y="455" platform="ps5"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/browser_hint_r_ps5" x="343" y="455" platform="ps5"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/browser_hint_mode" x="361" y="452" platform="switch ps5"/>
+		<child widget="main_menu/multiplayer_type_select/join_game/browser_hint_dpad_switch" x="417" y="455" platform="switch"/>
+		<child widget="main_menu/multiplayer_type_select/join_game/browser_hint_dpad_ps5" x="417" y="455" platform="ps5"/>
+		<child widget="main_menu/multiplayer_type_select/join_game/browser_hint_sort" x="435" y="452" platform="switch ps5"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/browser_hint_back" x="540" y="452" platform="switch ps5"/>
 	</widget>
 	<widget name="main_menu/multiplayer_type_select/join_game/op_browser_mode" width="150" height="28" flags="pass_unhandled_to_focused_child" color="#FF2896FF">
