@@ -334,7 +334,7 @@ goes is a tick on the line */
 /* on a touchscreen, the buttons are boxes a finger presses (the touch
 controls press the controller's button under it): their height, the room
 between two and how wide one is at most; and their fill, held */
-#define REPLAY_TOUCH_HEIGHT 32
+#define REPLAY_TOUCH_HEIGHT 40
 #define REPLAY_TOUCH_GAP 4
 #define REPLAY_TOUCH_MAXIMUM_WIDTH 90
 #define REPLAY_TOUCH_HELD_COLOR 0xC02896FF
@@ -2782,8 +2782,13 @@ static void playback_draw_touch_hints(
 	rectangle2d window = render.camera.window_bounds;
 	real_argb_color color = *global_real_argb_white;
 	int targets[REPLAY_TOUCH_MAXIMUM_TARGETS * REPLAY_TOUCH_TARGET_FIELDS];
-	long screen_width = MAX(1, window.x1 - window.x0);
-	long screen_height = MAX(1, window.y1 - window.y0);
+	/* (the targets are parts of the viewport, which fills the screen as a
+	finger's place is of it, not of the window drawn in: inside it, and
+	smaller on Android, which put them below the boxes, as the text chat's
+	keyboard's: network_chat.c) */
+	rectangle2d viewport = render.camera.viewport_bounds;
+	long screen_width = MAX(1, viewport.x1 - viewport.x0);
+	long screen_height = MAX(1, viewport.y1 - viewport.y0);
 	short shown = (short)MIN(count, REPLAY_TOUCH_MAXIMUM_TARGETS);
 	short width;
 	short x;
@@ -2818,10 +2823,10 @@ static void playback_draw_touch_hints(
 		text.y1 = (short)(text.y0 + height + 4);
 		draw_string_set_draw_mode(font_index, NONE, 2, 0, &color);
 		rasterizer_draw_unicode_string(&text, NULL, NULL, 0, hints[index].action);
-		target[0] = (int)((box.x0 - window.x0) * 10000L / screen_width);
-		target[1] = (int)((box.y0 - window.y0) * 10000L / screen_height);
-		target[2] = (int)((box.x1 - window.x0) * 10000L / screen_width);
-		target[3] = (int)((box.y1 - window.y0) * 10000L / screen_height);
+		target[0] = (int)((box.x0 - viewport.x0) * 10000L / screen_width);
+		target[1] = (int)((box.y0 - viewport.y0) * 10000L / screen_height);
+		target[2] = (int)((box.x1 - viewport.x0) * 10000L / screen_width);
+		target[3] = (int)((box.y1 - viewport.y0) * 10000L / screen_height);
 		target[4] = button;
 	}
 #ifdef REPLAY_TOUCH
