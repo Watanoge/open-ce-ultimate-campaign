@@ -2210,6 +2210,58 @@ OPENCE_ROWS = [
 ]
 OPENCE_ITEM = f"{PLAYLIST_EDIT}/playlist_edit_opence_item"
 
+# Floodfection's settings (port/linux/game/infection.c's
+# _floodfection_setting_*, packed in the gametype's options; the loadout the
+# gametype's own), a screen of three (FLOOD_SCREENS) that Server Setup's
+# FLOODFECTION SETTINGS opens in ITEM OPTIONS' place, and the gametype
+# editor's FLOODFECTION SETTINGS (both a Floodfection gametype's alone:
+# menu_functions.c). A row's values are menu_functions.c's gametype_options'
+FLOOD_EDIT = "main_menu/settings_select/multiplayer_setup/floodfection_options_edit"
+FLOOD_ITEM = f"{PLAYLIST_EDIT}/playlist_edit_floodfection_item"
+FLOOD_HEALTHS = ["100%", "125%", "150%", "175%", "200%", "250%", "300%"]
+FLOOD_SCREENS = [
+    ("fl_loadout", "SPARTAN LOADOUT", "The weapons every Spartan spawns with, and\\nwhether the map's weapons can be picked up.", [
+        # (their values a custom loadout's weapons, LOADOUT_WEAPONS: _floodfection_options)
+        ("primary_weapon", "PRIMARY WEAPON:", None, None),
+        ("secondary_weapon", "SECONDARY WEAPON:", None, None),
+        ("map_weapons", "WEAPON PICKUPS:", ["ON", "OFF"], [
+            "The map's own weapons lie about to be picked up.",
+            "No weapons on the map: the Spartans keep what\\nthey spawn with (grenades and powerups stay)."]),
+    ]),
+    ("fl_last_stand", "LAST STANDS", "The last Spartans' buffs, the last one's, and\\nthe Flood's music.", [
+        ("fl_last_stand", "LAST STAND AT:", ["OFF", "5%", "10%", "15%", "20%", "25%", "33%", "50%"],
+         ["No last stand: no Spartan is buffed until the\\nlast one."] +
+         ["Once this share of the players or fewer are\\nSpartans: health, overshields, ammo, a grenade."] * 7),
+        ("fl_last_buff", "LAST SPARTAN BUFF:", ["ON", "OFF"], [
+            "The last Spartan: overshields again, full ammo\\nand two grenades.",
+            "The last Spartan gets nothing more."]),
+        ("fl_last_shown", "LAST SPARTAN SHOWN:", ["ON", "OFF"], [
+            "Every infected sees where the last Spartan is.",
+            "The last Spartan can hide."]),
+        ("fl_music", "FLOOD MUSIC:", ["ON", "OFF"], [
+            "Two Betrayals' music through the round, and its\\nfiercest from the last stand on.",
+            "No music."]),
+    ]),
+    ("fl_infected", "INFECTED", "How the infected move, how much they take, and\\nwhich are elites.", [
+        ("fl_human_health", "HUMAN FORM HEALTH:", FLOOD_HEALTHS, ["A human form's health, of a Spartan's."] * 7),
+        ("fl_human_speed", "HUMAN FORM SPEED:", ["100%", "110%", "125%", "150%", "175%", "200%", "250%"],
+         ["How fast a human form moves, of a Spartan's\\nspeed."] * 7),
+        ("fl_human_shields", "HUMAN FORM SHIELDS:", ["OFF", "ON"], [
+            "Human forms have no shields.", "Human forms have shields, as Spartans do."]),
+        ("fl_elites", "ELITE FORMS:", ["OFF", "FIRST INFECTED", "RANDOM"], [
+            "Every infected is a human form.",
+            "The round's first infected are elites, the rest\\nhuman forms.",
+            "Each infected's spawn is an elite at a chance."]),
+        ("fl_elite_chance", "ELITE CHANCE:", ["10%", "15%", "20%", "25%", "35%", "50%", "75%", "100%"],
+         ["The chance an infected spawns as an elite."] * 8),
+        ("fl_elite_health", "ELITE HEALTH:", FLOOD_HEALTHS, ["An elite's health, of a Spartan's."] * 7),
+        ("fl_elite_speed", "ELITE SPEED:", ["100%", "125%", "150%", "175%", "200%", "225%", "250%"],
+         ["How fast an elite moves, of a Spartan's speed."] * 7),
+        ("fl_elite_shields", "ELITE SHIELDS:", ["OFF", "ON"], [
+            "Elites have no shields.", "Elites have shields, as Spartans do."]),
+    ]),
+]
+
 STRING_INSERTS = {
     # (Filters' SHOW MISSING MAPS' third value's help, after the PC version's:
     # menu_functions.c's filters_help)
@@ -2218,7 +2270,9 @@ STRING_INSERTS = {
     # (the gametype editor's OPENCE OPTIONS' words, after the PC version's:
     # menu_functions.c's playlist_edit_description)
     f"{PLAYLIST_EDIT}/playlist_edit_list_extended_dsc_text": [(8, [
-        "Choose the rules of OpenCE's\\ngametypes: SWAT, Infection,\\nGun Game and Hardcore.\\nThis gametype:"])],
+        "Choose the rules of OpenCE's\\ngametypes: SWAT, Infection,\\nGun Game and Hardcore.\\nThis gametype:",
+        # (and its FLOODFECTION's, a Floodfection gametype's: FLOOD_ITEM)
+        "The Spartans' loadout and last\\nstands, and the infected's\\nforms.\\nThis gametype:"])],
     f"{PLAYER_EDIT}/player_options_labels": [(8, ["AIM ASSIST:", "SHIELD EFFECTS:"])],
     f"{PLAYER_EDIT}/cap_player_options": [(28, AIM_ASSIST_HELP + SHIELD_EFFECTS_HELP)],
     # (Teamplay Options' voice chat and vote kick rows, after its own:
@@ -2430,7 +2484,8 @@ WIDGET_PATCHES = {
     f"{PLAYER_EDIT}/player_options_help": {"set": {"top": 345, "height": 60}},
     # (the gametype editor's OPENCE OPTIONS, after its own rows: _opence_options)
     f"{PLAYLIST_EDIT}/edit_playlist_select_list": {
-        "insert_before": {f"{PLAYLIST_EDIT}/playlist_edit_button_bar": [f'<child widget="{OPENCE_ITEM}"/>']},
+        "insert_before": {f"{PLAYLIST_EDIT}/playlist_edit_button_bar": [f'<child widget="{OPENCE_ITEM}"/>',
+                                                                        f'<child widget="{FLOOD_ITEM}"/>']},
         "inputs": ["port playlist edit desc"]},
     # (the profile settings' picture: on Gamepad Setup's row, the overlay's
     # controller alone in its place, _layout_overlays;
@@ -2969,6 +3024,25 @@ def _server_settings() -> list:
                                                  ("font", "ui\\small_ui"), ("color", "#FF2896FF"), ("align", "center"),
                                                  ("text_y", 5), ("text_flags", "no_focus_test")], [])
         rows.append((f"{base}/op_{key}", None, SETUP_OPTIONS_PLACE + index))
+    # FLOODFECTION SETTINGS, a Floodfection game's, in ITEM OPTIONS' place
+    # (its loadout is the Spartans'): menu_functions.c's server_settings_update
+    # shows the one or the other
+    target = f"{FLOOD_EDIT}/floodfection_screen"
+    extra += _widget(f"{base}/op_floodfection_options", [("width", 512), ("height", 28),
+                                                        ("flags", "pass_unhandled_to_focused_child"),
+                                                        ("bitmap", "bitmaps/option_bkds"), ("color", "#FF2896FF")],
+                     [f'<on event="a" run="port setup edit" open="{target}"/>',
+                      f'<on event="start" run="port setup edit" open="{target}"/>',
+                      '<on event="left_mouse" run="mouse emit accept event"/>',
+                      f'<child widget="{base}/floodfection_options_label"/>'])
+    extra += _widget(f"{base}/floodfection_options_label",
+                     [("type", "text"), ("controller", 1), ("width", 300), ("height", 22),
+                      ("string_list", f"{base}/labels"),
+                      ("string_index", 14 + len(COOP_SETUP_SCREENS) + len(CAMPAIGN_SETUP_SCREENS)),
+                      ("font", "ui\\large_ui"), ("color", "#FF2896FF"), ("text_x", 13), ("text_y", 4)], [])
+    # (after ITEM OPTIONS in the list, for up and down)
+    rows.insert(rows.index((f"{base}/op_item_options", None, SETUP_OPTIONS_PLACE + 2)) + 1,
+                (f"{base}/op_floodfection_options", None, SETUP_OPTIONS_PLACE + 2))
     # TAG PROFILE (a multiplayer game's on the game's own maps, after its
     # TAG PROFILE screen: _tag_profile_screen), last: the Tag Injector's
     # multiplayer profile the game plays, or NONE, which the game keeps (who
@@ -3006,7 +3080,7 @@ def _server_settings() -> list:
                                          *(f"{title}:" for _, title, _, _ in COOP_SETUP_SCREENS), "PASSWORD:",
                                          f"{MAP_SHARE_SETUP[1]}:",
                                          *(f"{title}:" for _, title, _ in CAMPAIGN_SETUP_SCREENS),
-                                         f"{BOTS_SETUP[1]}:", f"{TAG_PROFILE_SETUP[1]}:"])
+                                         f"{BOTS_SETUP[1]}:", f"{TAG_PROFILE_SETUP[1]}:", "FLOODFECTION SETTINGS:"])
     extra += _strings(f"{base}/help_strings", [
         "",
         "The name the game shows in the lists of games.\\nEnter changes it.",
@@ -3036,6 +3110,8 @@ def _server_settings() -> list:
         "Listed for everyone through the brokers, and on\\nthe master servers with your publisher key.",
         # (TAG PROFILE's: TAG_PROFILE_SETUP)
         TAG_PROFILE_SETUP[2],
+        # (FLOODFECTION SETTINGS': menu_functions.c's FLOODFECTION_SETUP_HELP)
+        "The Spartans' loadout and last stands, and the\\ninfected's forms, for this game.",
     ])
     lines = _screen(base, spec, rows, ["server settings update"],
                     ['<on event="created" run="server settings init"/>'], extra)
@@ -3749,6 +3825,72 @@ def _opence_options() -> list:
     return lines
 
 
+def _floodfection_options() -> list:
+    """Floodfection's settings (FLOOD_SCREENS): its screen of three, each
+    opening its own screen of the gametype's options (as OPENCE OPTIONS'
+    are: "mp profile init/set floodfection options"), the help the focused
+    row's ("game settings lists text update": menu_functions.c's
+    gametype_option_help); and the gametype editor's row opening it, after
+    OPENCE OPTIONS"""
+    weapons = {"primary_weapon": (LOADOUT_WEAPONS, LOADOUT_HELPS("primary")),
+               "secondary_weapon": (LOADOUT_WEAPONS, LOADOUT_HELPS("secondary"))}
+    base = FLOOD_EDIT
+    lines = []
+    for key, title, _, rows in FLOOD_SCREENS:
+        rows = [(row_key, label, *weapons[row_key]) if row_key in weapons else (row_key, label, strings, helps)
+                for row_key, label, strings, helps in rows]
+        screen = _setup_option_screen(f"{base}/{key}", key, rows)
+        lines += [line.replace("port setup options init", "mp profile init floodfection options")
+                  .replace("port setup options save", "mp profile set floodfection options")
+                  .replace(f'bitmap="{base}/{key}/header_{key}"',
+                           f'type="text" text="{title}" font="ui\\large_ui" color="#FFFFFFFF" text_x="13" text_y="16"')
+                  for line in screen]
+    # (the screen of three: rows opening the screens, and BACK)
+    children = ['<data input="game settings lists text update"/>']
+    for index, (key, *_) in enumerate(FLOOD_SCREENS):
+        children.append(f'<child widget="{base}/op_{key}" x="54" y="{73 + 30 * index}"/>')
+    children.append(f'<child widget="{base}/floodfection_button_bar" y="414"/>')
+    lines += _widget(f"{base}/floodfection_screen", [("width", 640), ("height", 480),
+                                                     ("flags", "pass_unhandled_to_focused_child"),
+                                                     ("bitmap", "bitmaps/gradient")],
+                     [f'<child widget="{base}/header_floodfection"/>', f'<child widget="{base}/floodfection_menu"/>'])
+    lines += _widget(f"{base}/header_floodfection", [("type", "text"), ("controller", 1), ("left", 35), ("top", 11),
+                                                     ("width", 363), ("height", 59), ("text", "FLOODFECTION"),
+                                                     ("font", "ui\\large_ui"), ("color", "#FFFFFFFF"), ("text_x", 13),
+                                                     ("text_y", 16)], [])
+    lines += _widget(f"{base}/floodfection_help", [("type", "text"), ("controller", 1), ("left", 68), ("top", 341),
+                                                   ("width", 482), ("height", 79),
+                                                   ("string_list", f"{base}/cap_floodfection"),
+                                                   ("font", "ui\\large_ui"), ("color", "#FFFFFFFF")], [])
+    lines += _widget(f"{base}/floodfection_menu", [("type", "column_list"), ("width", 640), ("height", 480),
+                                                   ("flags", "pass_unhandled_to_focused_child up_down_tabs_children"),
+                                                   ("description", f"{base}/floodfection_help")], children)
+    lines += _widget(f"{base}/floodfection_button_bar",
+                     [("type", "column_list"), ("width", 640), ("height", 28),
+                      ("flags", "pass_unhandled_to_focused_child left_right_tabs_items")],
+                     [f'<child widget="{base}/floodfection_button_back" x="510" y="1"/>'])
+    lines += _text_button(f"{base}/floodfection_button_back", "BACK", ['<on event="a" back="true"/>',
+                                                                       '<on event="start" back="true"/>'])
+    for index, (key, title, _, _) in enumerate(FLOOD_SCREENS):
+        target = f"{base}/{key}/{key}_screen"
+        lines += _widget(f"{base}/op_{key}", [("type", "text"), ("width", 512), ("height", 28),
+                                              ("bitmap", "bitmaps/option_bkds"), ("text", title),
+                                              ("font", "ui\\large_ui"), ("color", "#FF2896FF"), ("text_x", 13),
+                                              ("text_y", 4)],
+                         [f'<on event="a" open="{target}"/>', f'<on event="start" open="{target}"/>',
+                          '<on event="left_mouse" run="mouse emit accept event"/>'])
+    lines += _strings(f"{base}/cap_floodfection", [help_text for _, _, help_text, _ in FLOOD_SCREENS])
+    # (the gametype editor's row, below OPENCE OPTIONS: shown for a
+    # Floodfection gametype, menu_functions.c's playlist_edit_description)
+    lines += _widget(FLOOD_ITEM, [("type", "text"), ("left", 51), ("top", 342), ("width", 232), ("height", 32),
+                                  ("bitmap", "bitmaps/list_item_bkd"), ("text", "FLOODFECTION"),
+                                  ("font", "ui\\large_ui"), ("color", "#FF2896FF"), ("text_x", 13), ("text_y", 5)],
+                     [f'<on event="a" open="{base}/floodfection_screen"/>',
+                      f'<on event="start" open="{base}/floodfection_screen"/>',
+                      '<on event="left_mouse" run="mouse emit accept event"/>'])
+    return lines
+
+
 def _teamplay_options_extras() -> list:
     """Teamplay Options' rows of the port's: the gametype's FORCE TEAM
     SPAWNS (game_engine.c), then the host's voice chat
@@ -4250,6 +4392,7 @@ def multiplayer_files() -> dict:
         PLAYER_EDIT.replace("/", ".") + ".port.xml": head + _player_options_extras() + ["</menus>", ""],
         TEAMPLAY_EDIT.replace("/", ".") + ".port.xml": head + _teamplay_options_extras() + ["</menus>", ""],
         OPENCE_EDIT.replace("/", ".") + ".port.xml": head + _opence_options() + ["</menus>", ""],
+        FLOOD_EDIT.replace("/", ".") + ".port.xml": head + _floodfection_options() + ["</menus>", ""],
         MODS.replace("/", ".") + ".xml": [head[0], "<!-- The port's Mods screen, in the PC version's style "
                                           "(tools/port_settings.py) -->", head[2]] + _mods() + ["</menus>", ""],
         DAILY.replace("/", ".") + ".xml": [head[0], "<!-- The port's Daily Challenge screens, in the PC version's "

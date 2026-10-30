@@ -144,6 +144,7 @@ their handlers open opens.
 #include "../src/community_net.h"
 #include "bots.h"
 #include "game_modes.h"
+#include "infection.h"
 #include "network_voice.h"
 #include "network_replay.h"
 #include "network_map_vote.h"
@@ -10939,6 +10940,10 @@ a multiplayer game's on the game's own maps: its help; and where the rows
 are packed while it is shown (the first's place, and the most rows a
 spacing of SERVER_SETTINGS_ROW_SPACING has above the help) */
 #define TAG_PROFILE_SETUP_HELP 20
+/* Server Setup's FLOODFECTION SETTINGS row, a Floodfection game's, in
+ITEM OPTIONS' place: its help */
+#define FLOODFECTION_SETUP_HELP 21
+static boolean gametype_setup_floodfection(void);
 #define SERVER_SETTINGS_FIRST_ROW 73
 #define SERVER_SETTINGS_ROWS 12
 
@@ -11189,6 +11194,18 @@ static void server_settings_update(struct widget_instance *list)
 
 		for (row = 0; row < NUMBEROF(server_settings_gametype_rows); row++)
 			visible_set(named(list, server_settings_gametype_rows[row], 0), !cooperative);
+		/* (a Floodfection game's FLOODFECTION SETTINGS in ITEM OPTIONS'
+		place: its Spartans' loadout is there) */
+		{
+			boolean floodfection = !cooperative && gametype_setup_floodfection();
+			struct widget_instance *help = list->parameters.list.extended_description;
+
+			if (floodfection)
+				visible_set(named(list, "op_item_options", 0), FALSE);
+			visible_set(named(list, "op_floodfection_options", 0), floodfection);
+			if (help && floodfection && list->focused_child == named(list, "op_floodfection_options", 0))
+				help->parameters.text_box.string_list_index = FLOODFECTION_SETUP_HELP;
+		}
 		/* co-op's options in their place, rows opening their screens
 		(tools/port_settings.py's COOP_SETUP_SCREENS), each its help */
 		{
@@ -15238,7 +15255,8 @@ enum
 	_option_radar,		/* the options' radar players, and the variant's flag */
 	_option_setting,	/* the host's own (config.toml): Server Setup's copy only */
 	_option_byte_value,	/* a byte of the variant, its number (not on or off) */
-	_option_mode		/* the options' mode, and its take (mode_variant) above its byte */
+	_option_mode,		/* the options' mode, and its take (mode_variant) above its byte */
+	_option_option_bits	/* bits of a byte of the options (argument: FLOODFECTION_SETTING's) */
 };
 
 /* OPENCE OPTIONS' MODE's value of a mode and its take on it (_option_mode) */
@@ -15262,6 +15280,9 @@ struct gametype_option
 
 #define VARIANT_FIELD(field) (short)offsetof(struct game_variant, field)
 #define OPTIONS_FIELD(field) (short)offsetof(struct game_variant_options, field)
+/* a Floodfection setting's kind, byte and bits (infection.h) */
+#define FLOODFECTION_OPTION(setting) _option_option_bits, \
+	(short)(OPTIONS_FIELD(floodfection) + FLOODFECTION_SETTING_BYTE(setting)), (unsigned long)(setting)
 #define TIME_LIMITS { 0, 10, 15, 20, 25, 30, 45 }
 
 static struct gametype_option const gametype_options[] =
@@ -15282,6 +15303,23 @@ static struct gametype_option const gametype_options[] =
 	{ "gg_order_spinner", _option_option_byte, OPTIONS_FIELD(gun_game_order), 0, 3,
 		{ _gun_game_order_strongest_first, _gun_game_order_weakest_first, _gun_game_order_random } },
 	{ "gg_melee_spinner", _option_option_byte, OPTIONS_FIELD(gun_game_melee_demotes), 0, 2, { FALSE, TRUE } },
+	/* FLOODFECTION's (infection.c's tables: each value its place in its
+	table, in the order the spinner shows them; the loadout's rows are Item
+	Options') */
+	{ "fl_last_stand_spinner", FLOODFECTION_OPTION(_floodfection_setting_last_stand), 8, { 1, 2, 0, 3, 4, 5, 6, 7 } },
+	{ "fl_last_buff_spinner", FLOODFECTION_OPTION(_floodfection_setting_no_last_spartan_buff), 2, { 0, 1 } },
+	{ "fl_last_shown_spinner", FLOODFECTION_OPTION(_floodfection_setting_no_last_spartan_shown), 2, { 0, 1 } },
+	{ "fl_music_spinner", FLOODFECTION_OPTION(_floodfection_setting_no_music), 2, { 0, 1 } },
+	{ "fl_human_health_spinner", FLOODFECTION_OPTION(_floodfection_setting_human_health), 7, { 1, 2, 0, 3, 4, 5, 6 } },
+	{ "fl_human_speed_spinner", FLOODFECTION_OPTION(_floodfection_setting_human_speed), 7, { 1, 2, 3, 0, 4, 5, 6 } },
+	{ "fl_human_shields_spinner", FLOODFECTION_OPTION(_floodfection_setting_human_shields), 2, { 0, 1 } },
+	{ "fl_elites_spinner", FLOODFECTION_OPTION(_floodfection_setting_elites), 3,
+		{ _floodfection_elites_none, _floodfection_elites_first, _floodfection_elites_random } },
+	{ "fl_elite_chance_spinner", FLOODFECTION_OPTION(_floodfection_setting_elite_chance), 8,
+		{ 1, 2, 3, 0, 4, 5, 6, 7 } },
+	{ "fl_elite_health_spinner", FLOODFECTION_OPTION(_floodfection_setting_elite_health), 7, { 1, 2, 3, 4, 0, 5, 6 } },
+	{ "fl_elite_speed_spinner", FLOODFECTION_OPTION(_floodfection_setting_elite_speed), 7, { 1, 2, 3, 4, 0, 5, 6 } },
+	{ "fl_elite_shields_spinner", FLOODFECTION_OPTION(_floodfection_setting_elite_no_shields), 2, { 1, 0 } },
 	/* player options */
 	{ "number_of_lives_spinner", _option_long, VARIANT_FIELD(universal_variant.lives), 0, 4, { 0, 1, 3, 5 } },
 	{ "maximum_health_spinner", _option_health, 0, 0, 6, { 5, 10, 15, 20, 30, 40 } },
@@ -15504,6 +15542,9 @@ static long gametype_option_value(struct gametype_option const *option, struct g
 	case _option_byte_value: return v[option->offset];
 	case _option_radar: return options->radar_players;
 	case _option_mode: return GAMETYPE_MODE_VALUE(options->mode, options->mode_variant);
+	case _option_option_bits:
+		return (o[option->offset] >> FLOODFECTION_SETTING_SHIFT(option->argument)) &
+			((1 << FLOODFECTION_SETTING_BITS(option->argument)) - 1);
 	}
 	return 0;
 }
@@ -15540,6 +15581,14 @@ static void gametype_option_value_set(struct gametype_option const *option, long
 		options->mode = (byte)(value & 0xFF);
 		options->mode_variant = (byte)(value >> 8);
 		break;
+	case _option_option_bits:
+	{
+		long mask = ((1 << FLOODFECTION_SETTING_BITS(option->argument)) - 1) << FLOODFECTION_SETTING_SHIFT(option->argument);
+
+		o[option->offset] = (byte)((o[option->offset] & ~mask) |
+			((value << FLOODFECTION_SETTING_SHIFT(option->argument)) & mask));
+		break;
+	}
 	}
 }
 
@@ -15793,6 +15842,9 @@ static boolean gametype_options_save(struct widget_instance *widget)
 	if (named(list, "op_team", 0))
 		vehicles_keep(list);
 	gametype_options_each(list, TRUE);
+	/* (FLOODFECTION's SPARTAN LOADOUT: the weapons its own, a custom loadout) */
+	if (named(list, "primary_weapon_spinner", 0) && !named(list, "loadout_spinner", 0))
+		edit_options()->loadout = _loadout_custom;
 	/* (OPENCE OPTIONS: Infection is played on teams, Gun Game free for all:
 	game_modes_variant_mode) */
 	if (named(list, "oce_mode_spinner", 0) && edit_variant()->game_engine_index == game_engine_slayer)
@@ -15849,6 +15901,15 @@ static void gametype_setup_type(wchar_t *text)
 		kind ? kind : engine_names[PIN(gametype_edit.setup_variant.game_engine_index, 0, 5)],
 		gametype_edit.setup_variant.universal_variant.teams ? L", TEAMS" : L"");
 	text[ROW_TEXT_LENGTH - 1] = 0;
+}
+
+/* Server Setup's copy is a Floodfection gametype (FLOODFECTION SETTINGS
+in ITEM OPTIONS' place) */
+static boolean gametype_setup_floodfection(void)
+{
+	return gametype_edit.setup &&
+		game_modes_variant_mode_variant(&gametype_edit.setup_variant, &gametype_edit.setup_options) ==
+			_game_mode_variant_floodfection;
 }
 
 /* "port setup edit" (a Server Setup option's row): its screen edits the copy */
@@ -15929,24 +15990,33 @@ static void gametype_edit_list_update(struct widget_instance *list)
 }
 
 /* "port playlist edit desc" (after the PC version's "playlist settings menu
-update desc"): the gametype editor's OPENCE OPTIONS, its eighth row, has its
-own words (the list's ninth) over GAME OPTIONS' picture, and the buttons
-after it SAVE CHANGES' */
+update desc"): the gametype editor's OPENCE OPTIONS, its eighth row, and
+FLOODFECTION, its ninth (a Floodfection gametype's alone), have their own
+words (the list's ninth and tenth) over GAME OPTIONS' picture, and the
+buttons after them SAVE CHANGES' */
 #define PLAYLIST_EDIT_OPENCE_ROW 7
+#define PLAYLIST_EDIT_FLOODFECTION_ROW 8
 #define PLAYLIST_EDIT_OPENCE_WORDS 8
+#define PLAYLIST_EDIT_FLOODFECTION_WORDS 9
 #define PLAYLIST_EDIT_GAME_OPTIONS_PICTURE 1
 
 static void playlist_edit_description(struct widget_instance *list)
 {
 	struct widget_instance *description = list->parameters.list.extended_description;
-	short index = list->focused_child ? ui_widget_port_list_index(list) : NONE;
+	struct game_variant *variant = edit_variant();
+	struct game_variant_options *options = edit_options();
+	short index;
 
+	visible_set(named(list, "playlist_edit_floodfection_item", 0), variant && options &&
+		game_modes_variant_mode_variant(variant, options) == _game_mode_variant_floodfection);
+	index = list->focused_child ? ui_widget_port_list_index(list) : NONE;
 	if (!description || !description->child || !description->child->next || index < PLAYLIST_EDIT_OPENCE_ROW)
 		return;
 	description->child->parameters.text_box.string_list_index =
-		index == PLAYLIST_EDIT_OPENCE_ROW ? PLAYLIST_EDIT_OPENCE_WORDS : (short)(index - 1);
+		index == PLAYLIST_EDIT_OPENCE_ROW ? PLAYLIST_EDIT_OPENCE_WORDS :
+		index == PLAYLIST_EDIT_FLOODFECTION_ROW ? PLAYLIST_EDIT_FLOODFECTION_WORDS : (short)(index - 2);
 	description->child->next->animation.current_frame_index =
-		index == PLAYLIST_EDIT_OPENCE_ROW ? PLAYLIST_EDIT_GAME_OPTIONS_PICTURE : (short)(index - 1);
+		index <= PLAYLIST_EDIT_FLOODFECTION_ROW ? PLAYLIST_EDIT_GAME_OPTIONS_PICTURE : (short)(index - 2);
 }
 
 /* "mp profile begin editing" (the list's custom activation: OK, a row's A) */
@@ -16016,8 +16086,9 @@ static void gametype_option_help(struct widget_instance *list)
 		visible_set(named(list, "op_secondary_weapon", 0), custom);
 	}
 	/* (OPENCE OPTIONS: the mode's own rows, Infection's or Gun Game's, below
-	MODE and HARDCORE; Floodfection's Infection's, Tag Gun Game's Gun Game's
-	but its order, which it draws) */
+	MODE and HARDCORE; Floodfection's Infection's but its zombies' speed and
+	shields, which its FLOODFECTION SETTINGS set by their form, Tag Gun
+	Game's Gun Game's but its order, which it draws) */
 	if (named(list, "oce_mode_spinner", 0))
 	{
 		struct gametype_option const *option = gametype_option_named("oce_mode_spinner");
@@ -16032,8 +16103,36 @@ static void gametype_option_help(struct widget_instance *list)
 
 			if (!infection && strncmp(row->name, "op_gg_", 6))
 				continue;
-			row->visible = infection ? mode == _game_mode_infection : mode == _game_mode_gun_game &&
+			row->visible = infection ? mode == _game_mode_infection &&
+				!(value >> 8 == _game_mode_variant_floodfection &&
+					(!strcmp(row->name, "op_inf_speed") || !strcmp(row->name, "op_inf_shields"))) :
+				mode == _game_mode_gun_game &&
 				!(value >> 8 == _game_mode_variant_tag_gun_game && !strcmp(row->name, "op_gg_order"));
+			if (row->visible)
+			{
+				row->vertical_offset = place;
+				place += 30;
+			}
+		}
+	}
+	/* (FLOODFECTION's INFECTED: ELITE CHANCE with RANDOM elites alone, the
+	elites' rows without OFF, the rows shown packed) */
+	if (named(list, "fl_elites_spinner", 0))
+	{
+		struct gametype_option const *option = gametype_option_named("fl_elites_spinner");
+		long elites = option->values[PIN(named(list, "fl_elites_spinner", 0)->parameters.list.selected_index, 0,
+			option->count - 1)];
+		short place = 73;
+
+		for (row = list->child; row; row = row->next)
+		{
+			if (strncmp(row->name, "op_fl_", 6))
+				continue;
+			if (!strncmp(row->name, "op_fl_elite_", 12))
+			{
+				row->visible = elites != _floodfection_elites_none &&
+					(strcmp(row->name, "op_fl_elite_chance") || elites == _floodfection_elites_random);
+			}
 			if (row->visible)
 			{
 				row->vertical_offset = place;
@@ -16090,10 +16189,15 @@ static void gametype_option_help(struct widget_instance *list)
 		{
 			if (spinner)
 				description->parameters.text_box.string_list_index = (short)(index + spinner->parameters.list.selected_index);
+			/* (FLOODFECTION SETTINGS' rows, which open screens: a help each) */
+			else if (!strncmp(row->name, "op_fl_", 6))
+				description->parameters.text_box.string_list_index = index;
 			return;
 		}
 		if (spinner)
 			index += spinner->parameters.list.number_of_items;
+		else if (!strncmp(row->name, "op_fl_", 6))
+			index++;
 	}
 }
 

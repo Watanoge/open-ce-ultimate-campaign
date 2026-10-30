@@ -12,6 +12,7 @@
 		<child widget="main_menu/settings_select/multiplayer_setup/playlist_edit/playlist_edit_indicators_item"/>
 		<child widget="main_menu/settings_select/multiplayer_setup/playlist_edit/playlist_edit_team_item"/>
 		<child widget="main_menu/settings_select/multiplayer_setup/playlist_edit/playlist_edit_opence_item"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/playlist_edit/playlist_edit_floodfection_item"/>
 		<child widget="main_menu/settings_select/multiplayer_setup/playlist_edit/playlist_edit_button_bar" y="414"/>
 	</widget>
 	<widget name="main_menu/settings_select/multiplayer_setup/playlist_edit/gametype_edit_screen" width="640" height="480" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/gradient">

@@ -1,0 +1,486 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The port's multiplayer screens, in the PC version's style (tools/port_settings.py) -->
+<menus>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/fl_loadout_screen" width="640" height="480" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/gradient">
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/header_fl_loadout"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/fl_loadout_menu"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/header_fl_loadout" controller="1" left="35" top="11" width="363" height="59" type="text" text="SPARTAN LOADOUT" font="ui\large_ui" color="#FFFFFFFF" text_x="13" text_y="16">
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/fl_loadout_help" type="text" controller="1" left="68" top="341" width="482" height="79" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/cap_fl_loadout" font="ui\large_ui" color="#FFFFFFFF">
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/fl_loadout_menu" type="column_list" width="640" height="480" flags="pass_unhandled_to_focused_child up_down_tabs_children" description="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/fl_loadout_help">
+		<data input="game settings lists text update"/>
+		<on event="created" run="mp profile init floodfection options"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/op_primary_weapon" x="54" y="73"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/op_secondary_weapon" x="54" y="103"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/op_map_weapons" x="54" y="133"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/fl_loadout_button_bar" y="414"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/fl_loadout_button_bar" type="column_list" width="640" height="28" flags="pass_unhandled_to_focused_child left_right_tabs_items">
+		<data input="common button bar update"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/fl_loadout_button_ok" x="380" y="1"/>
+		<child widget="common_button_cancel" x="510" y="1"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/fl_loadout_button_ok" type="text" width="128" height="24" bitmap="bitmaps/text_button_background" string_list="strings/common_button_captions" string_index="1" font="ui\small_ui" color="#FFFFFFFF" align="center" text_y="2">
+		<on event="a" run="mp profile set floodfection options" back="true"/>
+		<on event="start" run="mp profile set floodfection options" back="true"/>
+		<on event="left_mouse" run="mouse emit accept event"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/op_primary_weapon" width="512" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/option_bkds" color="#FF2896FF">
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/primary_weapon_label"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/primary_weapon_spinner" x="286" y="1"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/primary_weapon_label" type="text" controller="1" width="300" height="22" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/fl_loadout_labels" string_index="0" font="ui\large_ui" color="#FF2896FF" text_x="13" text_y="4">
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/primary_weapon_spinner" type="spinner" top="2" width="206" height="20" flags="pass_unhandled_to_focused_child left_right_tabs_items" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/var_primary_weapon" font="ui\large_ui" color="#FF2896FF" align="center" text_y="4" list_flags="items_from_strings" header_bitmap="bitmaps/arrow_sm_left" footer_bitmap="bitmaps/arrow_sm_right" header_bounds="7 -13 19 -7" footer_bounds="7 208 19 214">
+		<on event="left_mouse" run="mouse spinner 1wide click"/>
+	</widget>
+	<strings name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/var_primary_weapon">
+		<string text="NONE"/>
+		<string text="RANDOM"/>
+		<string text="ASSAULT RIFLE"/>
+		<string text="PISTOL"/>
+		<string text="SHOTGUN"/>
+		<string text="SNIPER RIFLE"/>
+		<string text="ROCKET LAUNCHER"/>
+		<string text="PLASMA PISTOL"/>
+		<string text="PLASMA RIFLE"/>
+		<string text="NEEDLER"/>
+	</strings>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/op_secondary_weapon" width="512" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/option_bkds" color="#FF2896FF">
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/secondary_weapon_label"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/secondary_weapon_spinner" x="286" y="1"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/secondary_weapon_label" type="text" controller="1" width="300" height="22" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/fl_loadout_labels" string_index="1" font="ui\large_ui" color="#FF2896FF" text_x="13" text_y="4">
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/secondary_weapon_spinner" type="spinner" top="2" width="206" height="20" flags="pass_unhandled_to_focused_child left_right_tabs_items" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/var_secondary_weapon" font="ui\large_ui" color="#FF2896FF" align="center" text_y="4" list_flags="items_from_strings" header_bitmap="bitmaps/arrow_sm_left" footer_bitmap="bitmaps/arrow_sm_right" header_bounds="7 -13 19 -7" footer_bounds="7 208 19 214">
+		<on event="left_mouse" run="mouse spinner 1wide click"/>
+	</widget>
+	<strings name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/var_secondary_weapon">
+		<string text="NONE"/>
+		<string text="RANDOM"/>
+		<string text="ASSAULT RIFLE"/>
+		<string text="PISTOL"/>
+		<string text="SHOTGUN"/>
+		<string text="SNIPER RIFLE"/>
+		<string text="ROCKET LAUNCHER"/>
+		<string text="PLASMA PISTOL"/>
+		<string text="PLASMA RIFLE"/>
+		<string text="NEEDLER"/>
+	</strings>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/op_map_weapons" width="512" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/option_bkds" color="#FF2896FF">
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/map_weapons_label"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/map_weapons_spinner" x="286" y="1"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/map_weapons_label" type="text" controller="1" width="300" height="22" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/fl_loadout_labels" string_index="2" font="ui\large_ui" color="#FF2896FF" text_x="13" text_y="4">
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/map_weapons_spinner" type="spinner" top="2" width="206" height="20" flags="pass_unhandled_to_focused_child left_right_tabs_items" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/var_map_weapons" font="ui\large_ui" color="#FF2896FF" align="center" text_y="4" list_flags="items_from_strings" header_bitmap="bitmaps/arrow_sm_left" footer_bitmap="bitmaps/arrow_sm_right" header_bounds="7 -13 19 -7" footer_bounds="7 208 19 214">
+		<on event="left_mouse" run="mouse spinner 1wide click"/>
+	</widget>
+	<strings name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/var_map_weapons">
+		<string text="ON"/>
+		<string text="OFF"/>
+	</strings>
+	<strings name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/fl_loadout_labels">
+		<string text="PRIMARY WEAPON:"/>
+		<string text="SECONDARY WEAPON:"/>
+		<string text="WEAPON PICKUPS:"/>
+	</strings>
+	<strings name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/cap_fl_loadout">
+		<string text="No primary weapon."/>
+		<string text="A random primary weapon, of those the map has,\neach time you spawn."/>
+		<string text="Everyone spawns with a assault rifle as their primary\nweapon (where the map has one)."/>
+		<string text="Everyone spawns with a pistol as their primary\nweapon (where the map has one)."/>
+		<string text="Everyone spawns with a shotgun as their primary\nweapon (where the map has one)."/>
+		<string text="Everyone spawns with a sniper rifle as their primary\nweapon (where the map has one)."/>
+		<string text="Everyone spawns with a rocket launcher as their primary\nweapon (where the map has one)."/>
+		<string text="Everyone spawns with a plasma pistol as their primary\nweapon (where the map has one)."/>
+		<string text="Everyone spawns with a plasma rifle as their primary\nweapon (where the map has one)."/>
+		<string text="Everyone spawns with a needler as their primary\nweapon (where the map has one)."/>
+		<string text="No secondary weapon."/>
+		<string text="A random secondary weapon, of those the map has,\neach time you spawn."/>
+		<string text="Everyone spawns with a assault rifle as their secondary\nweapon (where the map has one)."/>
+		<string text="Everyone spawns with a pistol as their secondary\nweapon (where the map has one)."/>
+		<string text="Everyone spawns with a shotgun as their secondary\nweapon (where the map has one)."/>
+		<string text="Everyone spawns with a sniper rifle as their secondary\nweapon (where the map has one)."/>
+		<string text="Everyone spawns with a rocket launcher as their secondary\nweapon (where the map has one)."/>
+		<string text="Everyone spawns with a plasma pistol as their secondary\nweapon (where the map has one)."/>
+		<string text="Everyone spawns with a plasma rifle as their secondary\nweapon (where the map has one)."/>
+		<string text="Everyone spawns with a needler as their secondary\nweapon (where the map has one)."/>
+		<string text="The map's own weapons lie about to be picked up."/>
+		<string text="No weapons on the map: the Spartans keep what\nthey spawn with (grenades and powerups stay)."/>
+	</strings>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/fl_last_stand_screen" width="640" height="480" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/gradient">
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/header_fl_last_stand"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/fl_last_stand_menu"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/header_fl_last_stand" controller="1" left="35" top="11" width="363" height="59" type="text" text="LAST STANDS" font="ui\large_ui" color="#FFFFFFFF" text_x="13" text_y="16">
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/fl_last_stand_help" type="text" controller="1" left="68" top="341" width="482" height="79" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/cap_fl_last_stand" font="ui\large_ui" color="#FFFFFFFF">
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/fl_last_stand_menu" type="column_list" width="640" height="480" flags="pass_unhandled_to_focused_child up_down_tabs_children" description="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/fl_last_stand_help">
+		<data input="game settings lists text update"/>
+		<on event="created" run="mp profile init floodfection options"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/op_fl_last_stand" x="54" y="73"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/op_fl_last_buff" x="54" y="103"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/op_fl_last_shown" x="54" y="133"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/op_fl_music" x="54" y="163"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/fl_last_stand_button_bar" y="414"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/fl_last_stand_button_bar" type="column_list" width="640" height="28" flags="pass_unhandled_to_focused_child left_right_tabs_items">
+		<data input="common button bar update"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/fl_last_stand_button_ok" x="380" y="1"/>
+		<child widget="common_button_cancel" x="510" y="1"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/fl_last_stand_button_ok" type="text" width="128" height="24" bitmap="bitmaps/text_button_background" string_list="strings/common_button_captions" string_index="1" font="ui\small_ui" color="#FFFFFFFF" align="center" text_y="2">
+		<on event="a" run="mp profile set floodfection options" back="true"/>
+		<on event="start" run="mp profile set floodfection options" back="true"/>
+		<on event="left_mouse" run="mouse emit accept event"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/op_fl_last_stand" width="512" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/option_bkds" color="#FF2896FF">
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/fl_last_stand_label"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/fl_last_stand_spinner" x="286" y="1"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/fl_last_stand_label" type="text" controller="1" width="300" height="22" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/fl_last_stand_labels" string_index="0" font="ui\large_ui" color="#FF2896FF" text_x="13" text_y="4">
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/fl_last_stand_spinner" type="spinner" top="2" width="206" height="20" flags="pass_unhandled_to_focused_child left_right_tabs_items" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/var_fl_last_stand" font="ui\large_ui" color="#FF2896FF" align="center" text_y="4" list_flags="items_from_strings" header_bitmap="bitmaps/arrow_sm_left" footer_bitmap="bitmaps/arrow_sm_right" header_bounds="7 -13 19 -7" footer_bounds="7 208 19 214">
+		<on event="left_mouse" run="mouse spinner 1wide click"/>
+	</widget>
+	<strings name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/var_fl_last_stand">
+		<string text="OFF"/>
+		<string text="5%"/>
+		<string text="10%"/>
+		<string text="15%"/>
+		<string text="20%"/>
+		<string text="25%"/>
+		<string text="33%"/>
+		<string text="50%"/>
+	</strings>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/op_fl_last_buff" width="512" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/option_bkds" color="#FF2896FF">
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/fl_last_buff_label"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/fl_last_buff_spinner" x="286" y="1"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/fl_last_buff_label" type="text" controller="1" width="300" height="22" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/fl_last_stand_labels" string_index="1" font="ui\large_ui" color="#FF2896FF" text_x="13" text_y="4">
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/fl_last_buff_spinner" type="spinner" top="2" width="206" height="20" flags="pass_unhandled_to_focused_child left_right_tabs_items" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/var_fl_last_buff" font="ui\large_ui" color="#FF2896FF" align="center" text_y="4" list_flags="items_from_strings" header_bitmap="bitmaps/arrow_sm_left" footer_bitmap="bitmaps/arrow_sm_right" header_bounds="7 -13 19 -7" footer_bounds="7 208 19 214">
+		<on event="left_mouse" run="mouse spinner 1wide click"/>
+	</widget>
+	<strings name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/var_fl_last_buff">
+		<string text="ON"/>
+		<string text="OFF"/>
+	</strings>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/op_fl_last_shown" width="512" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/option_bkds" color="#FF2896FF">
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/fl_last_shown_label"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/fl_last_shown_spinner" x="286" y="1"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/fl_last_shown_label" type="text" controller="1" width="300" height="22" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/fl_last_stand_labels" string_index="2" font="ui\large_ui" color="#FF2896FF" text_x="13" text_y="4">
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/fl_last_shown_spinner" type="spinner" top="2" width="206" height="20" flags="pass_unhandled_to_focused_child left_right_tabs_items" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/var_fl_last_shown" font="ui\large_ui" color="#FF2896FF" align="center" text_y="4" list_flags="items_from_strings" header_bitmap="bitmaps/arrow_sm_left" footer_bitmap="bitmaps/arrow_sm_right" header_bounds="7 -13 19 -7" footer_bounds="7 208 19 214">
+		<on event="left_mouse" run="mouse spinner 1wide click"/>
+	</widget>
+	<strings name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/var_fl_last_shown">
+		<string text="ON"/>
+		<string text="OFF"/>
+	</strings>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/op_fl_music" width="512" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/option_bkds" color="#FF2896FF">
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/fl_music_label"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/fl_music_spinner" x="286" y="1"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/fl_music_label" type="text" controller="1" width="300" height="22" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/fl_last_stand_labels" string_index="3" font="ui\large_ui" color="#FF2896FF" text_x="13" text_y="4">
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/fl_music_spinner" type="spinner" top="2" width="206" height="20" flags="pass_unhandled_to_focused_child left_right_tabs_items" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/var_fl_music" font="ui\large_ui" color="#FF2896FF" align="center" text_y="4" list_flags="items_from_strings" header_bitmap="bitmaps/arrow_sm_left" footer_bitmap="bitmaps/arrow_sm_right" header_bounds="7 -13 19 -7" footer_bounds="7 208 19 214">
+		<on event="left_mouse" run="mouse spinner 1wide click"/>
+	</widget>
+	<strings name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/var_fl_music">
+		<string text="ON"/>
+		<string text="OFF"/>
+	</strings>
+	<strings name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/fl_last_stand_labels">
+		<string text="LAST STAND AT:"/>
+		<string text="LAST SPARTAN BUFF:"/>
+		<string text="LAST SPARTAN SHOWN:"/>
+		<string text="FLOOD MUSIC:"/>
+	</strings>
+	<strings name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/cap_fl_last_stand">
+		<string text="No last stand: no Spartan is buffed until the\nlast one."/>
+		<string text="Once this share of the players or fewer are\nSpartans: health, overshields, ammo, a grenade."/>
+		<string text="Once this share of the players or fewer are\nSpartans: health, overshields, ammo, a grenade."/>
+		<string text="Once this share of the players or fewer are\nSpartans: health, overshields, ammo, a grenade."/>
+		<string text="Once this share of the players or fewer are\nSpartans: health, overshields, ammo, a grenade."/>
+		<string text="Once this share of the players or fewer are\nSpartans: health, overshields, ammo, a grenade."/>
+		<string text="Once this share of the players or fewer are\nSpartans: health, overshields, ammo, a grenade."/>
+		<string text="Once this share of the players or fewer are\nSpartans: health, overshields, ammo, a grenade."/>
+		<string text="The last Spartan: overshields again, full ammo\nand two grenades."/>
+		<string text="The last Spartan gets nothing more."/>
+		<string text="Every infected sees where the last Spartan is."/>
+		<string text="The last Spartan can hide."/>
+		<string text="Two Betrayals' music through the round, and its\nfiercest from the last stand on."/>
+		<string text="No music."/>
+	</strings>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_infected_screen" width="640" height="480" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/gradient">
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/header_fl_infected"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_infected_menu"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/header_fl_infected" controller="1" left="35" top="11" width="363" height="59" type="text" text="INFECTED" font="ui\large_ui" color="#FFFFFFFF" text_x="13" text_y="16">
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_infected_help" type="text" controller="1" left="68" top="341" width="482" height="79" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/cap_fl_infected" font="ui\large_ui" color="#FFFFFFFF">
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_infected_menu" type="column_list" width="640" height="480" flags="pass_unhandled_to_focused_child up_down_tabs_children" description="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_infected_help">
+		<data input="game settings lists text update"/>
+		<on event="created" run="mp profile init floodfection options"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/op_fl_human_health" x="54" y="73"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/op_fl_human_speed" x="54" y="103"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/op_fl_human_shields" x="54" y="133"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/op_fl_elites" x="54" y="163"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/op_fl_elite_chance" x="54" y="193"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/op_fl_elite_health" x="54" y="223"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/op_fl_elite_speed" x="54" y="253"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/op_fl_elite_shields" x="54" y="283"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_infected_button_bar" y="414"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_infected_button_bar" type="column_list" width="640" height="28" flags="pass_unhandled_to_focused_child left_right_tabs_items">
+		<data input="common button bar update"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_infected_button_ok" x="380" y="1"/>
+		<child widget="common_button_cancel" x="510" y="1"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_infected_button_ok" type="text" width="128" height="24" bitmap="bitmaps/text_button_background" string_list="strings/common_button_captions" string_index="1" font="ui\small_ui" color="#FFFFFFFF" align="center" text_y="2">
+		<on event="a" run="mp profile set floodfection options" back="true"/>
+		<on event="start" run="mp profile set floodfection options" back="true"/>
+		<on event="left_mouse" run="mouse emit accept event"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/op_fl_human_health" width="512" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/option_bkds" color="#FF2896FF">
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_human_health_label"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_human_health_spinner" x="286" y="1"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_human_health_label" type="text" controller="1" width="300" height="22" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_infected_labels" string_index="0" font="ui\large_ui" color="#FF2896FF" text_x="13" text_y="4">
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_human_health_spinner" type="spinner" top="2" width="206" height="20" flags="pass_unhandled_to_focused_child left_right_tabs_items" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/var_fl_human_health" font="ui\large_ui" color="#FF2896FF" align="center" text_y="4" list_flags="items_from_strings" header_bitmap="bitmaps/arrow_sm_left" footer_bitmap="bitmaps/arrow_sm_right" header_bounds="7 -13 19 -7" footer_bounds="7 208 19 214">
+		<on event="left_mouse" run="mouse spinner 1wide click"/>
+	</widget>
+	<strings name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/var_fl_human_health">
+		<string text="100%"/>
+		<string text="125%"/>
+		<string text="150%"/>
+		<string text="175%"/>
+		<string text="200%"/>
+		<string text="250%"/>
+		<string text="300%"/>
+	</strings>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/op_fl_human_speed" width="512" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/option_bkds" color="#FF2896FF">
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_human_speed_label"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_human_speed_spinner" x="286" y="1"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_human_speed_label" type="text" controller="1" width="300" height="22" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_infected_labels" string_index="1" font="ui\large_ui" color="#FF2896FF" text_x="13" text_y="4">
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_human_speed_spinner" type="spinner" top="2" width="206" height="20" flags="pass_unhandled_to_focused_child left_right_tabs_items" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/var_fl_human_speed" font="ui\large_ui" color="#FF2896FF" align="center" text_y="4" list_flags="items_from_strings" header_bitmap="bitmaps/arrow_sm_left" footer_bitmap="bitmaps/arrow_sm_right" header_bounds="7 -13 19 -7" footer_bounds="7 208 19 214">
+		<on event="left_mouse" run="mouse spinner 1wide click"/>
+	</widget>
+	<strings name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/var_fl_human_speed">
+		<string text="100%"/>
+		<string text="110%"/>
+		<string text="125%"/>
+		<string text="150%"/>
+		<string text="175%"/>
+		<string text="200%"/>
+		<string text="250%"/>
+	</strings>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/op_fl_human_shields" width="512" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/option_bkds" color="#FF2896FF">
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_human_shields_label"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_human_shields_spinner" x="286" y="1"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_human_shields_label" type="text" controller="1" width="300" height="22" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_infected_labels" string_index="2" font="ui\large_ui" color="#FF2896FF" text_x="13" text_y="4">
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_human_shields_spinner" type="spinner" top="2" width="206" height="20" flags="pass_unhandled_to_focused_child left_right_tabs_items" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/var_fl_human_shields" font="ui\large_ui" color="#FF2896FF" align="center" text_y="4" list_flags="items_from_strings" header_bitmap="bitmaps/arrow_sm_left" footer_bitmap="bitmaps/arrow_sm_right" header_bounds="7 -13 19 -7" footer_bounds="7 208 19 214">
+		<on event="left_mouse" run="mouse spinner 1wide click"/>
+	</widget>
+	<strings name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/var_fl_human_shields">
+		<string text="OFF"/>
+		<string text="ON"/>
+	</strings>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/op_fl_elites" width="512" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/option_bkds" color="#FF2896FF">
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_elites_label"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_elites_spinner" x="286" y="1"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_elites_label" type="text" controller="1" width="300" height="22" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_infected_labels" string_index="3" font="ui\large_ui" color="#FF2896FF" text_x="13" text_y="4">
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_elites_spinner" type="spinner" top="2" width="206" height="20" flags="pass_unhandled_to_focused_child left_right_tabs_items" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/var_fl_elites" font="ui\large_ui" color="#FF2896FF" align="center" text_y="4" list_flags="items_from_strings" header_bitmap="bitmaps/arrow_sm_left" footer_bitmap="bitmaps/arrow_sm_right" header_bounds="7 -13 19 -7" footer_bounds="7 208 19 214">
+		<on event="left_mouse" run="mouse spinner 1wide click"/>
+	</widget>
+	<strings name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/var_fl_elites">
+		<string text="OFF"/>
+		<string text="FIRST INFECTED"/>
+		<string text="RANDOM"/>
+	</strings>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/op_fl_elite_chance" width="512" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/option_bkds" color="#FF2896FF">
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_elite_chance_label"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_elite_chance_spinner" x="286" y="1"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_elite_chance_label" type="text" controller="1" width="300" height="22" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_infected_labels" string_index="4" font="ui\large_ui" color="#FF2896FF" text_x="13" text_y="4">
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_elite_chance_spinner" type="spinner" top="2" width="206" height="20" flags="pass_unhandled_to_focused_child left_right_tabs_items" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/var_fl_elite_chance" font="ui\large_ui" color="#FF2896FF" align="center" text_y="4" list_flags="items_from_strings" header_bitmap="bitmaps/arrow_sm_left" footer_bitmap="bitmaps/arrow_sm_right" header_bounds="7 -13 19 -7" footer_bounds="7 208 19 214">
+		<on event="left_mouse" run="mouse spinner 1wide click"/>
+	</widget>
+	<strings name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/var_fl_elite_chance">
+		<string text="10%"/>
+		<string text="15%"/>
+		<string text="20%"/>
+		<string text="25%"/>
+		<string text="35%"/>
+		<string text="50%"/>
+		<string text="75%"/>
+		<string text="100%"/>
+	</strings>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/op_fl_elite_health" width="512" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/option_bkds" color="#FF2896FF">
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_elite_health_label"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_elite_health_spinner" x="286" y="1"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_elite_health_label" type="text" controller="1" width="300" height="22" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_infected_labels" string_index="5" font="ui\large_ui" color="#FF2896FF" text_x="13" text_y="4">
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_elite_health_spinner" type="spinner" top="2" width="206" height="20" flags="pass_unhandled_to_focused_child left_right_tabs_items" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/var_fl_elite_health" font="ui\large_ui" color="#FF2896FF" align="center" text_y="4" list_flags="items_from_strings" header_bitmap="bitmaps/arrow_sm_left" footer_bitmap="bitmaps/arrow_sm_right" header_bounds="7 -13 19 -7" footer_bounds="7 208 19 214">
+		<on event="left_mouse" run="mouse spinner 1wide click"/>
+	</widget>
+	<strings name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/var_fl_elite_health">
+		<string text="100%"/>
+		<string text="125%"/>
+		<string text="150%"/>
+		<string text="175%"/>
+		<string text="200%"/>
+		<string text="250%"/>
+		<string text="300%"/>
+	</strings>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/op_fl_elite_speed" width="512" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/option_bkds" color="#FF2896FF">
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_elite_speed_label"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_elite_speed_spinner" x="286" y="1"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_elite_speed_label" type="text" controller="1" width="300" height="22" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_infected_labels" string_index="6" font="ui\large_ui" color="#FF2896FF" text_x="13" text_y="4">
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_elite_speed_spinner" type="spinner" top="2" width="206" height="20" flags="pass_unhandled_to_focused_child left_right_tabs_items" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/var_fl_elite_speed" font="ui\large_ui" color="#FF2896FF" align="center" text_y="4" list_flags="items_from_strings" header_bitmap="bitmaps/arrow_sm_left" footer_bitmap="bitmaps/arrow_sm_right" header_bounds="7 -13 19 -7" footer_bounds="7 208 19 214">
+		<on event="left_mouse" run="mouse spinner 1wide click"/>
+	</widget>
+	<strings name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/var_fl_elite_speed">
+		<string text="100%"/>
+		<string text="125%"/>
+		<string text="150%"/>
+		<string text="175%"/>
+		<string text="200%"/>
+		<string text="225%"/>
+		<string text="250%"/>
+	</strings>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/op_fl_elite_shields" width="512" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/option_bkds" color="#FF2896FF">
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_elite_shields_label"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_elite_shields_spinner" x="286" y="1"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_elite_shields_label" type="text" controller="1" width="300" height="22" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_infected_labels" string_index="7" font="ui\large_ui" color="#FF2896FF" text_x="13" text_y="4">
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_elite_shields_spinner" type="spinner" top="2" width="206" height="20" flags="pass_unhandled_to_focused_child left_right_tabs_items" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/var_fl_elite_shields" font="ui\large_ui" color="#FF2896FF" align="center" text_y="4" list_flags="items_from_strings" header_bitmap="bitmaps/arrow_sm_left" footer_bitmap="bitmaps/arrow_sm_right" header_bounds="7 -13 19 -7" footer_bounds="7 208 19 214">
+		<on event="left_mouse" run="mouse spinner 1wide click"/>
+	</widget>
+	<strings name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/var_fl_elite_shields">
+		<string text="OFF"/>
+		<string text="ON"/>
+	</strings>
+	<strings name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_infected_labels">
+		<string text="HUMAN FORM HEALTH:"/>
+		<string text="HUMAN FORM SPEED:"/>
+		<string text="HUMAN FORM SHIELDS:"/>
+		<string text="ELITE FORMS:"/>
+		<string text="ELITE CHANCE:"/>
+		<string text="ELITE HEALTH:"/>
+		<string text="ELITE SPEED:"/>
+		<string text="ELITE SHIELDS:"/>
+	</strings>
+	<strings name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/cap_fl_infected">
+		<string text="A human form's health, of a Spartan's."/>
+		<string text="A human form's health, of a Spartan's."/>
+		<string text="A human form's health, of a Spartan's."/>
+		<string text="A human form's health, of a Spartan's."/>
+		<string text="A human form's health, of a Spartan's."/>
+		<string text="A human form's health, of a Spartan's."/>
+		<string text="A human form's health, of a Spartan's."/>
+		<string text="How fast a human form moves, of a Spartan's\nspeed."/>
+		<string text="How fast a human form moves, of a Spartan's\nspeed."/>
+		<string text="How fast a human form moves, of a Spartan's\nspeed."/>
+		<string text="How fast a human form moves, of a Spartan's\nspeed."/>
+		<string text="How fast a human form moves, of a Spartan's\nspeed."/>
+		<string text="How fast a human form moves, of a Spartan's\nspeed."/>
+		<string text="How fast a human form moves, of a Spartan's\nspeed."/>
+		<string text="Human forms have no shields."/>
+		<string text="Human forms have shields, as Spartans do."/>
+		<string text="Every infected is a human form."/>
+		<string text="The round's first infected are elites, the rest\nhuman forms."/>
+		<string text="Each infected's spawn is an elite at a chance."/>
+		<string text="The chance an infected spawns as an elite."/>
+		<string text="The chance an infected spawns as an elite."/>
+		<string text="The chance an infected spawns as an elite."/>
+		<string text="The chance an infected spawns as an elite."/>
+		<string text="The chance an infected spawns as an elite."/>
+		<string text="The chance an infected spawns as an elite."/>
+		<string text="The chance an infected spawns as an elite."/>
+		<string text="The chance an infected spawns as an elite."/>
+		<string text="An elite's health, of a Spartan's."/>
+		<string text="An elite's health, of a Spartan's."/>
+		<string text="An elite's health, of a Spartan's."/>
+		<string text="An elite's health, of a Spartan's."/>
+		<string text="An elite's health, of a Spartan's."/>
+		<string text="An elite's health, of a Spartan's."/>
+		<string text="An elite's health, of a Spartan's."/>
+		<string text="How fast an elite moves, of a Spartan's speed."/>
+		<string text="How fast an elite moves, of a Spartan's speed."/>
+		<string text="How fast an elite moves, of a Spartan's speed."/>
+		<string text="How fast an elite moves, of a Spartan's speed."/>
+		<string text="How fast an elite moves, of a Spartan's speed."/>
+		<string text="How fast an elite moves, of a Spartan's speed."/>
+		<string text="How fast an elite moves, of a Spartan's speed."/>
+		<string text="Elites have no shields."/>
+		<string text="Elites have shields, as Spartans do."/>
+	</strings>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/floodfection_screen" width="640" height="480" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/gradient">
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/header_floodfection"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/floodfection_menu"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/header_floodfection" type="text" controller="1" left="35" top="11" width="363" height="59" text="FLOODFECTION" font="ui\large_ui" color="#FFFFFFFF" text_x="13" text_y="16">
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/floodfection_help" type="text" controller="1" left="68" top="341" width="482" height="79" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/cap_floodfection" font="ui\large_ui" color="#FFFFFFFF">
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/floodfection_menu" type="column_list" width="640" height="480" flags="pass_unhandled_to_focused_child up_down_tabs_children" description="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/floodfection_help">
+		<data input="game settings lists text update"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/op_fl_loadout" x="54" y="73"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/op_fl_last_stand" x="54" y="103"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/op_fl_infected" x="54" y="133"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/floodfection_button_bar" y="414"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/floodfection_button_bar" type="column_list" width="640" height="28" flags="pass_unhandled_to_focused_child left_right_tabs_items">
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/floodfection_button_back" x="510" y="1"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/floodfection_button_back" type="text" width="128" height="24" bitmap="bitmaps/text_button_background" text="BACK" font="ui\small_ui" color="#FFFFFFFF" align="center" text_y="2">
+		<on event="a" back="true"/>
+		<on event="start" back="true"/>
+		<on event="left_mouse" run="mouse emit accept event"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/op_fl_loadout" type="text" width="512" height="28" bitmap="bitmaps/option_bkds" text="SPARTAN LOADOUT" font="ui\large_ui" color="#FF2896FF" text_x="13" text_y="4">
+		<on event="a" open="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/fl_loadout_screen"/>
+		<on event="start" open="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_loadout/fl_loadout_screen"/>
+		<on event="left_mouse" run="mouse emit accept event"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/op_fl_last_stand" type="text" width="512" height="28" bitmap="bitmaps/option_bkds" text="LAST STANDS" font="ui\large_ui" color="#FF2896FF" text_x="13" text_y="4">
+		<on event="a" open="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/fl_last_stand_screen"/>
+		<on event="start" open="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_last_stand/fl_last_stand_screen"/>
+		<on event="left_mouse" run="mouse emit accept event"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/op_fl_infected" type="text" width="512" height="28" bitmap="bitmaps/option_bkds" text="INFECTED" font="ui\large_ui" color="#FF2896FF" text_x="13" text_y="4">
+		<on event="a" open="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_infected_screen"/>
+		<on event="start" open="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_infected_screen"/>
+		<on event="left_mouse" run="mouse emit accept event"/>
+	</widget>
+	<strings name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/cap_floodfection">
+		<string text="The weapons every Spartan spawns with, and\nwhether the map's weapons can be picked up."/>
+		<string text="The last Spartans' buffs, the last one's, and\nthe Flood's music."/>
+		<string text="How the infected move, how much they take, and\nwhich are elites."/>
+	</strings>
+	<widget name="main_menu/settings_select/multiplayer_setup/playlist_edit/playlist_edit_floodfection_item" type="text" left="51" top="342" width="232" height="32" bitmap="bitmaps/list_item_bkd" text="FLOODFECTION" font="ui\large_ui" color="#FF2896FF" text_x="13" text_y="5">
+		<on event="a" open="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/floodfection_screen"/>
+		<on event="start" open="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/floodfection_screen"/>
+		<on event="left_mouse" run="mouse emit accept event"/>
+	</widget>
+</menus>

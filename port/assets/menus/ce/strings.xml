@@ -937,6 +937,7 @@
 		<string text="Modify gameplay options and\nrules used by teamplay game\nmodes.\nThis gametype:" map="6"/>
 		<string text="Save changes you've made to\nthis gametype and return to\nthe previous screen.\nThis gametype:" map="7"/>
 		<string text="Choose the rules of OpenCE's\ngametypes: SWAT, Infection,\nGun Game and Hardcore.\nThis gametype:"/>
+		<string text="The Spartans' loadout and last\nstands, and the infected's\nforms.\nThis gametype:"/>
 	</strings>
 	<strings name="main_menu/settings_select/multiplayer_setup/playlist_edit/playlist_edit_options" map="ui\shell\main_menu\settings_select\multiplayer_setup\playlist_edit\playlist_edit_options">
 		<string text="CHANGE NAME" map="0"/>

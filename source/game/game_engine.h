@@ -301,7 +301,11 @@ struct game_variant_options
 	of their own team (game_engine_get_starting_location_rating). Taken from
 	reserved, which older builds zero and ignore: the host alone picks spawns */
 	boolean force_team_spawns;
-	byte reserved[4];
+	/* port: Floodfection's settings (port/linux/game/infection.c's
+	_floodfection_setting_*, each a few bits whose 0 is its default), from
+	reserved, which older builds and upstream's zero and ignore: they play
+	the game as Infection */
+	byte floodfection[4];
 	/* port: this fork's take on the mode (_game_mode_variant_*), from
 	reserved's last byte, which builds without it zero: they play the mode
 	itself (Infection, Gun Game) */

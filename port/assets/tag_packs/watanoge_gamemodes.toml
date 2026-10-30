@@ -1,6 +1,7 @@
-# This fork's multiplayer modes' pack: Floodfection's carrier burst and
-# flood bits (port/linux/game/infection.c) and its zombies' Flood combat
-# forms, models and animations (floodfection_forms.c), all Two Betrayals'.
+# This fork's multiplayer modes' pack: Floodfection's carrier burst, flood
+# bits, cries and music (port/linux/game/infection.c) and its zombies' Flood
+# combat forms, models and animations (floodfection_forms.c), all Two
+# Betrayals'.
 # Written at start-up whatever is set: any multiplayer game joined may be
 # one. See port/linux/TAG_INJECTION.md.
 
@@ -14,7 +15,9 @@ wanted = ["always"]
 
 [keep]
 include_contains = ["flood"]
-include_prefixes = ["effects\\"]
+# (and the music's: levels\c40\music\c40_08's and c40_11's tracks)
+include_prefixes = ["effects\\", "sound\\music\\spooky6\\", "sound\\music\\nightmare_perc\\",
+                    "sound\\music\\nightmare\\"]
 
 [text]
 notice = "The multiplayer game modes need\nsome data from other maps.\nIt takes a moment."

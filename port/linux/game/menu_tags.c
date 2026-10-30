@@ -385,6 +385,8 @@ static char const *const port_function_names[] =
 	"mp profile set player options", "mp profile set item options", "mp profile set indicator opts",
 	/* (the gametype editor's OPENCE OPTIONS: OpenCE's gametypes, game_modes.c) */
 	"mp profile init opence options", "mp profile set opence options",
+	/* (and its FLOODFECTION SETTINGS' screens: infection.c's settings) */
+	"mp profile init floodfection options", "mp profile set floodfection options",
 	/* (Settings' OK: the Xbox's fails when the profile has no changes, the
 	settings' screens having written theirs to config.toml) */
 	"player profile save changes",

@@ -22,6 +22,43 @@ its own, closer indoors (the camera's cluster has no sky), TRUE when it is
 void infection_change_color(long player_index, union real_rgb_color *color);
 /* the game being played is Floodfection */
 boolean infection_floodfection_enabled(void);
+
+/* Floodfection's settings, in game_variant_options' floodfection bytes:
+each its byte, its first bit and its bits (menu_functions.c's spinners set
+them), its 0 the default; infection.c reads each through its table */
+#define FLOODFECTION_SETTING(byte, shift, bits) ((byte) << 16 | (shift) << 8 | (bits))
+#define FLOODFECTION_SETTING_BYTE(setting) ((setting) >> 16)
+#define FLOODFECTION_SETTING_SHIFT(setting) (((setting) >> 8) & 0xFF)
+#define FLOODFECTION_SETTING_BITS(setting) ((setting) & 0xFF)
+enum
+{
+	/* the human forms': health and speed (a table's place: 0 150%), and
+	shields (1 on) */
+	_floodfection_setting_human_health = FLOODFECTION_SETTING(0, 0, 3),
+	_floodfection_setting_human_speed = FLOODFECTION_SETTING(0, 3, 3),
+	_floodfection_setting_human_shields = FLOODFECTION_SETTING(0, 6, 1),
+	/* the elite forms': health and speed (0 200%), and no shields (1) */
+	_floodfection_setting_elite_health = FLOODFECTION_SETTING(1, 0, 3),
+	_floodfection_setting_elite_speed = FLOODFECTION_SETTING(1, 3, 3),
+	_floodfection_setting_elite_no_shields = FLOODFECTION_SETTING(1, 6, 1),
+	/* which zombies are elites (_floodfection_elites_*), and the chance of
+	each spawn of RANDOM's (a table's place: 0 25%) */
+	_floodfection_setting_elites = FLOODFECTION_SETTING(2, 0, 2),
+	_floodfection_setting_elite_chance = FLOODFECTION_SETTING(2, 2, 3),
+	/* the share of the players the last humans strengthened are (a table's
+	place: 0 10%, 1 none), and the last one not strengthened, not shown to
+	the zombies, and no Flood music (1 each) */
+	_floodfection_setting_last_stand = FLOODFECTION_SETTING(3, 0, 3),
+	_floodfection_setting_no_last_spartan_buff = FLOODFECTION_SETTING(3, 3, 1),
+	_floodfection_setting_no_last_spartan_shown = FLOODFECTION_SETTING(3, 4, 1),
+	_floodfection_setting_no_music = FLOODFECTION_SETTING(3, 5, 1)
+};
+enum
+{
+	_floodfection_elites_first = 0,
+	_floodfection_elites_none,
+	_floodfection_elites_random
+};
 /* the object is a Floodfection zombie's unit: hit, it bleeds as the Flood
 (projectiles.c), and a headshot does not kill it outright (damage.c) */
 boolean infection_floodfection_zombie(long object_index);

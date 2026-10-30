@@ -130,7 +130,7 @@ int main(int argc,char **argv)
   CHECK(options.infection_initial_zombies==1&&options.infection_zombie_speed==150&&options.infection_skull_damage==200&&
    options.infection_respawn_time==5&&options.infection_countdown==10,"out of range: the defaults");
   CHECK(options.gun_game_order==_gun_game_order_strongest_first,"an unknown order");
-  for(int index=0;index<(int)sizeof(options.reserved);index++) CHECK(options.reserved[index]==0,"reserved cleared");
+  for(int index=0;index<(int)sizeof(options.floodfection);index++) CHECK(options.floodfection[index]==0,"floodfection cleared");
  } else CASE("sanitize_keeps") {
   memset(&options,0,sizeof(options));
   options.mode=_game_mode_infection;options.infection_initial_zombies=16;options.infection_zombie_speed=200;

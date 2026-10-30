@@ -174,8 +174,16 @@ void game_modes_gametype(
 	case _gametype_infection:
 	case _gametype_floodfection:
 		options->mode = _game_mode_infection;
+		/* (Floodfection's Spartans: a shotgun and a pistol, and no weapons
+		on the map) */
 		if (index == _gametype_floodfection)
+		{
 			options->mode_variant = _game_mode_variant_floodfection;
+			options->loadout = _loadout_custom;
+			options->primary_weapon = _loadout_weapon_shotgun;
+			options->secondary_weapon = _loadout_weapon_pistol;
+			options->no_map_weapons = TRUE;
+		}
 		variant->universal_variant.vehicle_set = VEHICLE_SET_NONE;
 		variant->universal_variant.respawn_time = INFECTION_DEFAULT_RESPAWN_TIME * TICKS_PER_SECOND;
 		variant->universal_variant.suicide_penalty = 0;
@@ -248,7 +256,7 @@ void game_modes_options_default(
 	options->gun_game_order = _gun_game_order_strongest_first;
 	options->gun_game_melee_demotes = TRUE;
 	options->mode_variant = _game_mode_variant_none;
-	csmemset(options->reserved, 0, sizeof(options->reserved));
+	csmemset(options->floodfection, 0, sizeof(options->floodfection));
 }
 
 /* a byte option within its range, else its default */
@@ -288,7 +296,10 @@ void game_modes_options_sanitize(
 	{
 		options->mode_variant = _game_mode_variant_none;
 	}
-	csmemset(options->reserved, 0, sizeof(options->reserved));
+	/* (Floodfection's settings a Floodfection gametype's alone; each read
+	within its range: infection.c) */
+	if (options->mode_variant != _game_mode_variant_floodfection)
+		csmemset(options->floodfection, 0, sizeof(options->floodfection));
 }
 
 short game_modes_variant_mode(

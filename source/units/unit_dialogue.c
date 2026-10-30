@@ -96,6 +96,8 @@ symbols in this file:
 
 /* port: the AI's speech goes to the clients' copies (port/linux/game/network_actors.c) */
 void network_actors_note_speech(long unit_index, long sound_definition_index);
+/* port: a Floodfection zombie cries as the Flood, not its Spartan (port/linux/game/infection.c) */
+boolean infection_floodfection_zombie(long object_index);
 
 /* ---------- constants */
 
@@ -621,6 +623,10 @@ void unit_speak(
 	{
 		return;
 	}
+	/* port: a Floodfection zombie's Spartan says nothing (pain, death,
+	screams): its Flood's cries are infection.c's */
+	if (infection_floodfection_zombie(unit_index))
+		return;
 
 	if (play_type >= _unit_play_speech_immediate)
 	{

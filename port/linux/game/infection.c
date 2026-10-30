@@ -49,6 +49,7 @@ request #420 by arisson2001rojas-design.
 #include "game/game_globals.h"
 #include "game/players.h"
 #include "interface/hud.h"
+#include "interface/hud_messaging.h"
 #include "items/weapon_definitions.h"
 #include "items/weapons.h"
 #include "math/real_math.h"
@@ -66,6 +67,7 @@ request #420 by arisson2001rojas-design.
 #include "sound/sound_definitions.h"
 #include "tag_files/tag_groups.h"
 #include "text/unicode.h"
+#include "units/bipeds.h"
 #include "units/units.h"
 #include "units/unit_definitions.h"
 #include "halo_skulls.h"
@@ -329,6 +331,39 @@ boolean infection_floodfection_enabled(
 	return infection_floodfection();
 }
 
+/* ---- Floodfection's settings (the gametype's: infection.h's
+_floodfection_setting_*), a table's place each, its 0 the default */
+
+static short const floodfection_human_healths[] = { 150, 100, 125, 175, 200, 250, 300 };
+static short const floodfection_human_speeds[] = { 150, 100, 110, 125, 175, 200, 250 };
+static short const floodfection_elite_healths[] = { 200, 100, 125, 150, 175, 250, 300 };
+static short const floodfection_elite_speeds[] = { 200, 100, 125, 150, 175, 225, 250 };
+static short const floodfection_elite_chances[] = { 25, 10, 15, 20, 35, 50, 75, 100 };
+/* (0: no last stand) */
+static short const floodfection_last_stand_percents[] = { 10, 0, 5, 15, 20, 25, 33, 50 };
+
+static short floodfection_setting(
+	long setting)
+{
+	byte const *bytes = game_variant_options_get()->floodfection;
+
+	return (short)((bytes[FLOODFECTION_SETTING_BYTE(setting)] >> FLOODFECTION_SETTING_SHIFT(setting)) &
+		((1 << FLOODFECTION_SETTING_BITS(setting)) - 1));
+}
+
+/* the setting's value of its table (out of it: the default) */
+static short floodfection_setting_value(
+	long setting,
+	short const *table,
+	short count)
+{
+	short index = floodfection_setting(setting);
+
+	return table[index < count ? index : 0];
+}
+
+#define FLOODFECTION_SETTING_VALUE(setting, table) floodfection_setting_value(setting, table, NUMBEROF(table))
+
 boolean infection_floodfection_zombie(
 	long object_index)
 {
@@ -384,16 +419,21 @@ boolean infection_fog(
 	return TRUE;
 }
 
-/* ---- Floodfection's first zombies */
+/* ---- Floodfection's elites */
 
-/* the round's first zombies, by absolute player index (a bit each), until
-they leave: the host's, and as it last told every client (a client's, the
-host's word) */
+/* the zombies that are elites, by absolute player index (a bit each): the
+host's, and as it last told every client (a client's, the host's word).
+The host chooses by the gametype's ELITES: the round's first zombies (until
+they leave), none, or each zombie's spawn at its chance (floodfection_choose_elite) */
 #define FLOODFECTION_ORIGINAL_WORDS (HALO_PORT_MAXIMUM_NETWORK_PLAYERS / 32)
 
 static unsigned long floodfection_originals[FLOODFECTION_ORIGINAL_WORDS];
 static unsigned long floodfection_originals_sent[FLOODFECTION_ORIGINAL_WORDS];
 static boolean floodfection_originals_sent_valid;
+/* the host's: the round's first zombies, and the unit each player's elite
+was last chosen for */
+static unsigned long floodfection_first[FLOODFECTION_ORIGINAL_WORDS];
+static long floodfection_elite_unit[HALO_PORT_MAXIMUM_NETWORK_PLAYERS];
 
 struct floodfection_originals_message
 {
@@ -403,21 +443,64 @@ struct floodfection_originals_message
 	unsigned long originals[FLOODFECTION_ORIGINAL_WORDS];
 };
 
-static void floodfection_set_original(
+static void floodfection_set_bit(
+	unsigned long *bits,
 	long slot,
-	boolean original)
+	boolean set)
 {
 	unsigned long bit = 1UL << (slot & 31);
 
 	if (!VALID_INDEX(slot, HALO_PORT_MAXIMUM_NETWORK_PLAYERS))
 		return;
-	if (original)
-		floodfection_originals[slot >> 5] |= bit;
+	if (set)
+		bits[slot >> 5] |= bit;
 	else
-		floodfection_originals[slot >> 5] &= ~bit;
+		bits[slot >> 5] &= ~bit;
 }
 
-/* a zombie of the round's first, in Floodfection */
+static boolean floodfection_bit(
+	unsigned long const *bits,
+	long slot)
+{
+	return VALID_INDEX(slot, HALO_PORT_MAXIMUM_NETWORK_PLAYERS) && (bits[slot >> 5] & (1UL << (slot & 31))) != 0;
+}
+
+/* (the host) a player gone, or new: neither a first zombie nor an elite */
+static void floodfection_forget_player(
+	long slot)
+{
+	floodfection_set_bit(floodfection_originals, slot, FALSE);
+	floodfection_set_bit(floodfection_first, slot, FALSE);
+	if (VALID_INDEX(slot, HALO_PORT_MAXIMUM_NETWORK_PLAYERS))
+		floodfection_elite_unit[slot] = NONE;
+}
+
+/* (the host) a zombie's unit new to it: an elite or not, by ELITES */
+static void floodfection_choose_elite(
+	long slot,
+	long unit_index)
+{
+	boolean elite = FALSE;
+
+	if (!VALID_INDEX(slot, HALO_PORT_MAXIMUM_NETWORK_PLAYERS) || floodfection_elite_unit[slot] == unit_index)
+		return;
+	floodfection_elite_unit[slot] = unit_index;
+	switch (floodfection_setting(_floodfection_setting_elites))
+	{
+	case _floodfection_elites_none:
+		break;
+	case _floodfection_elites_random:
+		elite = local_random_range(0, 100) < FLOODFECTION_SETTING_VALUE(_floodfection_setting_elite_chance,
+			floodfection_elite_chances);
+		break;
+	default:
+		elite = floodfection_bit(floodfection_first, slot);
+		break;
+	}
+	floodfection_set_bit(floodfection_originals, slot, elite);
+}
+
+/* a zombie that is an elite, in Floodfection */
 static boolean infection_original(
 	long player_index)
 {
@@ -425,7 +508,7 @@ static boolean infection_original(
 	long slot = DATUM_INDEX_TO_ABSOLUTE_INDEX(player_index);
 
 	return role && role->role == _distributed_infection_role_zombie && infection_floodfection() &&
-		(floodfection_originals[slot >> 5] & (1UL << (slot & 31))) != 0;
+		floodfection_bit(floodfection_originals, slot);
 }
 
 void infection_send_originals(
@@ -496,31 +579,52 @@ void infection_handle_message(
 /* ---- Floodfection's voice */
 
 /* the Flood combat forms' cries (Two Betrayals', copied into the level with
-the burst: infection_tag_import), each machine's own, from a zombie's unit:
-hurt (its shields' and body's share fallen, at most so often), dying, and
-killing a human */
+the burst: infection_tag_import), each machine's own, from a zombie's unit
+(its Spartan's own voice silenced: unit_dialogue.c's unit_speak): hurt (its
+shields' and body's share fallen, at most so often), dying, killing a
+human, leaping and striking */
 enum
 {
 	_floodfection_sound_pain = 0,
 	_floodfection_sound_death,
 	_floodfection_sound_kill,
+	_floodfection_sound_leap,
+	_floodfection_sound_melee,
 	NUMBER_OF_FLOODFECTION_SOUNDS
 };
 
 #define FLOODFECTION_PAIN_TICKS (TICKS_PER_SECOND * 3 / 4)
+/* a jump's speed up from the ground (world units a tick), less a step off a
+ledge */
+#define FLOODFECTION_LEAP_SPEED 0.02f
 
 static char const *const floodfection_sound_tags[NUMBER_OF_FLOODFECTION_SOUNDS] =
 {
 	"sound\\dialog\\flood\\pain",
 	"sound\\dialog\\flood\\death",
 	"sound\\dialog\\flood\\flood_idle_combat",
+	"sound\\dialog\\flood\\leap",
+	"sound\\dialog\\flood\\melee",
 };
 static long floodfection_sound_definitions[NUMBER_OF_FLOODFECTION_SOUNDS];
 /* by absolute player index: the zombie's unit last heard, its shields' and
-body's share then, and when it last cried out in pain */
+body's share then, when it last cried out in pain, and whether it was in
+the air and striking */
 static long floodfection_voice_unit[HALO_PORT_MAXIMUM_NETWORK_PLAYERS];
 static real floodfection_voice_vitality[HALO_PORT_MAXIMUM_NETWORK_PLAYERS];
 static long floodfection_voice_time[HALO_PORT_MAXIMUM_NETWORK_PLAYERS];
+static boolean floodfection_voice_airborne[HALO_PORT_MAXIMUM_NETWORK_PLAYERS];
+static boolean floodfection_voice_melee[HALO_PORT_MAXIMUM_NETWORK_PLAYERS];
+/* the Flood's music (Two Betrayals', each machine's own, but with NO MUSIC):
+through the round, and from the last stand (the last humans strengthened,
+or the last one) on; which plays (NONE: none), the humans last counted, and
+when the last one's horde began (floodfection_round_update) */
+#define FLOODFECTION_MUSIC_ROUND "levels\\c40\\music\\c40_08"
+#define FLOODFECTION_MUSIC_LAST_STAND "levels\\c40\\music\\c40_11"
+static long floodfection_music_definitions[2];
+static long floodfection_music_playing = NONE;
+static long floodfection_humans_seen = NONE;
+static long floodfection_horde_start = NONE;
 /* the HUD's nav point the last human is shown with to the zombies (Slayer's
 target's), looked for once a map */
 static short floodfection_nav_index;
@@ -536,7 +640,8 @@ static void floodfection_sound(
 		object_impulse_sound_new(unit_index, definition_index, NONE, global_origin3d, global_forward3d, 1.0f);
 }
 
-/* each tick, each player: a living zombie's unit hurt since the last */
+/* each tick, each player: a living zombie's unit hurt since the last, off
+the ground (a jump: going up), or begun a strike */
 static void floodfection_voice(
 	long player_index,
 	boolean zombie)
@@ -545,8 +650,12 @@ static void floodfection_voice(
 	struct player_datum *player = player_get(player_index);
 	struct unit_datum *unit = player->unit_index != NONE && !player->quit_out_of_game ?
 		unit_try_and_get(player->unit_index) : NULL;
+	struct biped_datum *biped;
 	long now = game_time_get();
 	real vitality;
+	boolean airborne;
+	boolean melee;
+	boolean same;
 
 	if (!VALID_INDEX(slot, HALO_PORT_MAXIMUM_NETWORK_PLAYERS))
 		return;
@@ -555,16 +664,30 @@ static void floodfection_voice(
 		floodfection_voice_unit[slot] = NONE;
 		return;
 	}
+	same = floodfection_voice_unit[slot] == player->unit_index;
 	vitality = unit->object.body_vitality + unit->object.shield_vitality;
-	if (floodfection_voice_unit[slot] == player->unit_index && vitality < floodfection_voice_vitality[slot] - 0.005f &&
+	if (same && vitality < floodfection_voice_vitality[slot] - 0.005f &&
 		(floodfection_voice_time[slot] == NONE || now < floodfection_voice_time[slot] ||
 			now - floodfection_voice_time[slot] >= FLOODFECTION_PAIN_TICKS))
 	{
 		floodfection_voice_time[slot] = now;
 		floodfection_sound(_floodfection_sound_pain, player->unit_index);
 	}
+	biped = (struct biped_datum *)object_try_and_get_and_verify_type(player->unit_index, _object_mask_biped);
+	airborne = biped && TEST_FLAG(biped->biped.flags, _biped_airborne_bit);
+	melee = unit->unit.animation.state == _unit_state_melee_attack ||
+		unit->unit.animation.state == _unit_state_melee_airborne;
+	if (same && melee && !floodfection_voice_melee[slot])
+		floodfection_sound(_floodfection_sound_melee, player->unit_index);
+	else if (same && airborne && !floodfection_voice_airborne[slot] &&
+		unit->object.translational_velocity.k > FLOODFECTION_LEAP_SPEED && unit->object.parent_object_index == NONE)
+	{
+		floodfection_sound(_floodfection_sound_leap, player->unit_index);
+	}
 	floodfection_voice_unit[slot] = player->unit_index;
 	floodfection_voice_vitality[slot] = vitality;
+	floodfection_voice_airborne[slot] = airborne;
+	floodfection_voice_melee[slot] = melee;
 }
 
 /* how high above a dead zombie's feet its bits are thrown from (world units) */
@@ -620,6 +743,11 @@ void infection_tag_import(
 		{ 'snd!', "sound\\dialog\\flood\\pain" },
 		{ 'snd!', "sound\\dialog\\flood\\death" },
 		{ 'snd!', "sound\\dialog\\flood\\flood_idle_combat" },
+		{ 'snd!', "sound\\dialog\\flood\\leap" },
+		{ 'snd!', "sound\\dialog\\flood\\melee" },
+		/* (the level's music of the Flood: floodfection_music_tags) */
+		{ 'lsnd', FLOODFECTION_MUSIC_ROUND },
+		{ 'lsnd', FLOODFECTION_MUSIC_LAST_STAND },
 	};
 
 	tag_import_roots(GAME_MODES_PACK, SKULLS_FLOOD_DONOR, roots, (int)NUMBEROF(roots));
@@ -643,7 +771,14 @@ static void floodfection_burst_reset(
 		floodfection_voice_time[slot] = NONE;
 	}
 	csmemset(floodfection_originals, 0, sizeof(floodfection_originals));
+	csmemset(floodfection_first, 0, sizeof(floodfection_first));
+	csmemset(floodfection_elite_unit, 0xFF, sizeof(floodfection_elite_unit));
 	floodfection_originals_sent_valid = FALSE;
+	floodfection_music_definitions[0] = tag_loaded(LOOPING_SOUND_DEFINITION_TAG, FLOODFECTION_MUSIC_ROUND);
+	floodfection_music_definitions[1] = tag_loaded(LOOPING_SOUND_DEFINITION_TAG, FLOODFECTION_MUSIC_LAST_STAND);
+	floodfection_music_playing = NONE;
+	floodfection_humans_seen = NONE;
+	floodfection_horde_start = NONE;
 	floodfection_nav_index_found = FALSE;
 	csmemset(floodfection_fog_start, 0, sizeof(floodfection_fog_start));
 	csmemset(floodfection_fog_opaque, 0, sizeof(floodfection_fog_opaque));
@@ -792,17 +927,11 @@ static void infection_apply_shields(
 	}
 }
 
-/* a Floodfection zombie's body: half as much again as its unit's, a first
-zombie's twice (the maximum raised, its share of it kept, so turning heals
-no one); a human again gets the unit's back */
-#define FLOODFECTION_ZOMBIE_HEALTH_SCALE 1.5f
-#define FLOODFECTION_ORIGINAL_HEALTH_SCALE 2.0f
-/* and its speed, whatever the gametype says (percent) */
-#define FLOODFECTION_ZOMBIE_SPEED 150
-#define FLOODFECTION_ORIGINAL_SPEED 200
-
-/* (the scale set again each time: a client may be told a zombie is one of
-the first after its turn) */
+/* a Floodfection zombie's body: its form's share of its unit's (the
+gametype's: half as much again for a human form, twice for an elite; the
+maximum raised, its share of it kept, so turning heals no one); a human
+again gets the unit's back. (The scale set again each time: a client may
+be told a zombie is an elite after its turn) */
 static void infection_apply_health(
 	long slot,
 	long unit_index,
@@ -850,16 +979,20 @@ void infection_reconcile_player(
 	player->team_index = team;
 	player->network_player_data.team_index = (char)team;
 	player->speed_multiplier = !team ? 1.0f : !floodfection ? options->infection_zombie_speed / 100.0f :
-		(original ? FLOODFECTION_ORIGINAL_SPEED : FLOODFECTION_ZOMBIE_SPEED) / 100.0f;
+		(original ? FLOODFECTION_SETTING_VALUE(_floodfection_setting_elite_speed, floodfection_elite_speeds) :
+			FLOODFECTION_SETTING_VALUE(_floodfection_setting_human_speed, floodfection_human_speeds)) / 100.0f;
 	if (player->unit_index != NONE && (unit = unit_try_and_get(player->unit_index)) != NULL)
 	{
-		/* (Floodfection's zombies have none but the first, whatever the
-		option) */
+		/* (Floodfection's zombies' by their form, whatever ZOMBIE SHIELDS
+		says) */
 		infection_apply_shields(DATUM_INDEX_TO_ABSOLUTE_INDEX(player_index), player->unit_index, unit,
-			team && (floodfection ? !original : !options->infection_zombie_shields));
+			team && (!floodfection ? !options->infection_zombie_shields : original ?
+				floodfection_setting(_floodfection_setting_elite_no_shields) != 0 :
+				!floodfection_setting(_floodfection_setting_human_shields)));
 		infection_apply_health(DATUM_INDEX_TO_ABSOLUTE_INDEX(player_index), player->unit_index, unit,
-			!team || !floodfection ? 1.0f :
-			original ? FLOODFECTION_ORIGINAL_HEALTH_SCALE : FLOODFECTION_ZOMBIE_HEALTH_SCALE);
+			!team || !floodfection ? 1.0f : (original ?
+				FLOODFECTION_SETTING_VALUE(_floodfection_setting_elite_health, floodfection_elite_healths) :
+				FLOODFECTION_SETTING_VALUE(_floodfection_setting_human_health, floodfection_human_healths)) / 100.0f);
 		unit->object.owner_team_index = (short)team;
 		infection_color_unit(unit, player_index);
 		/* (a living zombie's grenades and powerups gone; a dead one's are its
@@ -976,6 +1109,14 @@ static void infection_equip(
 	unit = unit_get(player->unit_index);
 	if (TEST_FLAG(unit->object.damage_flags, _object_dead_bit))
 		return;
+	/* (a Floodfection zombie's new unit an elite or not, its form's speed,
+	health and shields at once) */
+	if (role->role == _distributed_infection_role_zombie && infection_floodfection() &&
+		VALID_INDEX(slot, HALO_PORT_MAXIMUM_NETWORK_PLAYERS) && floodfection_elite_unit[slot] != player->unit_index)
+	{
+		floodfection_choose_elite(slot, player->unit_index);
+		infection_reconcile_player(player_index);
+	}
 	if (infection.equipped_unit[slot] == player->unit_index)
 	{
 		if (role->role == _distributed_infection_role_human)
@@ -1052,7 +1193,7 @@ static void infection_player_added(
 	{
 		infection_delete_skull(slot);
 		csmemset(role, 0, sizeof(*role));
-		floodfection_set_original(slot, FALSE);
+		floodfection_forget_player(slot);
 		infection.last_stand_unit[slot] = NONE;
 		role->identity = infection_player_identity(player_index);
 		role->role = infection.state.phase >= _distributed_infection_active ? _distributed_infection_role_zombie :
@@ -1163,13 +1304,22 @@ static long infection_time_limit_ticks(
 
 /* ---- Floodfection's last stand */
 
-/* the humans strengthened once this few are left (a tenth of the players,
-rounded up: 11 players, 2), each living unit of theirs once: whole,
-overshielded, at least half of each weapon's most ammunition and a grenade
-more; and the last human again: overshielded, each weapon full and two
-grenades more. The host's, which its clients see in the units' shields,
-health and inventories it sends */
-#define FLOODFECTION_LAST_STAND_PERCENT 10
+/* the humans strengthened once this few are left (the gametype's LAST
+STAND of the players, rounded up: 10% of 11 players, 2), each living unit of
+theirs once: whole, overshielded, at least half of each weapon's most
+ammunition and a grenade more; and the last human again (but with LAST
+SPARTAN BUFF off): overshielded, each weapon full and two grenades more.
+The host's, which its clients see in the units' shields, health and
+inventories it sends */
+
+/* the humans left that the last stand begins at, of the players; 0 none */
+static long floodfection_last_stand_threshold(
+	long players)
+{
+	long percent = FLOODFECTION_SETTING_VALUE(_floodfection_setting_last_stand, floodfection_last_stand_percents);
+
+	return percent ? MAX(1, (players * percent + 99) / 100) : 0;
+}
 
 /* a share of each weapon's most ammunition at least (all: loaded too), a
 battery's charge as much, and grenades more of the first kind, as many as a
@@ -1238,9 +1388,12 @@ static void floodfection_last_stand(
 {
 	struct data_iterator iterator;
 	struct player_datum *player;
-	long threshold = MAX(1, (players * FLOODFECTION_LAST_STAND_PERCENT + 99) / 100);
+	long threshold;
 
-	if (!infection_floodfection() || humans > threshold)
+	if (!infection_floodfection())
+		return;
+	threshold = floodfection_last_stand_threshold(players);
+	if (humans > threshold && humans != 1)
 		return;
 	data_iterator_new(&iterator, player_data);
 	while ((player = (struct player_datum *)data_iterator_next(&iterator)) != NULL)
@@ -1255,7 +1408,7 @@ static void floodfection_last_stand(
 		{
 			continue;
 		}
-		if (infection.last_stand_unit[slot] != player->unit_index)
+		if (humans <= threshold && infection.last_stand_unit[slot] != player->unit_index)
 		{
 			infection.last_stand_unit[slot] = player->unit_index;
 			unit->object.body_vitality = 1.0f;
@@ -1263,7 +1416,8 @@ static void floodfection_last_stand(
 			floodfection_arm(unit, 0.5f, 1);
 			platform_log("infection: player %ld among the last %ld humans", slot, threshold);
 		}
-		if (humans == 1 && infection.last_human_unit != player->unit_index)
+		if (humans == 1 && infection.last_human_unit != player->unit_index &&
+			!floodfection_setting(_floodfection_setting_no_last_spartan_buff))
 		{
 			infection.last_human_unit = player->unit_index;
 			floodfection_overshield(unit);
@@ -1304,6 +1458,117 @@ static long floodfection_last_human_unit(
 	return unit_index;
 }
 
+/* the horde the last human hears (every machine: the Flood's cries all
+about, none from anywhere), its cries' ticks from its start */
+static struct
+{
+	short tick;
+	short sound;
+} const floodfection_horde[] =
+{
+	{ 0, _floodfection_sound_kill }, { 4, _floodfection_sound_leap }, { 9, _floodfection_sound_pain },
+	{ 13, _floodfection_sound_melee }, { 18, _floodfection_sound_kill }, { 24, _floodfection_sound_death },
+	{ 29, _floodfection_sound_leap }, { 36, _floodfection_sound_kill }, { 42, _floodfection_sound_melee },
+	{ 50, _floodfection_sound_pain }, { 57, _floodfection_sound_kill }, { 66, _floodfection_sound_leap },
+	{ 75, _floodfection_sound_kill }, { 88, _floodfection_sound_death },
+};
+
+static void floodfection_print(
+	wchar_t const *text,
+	long only_player_index)
+{
+	short local_player_index;
+
+	for (local_player_index = 0; local_player_index < local_player_count(); local_player_index++)
+	{
+		long player_index = local_player_get_player_index(local_player_index);
+
+		if (player_index != NONE && (only_player_index == NONE || player_index == only_player_index))
+			hud_print_message(local_player_index, text);
+	}
+}
+
+/* each tick, every machine (the host's state): the humans left told when
+the last stand's few or fewer are left, and the last one ("Last Spartan
+standing"), whom the horde greets; and the Flood's music, the last
+stand's once it began */
+static void floodfection_round_update(
+	void)
+{
+	struct data_iterator iterator;
+	struct player_datum *player;
+	long humans = 0;
+	long players = 0;
+	long last_player_index = NONE;
+	long threshold;
+	long music = NONE;
+	long now = game_time_get();
+	short index;
+
+	if (!infection_floodfection())
+		return;
+	data_iterator_new(&iterator, player_data);
+	while ((player = (struct player_datum *)data_iterator_next(&iterator)) != NULL)
+	{
+		struct distributed_infection_player *role = infection_player(iterator.datum_index);
+
+		if (player->quit_out_of_game || !role || role->role == _distributed_infection_role_none)
+			continue;
+		players++;
+		if (role->role == _distributed_infection_role_human)
+		{
+			humans++;
+			last_player_index = iterator.datum_index;
+		}
+	}
+	threshold = floodfection_last_stand_threshold(players);
+	if (infection.state.phase != _distributed_infection_active)
+		floodfection_humans_seen = NONE;
+	else if (humans != floodfection_humans_seen && humans > 0)
+	{
+		if (humans == 1)
+		{
+			floodfection_print(L"Last Spartan standing", NONE);
+			floodfection_print(L"You are the last Spartan: the Flood is coming", last_player_index);
+			floodfection_horde_start = now;
+		}
+		else if (humans <= threshold && (floodfection_humans_seen == NONE || humans < floodfection_humans_seen))
+		{
+			wchar_t text[64];
+
+			usnprintf(text, NUMBEROF(text) - 1, L"Only %ld Spartans remain", humans);
+			text[NUMBEROF(text) - 1] = 0;
+			floodfection_print(text, NONE);
+		}
+		floodfection_humans_seen = humans;
+	}
+	/* (the horde's cries due this tick) */
+	if (floodfection_horde_start != NONE)
+	{
+		long elapsed = now - floodfection_horde_start;
+
+		for (index = 0; index < (short)NUMBEROF(floodfection_horde); index++)
+		{
+			long definition_index = floodfection_sound_definitions[floodfection_horde[index].sound];
+
+			if (floodfection_horde[index].tick == elapsed && definition_index != NONE)
+				unspatialized_impulse_sound_new(definition_index, 1.0f);
+		}
+		if (elapsed < 0 || elapsed > floodfection_horde[NUMBEROF(floodfection_horde) - 1].tick)
+			floodfection_horde_start = NONE;
+	}
+	if (infection.state.phase == _distributed_infection_active && !floodfection_setting(_floodfection_setting_no_music))
+		music = floodfection_music_definitions[humans == 1 || humans <= threshold ? 1 : 0];
+	if (music != floodfection_music_playing)
+	{
+		if (floodfection_music_playing != NONE)
+			scripted_looping_sound_stop(floodfection_music_playing);
+		floodfection_music_playing = music;
+		if (music != NONE)
+			scripted_looping_sound_start(music, NONE, 1.0f);
+	}
+}
+
 void infection_render_nav_points(
 	short local_player_index)
 {
@@ -1315,6 +1580,7 @@ void infection_render_nav_points(
 	real_point3d position;
 
 	if (!role || role->role != _distributed_infection_role_zombie ||
+		floodfection_setting(_floodfection_setting_no_last_spartan_shown) ||
 		(own_unit_index = player_get(player_index)->unit_index) == NONE ||
 		(unit_index = floodfection_last_human_unit()) == NONE)
 	{
@@ -1352,6 +1618,7 @@ static void infection_update(
 
 	if (infection.slayer.update)
 		infection.slayer.update();
+	floodfection_round_update();
 	if (network_game_distributed_client() || infection.state.phase == _distributed_infection_finished)
 		return;
 	infection_send_originals(NONE);
@@ -1387,7 +1654,7 @@ static void infection_update(
 			infection.equipped_unit[index] = NONE;
 			infection.killed_unit[index] = NONE;
 			infection.last_stand_unit[index] = NONE;
-			floodfection_set_original(index, FALSE);
+			floodfection_forget_player(index);
 			csmemset(&infection.state.players[index], 0, sizeof(infection.state.players[index]));
 			infection.state.revision++;
 		}
@@ -1443,7 +1710,7 @@ static void infection_update(
 		candidates[index] = chosen;
 		infection.state.players[slot].role = _distributed_infection_role_zombie;
 		infection.equipped_unit[slot] = NONE;
-		floodfection_set_original(slot, infection_floodfection());
+		floodfection_set_bit(floodfection_first, slot, infection_floodfection());
 		infection_reconcile_player(chosen);
 		infection_equip(chosen);
 	}

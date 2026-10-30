@@ -28,6 +28,7 @@
 		<child widget="main_menu/multiplayer_type_select/server_settings/op_game_type" x="54" y="217"/>
 		<child widget="main_menu/multiplayer_type_select/server_settings/op_player_options" x="54" y="241"/>
 		<child widget="main_menu/multiplayer_type_select/server_settings/op_item_options" x="54" y="265"/>
+		<child widget="main_menu/multiplayer_type_select/server_settings/op_floodfection_options" x="54" y="265"/>
 		<child widget="main_menu/multiplayer_type_select/server_settings/op_vehicle_options" x="54" y="289"/>
 		<child widget="main_menu/multiplayer_type_select/server_settings/op_indicator_options" x="54" y="313"/>
 		<child widget="main_menu/multiplayer_type_select/server_settings/op_team_options" x="54" y="337"/>
@@ -212,6 +213,14 @@
 	</widget>
 	<widget name="main_menu/multiplayer_type_select/server_settings/team_options_value" type="text" controller="1" width="280" height="22" font="ui\small_ui" color="#FF2896FF" align="center" text_y="5" text_flags="no_focus_test">
 	</widget>
+	<widget name="main_menu/multiplayer_type_select/server_settings/op_floodfection_options" width="512" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/option_bkds" color="#FF2896FF">
+		<on event="a" run="port setup edit" open="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/floodfection_screen"/>
+		<on event="start" run="port setup edit" open="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/floodfection_screen"/>
+		<on event="left_mouse" run="mouse emit accept event"/>
+		<child widget="main_menu/multiplayer_type_select/server_settings/floodfection_options_label"/>
+	</widget>
+	<widget name="main_menu/multiplayer_type_select/server_settings/floodfection_options_label" type="text" controller="1" width="300" height="22" string_list="main_menu/multiplayer_type_select/server_settings/labels" string_index="18" font="ui\large_ui" color="#FF2896FF" text_x="13" text_y="4">
+	</widget>
 	<widget name="main_menu/multiplayer_type_select/server_settings/op_tag_profile" width="512" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/option_bkds" color="#FF2896FF">
 		<on event="a" run="ss tag profile change"/>
 		<on event="start" run="ss tag profile change"/>
@@ -250,6 +259,7 @@
 		<string text="SKULLS:"/>
 		<string text="BOTS:"/>
 		<string text="TAG PROFILE:"/>
+		<string text="FLOODFECTION SETTINGS:"/>
 	</strings>
 	<strings name="main_menu/multiplayer_type_select/server_settings/help_strings">
 		<string text=""/>
@@ -273,6 +283,7 @@
 		<string text="Computer players in this game: how many, how\nwell they play, and their teams. Slayer only."/>
 		<string text="Listed for everyone through the brokers, and on\nthe master servers with your publisher key."/>
 		<string text="Chosen for the whole game before this screen:\nwho can see it. A goes back to it."/>
+		<string text="The Spartans' loadout and last stands, and the\ninfected's forms, for this game."/>
 	</strings>
 	<widget name="main_menu/multiplayer_type_select/server_settings/coop_options/coop_options_screen" width="640" height="480" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/gradient">
 		<child widget="main_menu/multiplayer_type_select/server_settings/coop_options/header_coop_options"/>

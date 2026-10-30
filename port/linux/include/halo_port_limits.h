@@ -155,8 +155,9 @@ shared weapons); 5 its campaign profiles in co-op (the same share, of a
 campaign level); 6 copies Floodfection's burst into a level before a
 multiplayer profile's tags, which moves theirs (randomizer.c); 7 its
 zombies' cries too, which move them again, and tells its first zombies
-(_distributed_message_floodfection_originals) */
-#define HALO_PORT_MOD_NETWORK_VERSION 7
+(_distributed_message_floodfection_originals); 8 its leap and melee cries
+and its music, which move them again */
+#define HALO_PORT_MOD_NETWORK_VERSION 8
 #define HALO_PORT_MODDED_VERSION_MARK 0xFF00
 #define HALO_PORT_ADVERTISED_MODDED_VERSION (HALO_PORT_MODDED_VERSION_MARK | HALO_PORT_MOD_NETWORK_VERSION)
 
