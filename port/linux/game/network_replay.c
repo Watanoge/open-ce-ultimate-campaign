@@ -514,7 +514,7 @@ boolean network_replay_info(
 		snprintf(info->why, sizeof(info->why), "Recorded before replays could be played back: it cannot be watched.");
 		return FALSE;
 	}
-	if (network_version != HALO_PORT_NETWORK_VERSION)
+	if (!network_replay_network_version_playable(network_version))
 	{
 		snprintf(info->why, sizeof(info->why), "Recorded by a build of network version %lu: this one plays %d.",
 			network_version, HALO_PORT_NETWORK_VERSION);

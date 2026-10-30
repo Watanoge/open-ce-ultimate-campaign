@@ -163,6 +163,20 @@ struct replay_facing
 and the first whose records are one zlib stream after the header */
 #define REPLAY_PLAYABLE_FORMAT 2
 #define REPLAY_COMPRESSED_FORMAT 3
+/* the oldest network version played (the first whose replays could be:
+format 2), and the distributed messages whose layout changed since, not
+read from a replay older than the version that changed them
+(port/linux/network_format.txt's fingerprints; 40 changed only a client's
+join request, which no replay has) */
+#define REPLAY_OLDEST_NETWORK_VERSION 39
+static struct
+{
+	unsigned long changed_in;
+	byte type;
+} const replay_changed_messages[] = {
+	/* (41: a vote's status, with the vote to end the game's) */
+	{ 41, _distributed_message_votekick_status },
+};
 /* the largest replay read (all of it, at once) */
 #define REPLAY_MAXIMUM_FILE_SIZE (256 * 1024 * 1024)
 /* how long the main menu waits after the replay's end, or the game's */
@@ -343,6 +357,8 @@ static struct
 	boolean synchronized;
 	/* the player watched (a datum index), NONE before one is */
 	long watched;
+	/* the network version it was recorded in (older ones: replay_changed_messages) */
+	unsigned long network_version;
 	/* a client's recording, and its own players (by absolute index): only
 	theirs is a view through the eyes, the others' it never had */
 	boolean client;
@@ -762,13 +778,14 @@ boolean network_replay_watch(
 		playback_free();
 		return FALSE;
 	}
-	if (network_version != HALO_PORT_NETWORK_VERSION)
+	if (!network_replay_network_version_playable(network_version))
 	{
 		snprintf(why, (size_t)why_size, "This replay is of network version %lu; this build plays %d.",
 			network_version, HALO_PORT_NETWORK_VERSION);
 		playback_free();
 		return FALSE;
 	}
+	playback.network_version = network_version;
 	if (format >= REPLAY_COMPRESSED_FORMAT && !playback_inflate(header_size))
 	{
 		snprintf(why, (size_t)why_size, "The replay cannot be read.");
@@ -806,6 +823,30 @@ boolean network_replay_watch(
 	playback.starting = TRUE;
 	error(_error_log, "replay: playing %s (%s), from tick %ld", path, game.map.name, playback.start_tick);
 	return TRUE;
+}
+
+boolean network_replay_network_version_playable(
+	unsigned long network_version)
+{
+	return network_version >= REPLAY_OLDEST_NETWORK_VERSION && network_version <= HALO_PORT_NETWORK_VERSION;
+}
+
+boolean network_replay_skips_message(
+	byte type)
+{
+	short index;
+
+	if (!network_replay_playing())
+		return FALSE;
+	for (index = 0; index < (short)NUMBEROF(replay_changed_messages); index++)
+	{
+		if (replay_changed_messages[index].type == type &&
+			playback.network_version < replay_changed_messages[index].changed_in)
+		{
+			return TRUE;
+		}
+	}
+	return FALSE;
 }
 
 boolean network_replay_playing(

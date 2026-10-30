@@ -48,10 +48,16 @@ Where the proposal differs from this netcode:
   phase 0 has measured what takes the room.
 - **Out-of-order packets.** The host records what it sends, before the
   transport, so nothing is lost or reordered.
-- **Versions.** The messages change with nearly every network version (39
-  now). A replay plays only on a build of its network version. The header
-  says which, with the map and the game variant, and anything else is
-  refused with a message. A Custom Edition map's replay needs that map
+- **Versions.** The messages can change with a network version (41 now).
+  The header says which a replay was recorded in, with the map and the
+  game variant. A replay plays on a build of its network version or of a
+  later one whose messages are its own but for some kinds, which are not
+  read from it (`replay_changed_messages`, from
+  `port/linux/network_format.txt`'s fingerprints: 40 changed only a
+  client's join request, no replay's; 41 a vote's status). The oldest
+  played is 39, the first whose replays could be; older ones are refused
+  with a message. A version that changes what a replay has more deeply
+  sets the oldest to itself. A Custom Edition map's replay needs that map
   (map sharing's hashes can check it).
 
 ## The plan
