@@ -846,13 +846,9 @@ static int listing_wanted(const unsigned char *payload, int size, int retained, 
 			hidden_heard(key_hash, _hidden_newer);
 		return 0;
 	}
-	if (!listing_current(&listing, retained))
-	{
-		if (!retained && !(listing.flags & _listing_closed))
-			hidden_heard(key_hash, _hidden_clock);
-		return 0;
-	}
-	return 1;
+	if (!listing_current(&listing, retained) && !retained && !(listing.flags & _listing_closed))
+		hidden_heard(key_hash, _hidden_clock);
+	return listing_current(&listing, retained);
 }
 static void update_browsing(void)
 {

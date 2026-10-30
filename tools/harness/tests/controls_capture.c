@@ -26,6 +26,10 @@ static int config_write(char const *name,char const *value){(void)name;snprintf(
 static void halo_input_name(int input,char *name,unsigned size){snprintf(name,size,"Key %d",input);}
 static int went_back;
 static void ui_widget_port_go_back(struct widget_instance *w){(void)w;went_back++;}
+/* (the controller's rebinding, xinput_sdl.c: no controller here) */
+static void halo_gamepad_capture_begin(void){}
+static int halo_gamepad_capture_poll(int *input){(void)input;return 0;}
+static void halo_gamepad_capture_end(void){}
 #include "under_test.inc"
 /* sdl_platform.c's key event while a binding is waited for */
 static void key_down(int scancode,int result)

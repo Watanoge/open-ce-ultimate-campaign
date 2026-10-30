@@ -387,7 +387,7 @@ long hud_hires_placeholder_asset(unsigned long data)
 	long index;
 
 	if (!(placeholder_filter[bit >> 3] & 1 << (bit & 7)))
-		return 0;
+		return -1;
 	for (index = 0; data && index < placeholder_count; index++)
 	{
 		if (placeholders[index].data == data)
