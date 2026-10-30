@@ -3710,9 +3710,9 @@ static void theater_update(struct widget_instance *list)
 	text_set_length(named(details, "theater_details_text", 0), wide, NUMBEROF(wide));
 }
 
-/* "port theater delete" (A on DELETE): the first press asks, the second
-deletes the replay chosen (the one asked about, unless another was chosen
-since) */
+/* "port theater delete" (A on DELETE, or the west button on a replay's
+row): the first press asks, the second deletes the replay chosen (the one
+asked about, unless another was chosen since) */
 static boolean theater_delete(void)
 {
 	char const *name;
@@ -3724,7 +3724,14 @@ static boolean theater_delete(void)
 	if (strcmp(theater.deleting, name))
 	{
 		strcpy(theater.deleting, name);
-		snprintf(theater.why, sizeof(theater.why), "Press DELETE again to delete it.");
+		/* (the consoles have no DELETE: their west button's name) */
+#if defined(HALO_SWITCH)
+		snprintf(theater.why, sizeof(theater.why), "Press Y again to delete it.");
+#elif defined(HALO_PS5)
+		snprintf(theater.why, sizeof(theater.why), "Press SQUARE again to delete it.");
+#else
+		snprintf(theater.why, sizeof(theater.why), "Press DELETE (or X) again to delete it.");
+#endif
 		return TRUE;
 	}
 	theater.deleting[0] = 0;

@@ -2893,7 +2893,11 @@ def _theater() -> list:
                       '<child widget="main_menu/new_select/sel_list_desc_bkd"/>',
                       f'<child widget="{base}/theater_list"/>',
                       f'<child widget="{base}/header_theater"/>',
-                      f'<child widget="{base}/theater_qr_text" platform="switch ps5"/>'])
+                      f'<child widget="{base}/theater_qr_text" platform="switch ps5"/>',
+                      # (the consoles' DELETE: a hint of the west button
+                      # where the button bar's would be, which a touchscreen
+                      # keeps; under its row's place, theater_list's bar at 414)
+                      f'<child widget="{base}/theater_delete_hint" x="130" y="415" platform="switch ps5"/>'])
     lines += _header(f"{base}/header_theater", f"{base}/header_theater")
     rows = []
     for index in range(THEATER_ROWS):
@@ -2908,6 +2912,9 @@ def _theater() -> list:
                           ("bitmap", "bitmaps/sel_list_item_bkd_top" if index == 0 else "bitmaps/sel_list_item_bkd"),
                           ("color", "#FF2896FF")],
                          ['<on event="a" run="port theater watch"/>', '<on event="start" run="port theater watch"/>',
+                          # (the west face button - X, a Switch's Y, a PS5's
+                          # Square - deletes the replay, asking first)
+                          '<on event="x" run="port theater delete"/>',
                           '<on event="left_mouse" run="mouse emit accept event"/>',
                           f'<child widget="{base}/theater_replay_name" x="12"/>',
                           f'<child widget="{base}/theater_replay_length" x="290"/>'])
@@ -2933,7 +2940,7 @@ def _theater() -> list:
                      [("type", "column_list"), ("width", 640), ("height", 28),
                       ("flags", "pass_unhandled_to_focused_child left_right_tabs_items")],
                      [f'<child widget="{base}/button_record" y="1"/>',
-                      f'<child widget="{base}/button_delete" x="130" y="1"/>',
+                      f'<child widget="{base}/button_delete" x="130" y="1" platform="desktop android web"/>',
                       f'<child widget="{base}/button_export" x="260" y="1" platform="android"/>',
                       f'<child widget="{base}/button_back" x="510" y="1"/>'])
     # (its words a string list's, OFF and ON, which "port theater update"
@@ -2946,8 +2953,13 @@ def _theater() -> list:
                      ['<on event="a" run="port theater record"/>', '<on event="start" run="port theater record"/>',
                       '<on event="left_mouse" run="mouse emit accept event"/>'])
     lines += _strings(f"{base}/record_strings", ["RECORD: OFF", "RECORD: ON"])
-    lines += _text_button(f"{base}/button_delete", "DELETE", ['<on event="a" run="port theater delete"/>',
-                                                             '<on event="start" run="port theater delete"/>'])
+    lines += _text_button(f"{base}/button_delete", "%x-button DELETE", ['<on event="a" run="port theater delete"/>',
+                                                                      '<on event="start" run="port theater delete"/>'])
+    lines += _widget(f"{base}/theater_delete_hint", [("type", "text"), ("controller", 1), ("width", 128),
+                                                     ("height", 24), ("text", "%x-button DELETE"),
+                                                     ("font", "ui\\small_ui"), ("color", "#FFFFFFFF"),
+                                                     ("align", "center"), ("text_y", 2),
+                                                     ("text_flags", "no_focus_test")], [])
     lines += _text_button(f"{base}/button_export", "EXPORT", ['<on event="a" run="port theater export"/>',
                                                              '<on event="start" run="port theater export"/>'])
     lines += _text_button(f"{base}/button_back", "BACK", ['<on event="a" back="true"/>',
