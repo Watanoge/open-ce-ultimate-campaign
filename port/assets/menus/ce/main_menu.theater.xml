@@ -13,12 +13,15 @@
 		<child widget="main_menu/theater/theater_list"/>
 		<child widget="main_menu/theater/header_theater"/>
 		<child widget="main_menu/theater/theater_qr_text" platform="switch ps5"/>
-		<child widget="main_menu/theater/theater_delete_hint" x="138" y="415" platform="switch ps5"/>
+		<child widget="main_menu/theater/theater_record_hint" x="8" y="415" platform="switch ps5"/>
+		<child widget="main_menu/theater/theater_delete_hint" x="160" y="415" platform="switch ps5"/>
 	</widget>
 	<widget name="main_menu/theater/header_theater" controller="1" left="35" top="11" width="363" height="59" bitmap="main_menu/theater/header_theater">
 	</widget>
 	<widget name="main_menu/theater/theater_list" type="column_list" width="640" height="480" flags="pass_unhandled_to_focused_child up_down_tabs_children" description="main_menu/theater/theater_details">
 		<data input="port theater update"/>
+		<on event="x" run="port theater delete"/>
+		<on event="y" run="port theater record"/>
 		<child widget="main_menu/theater/op_replay_1" x="20" y="73"/>
 		<child widget="main_menu/theater/op_replay_2" x="20" y="103"/>
 		<child widget="main_menu/theater/op_replay_3" x="20" y="133"/>
@@ -34,8 +37,6 @@
 	<widget name="main_menu/theater/op_replay_1" width="390" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/sel_list_item_bkd_top" color="#FF2896FF">
 		<on event="a" run="port theater watch"/>
 		<on event="start" run="port theater watch"/>
-		<on event="x" run="port theater delete"/>
-		<on event="y" run="port theater record"/>
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<child widget="main_menu/theater/theater_replay_name" x="12"/>
 		<child widget="main_menu/theater/theater_replay_length" x="290"/>
@@ -43,8 +44,6 @@
 	<widget name="main_menu/theater/op_replay_2" width="390" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/sel_list_item_bkd" color="#FF2896FF">
 		<on event="a" run="port theater watch"/>
 		<on event="start" run="port theater watch"/>
-		<on event="x" run="port theater delete"/>
-		<on event="y" run="port theater record"/>
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<child widget="main_menu/theater/theater_replay_name" x="12"/>
 		<child widget="main_menu/theater/theater_replay_length" x="290"/>
@@ -52,8 +51,6 @@
 	<widget name="main_menu/theater/op_replay_3" width="390" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/sel_list_item_bkd" color="#FF2896FF">
 		<on event="a" run="port theater watch"/>
 		<on event="start" run="port theater watch"/>
-		<on event="x" run="port theater delete"/>
-		<on event="y" run="port theater record"/>
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<child widget="main_menu/theater/theater_replay_name" x="12"/>
 		<child widget="main_menu/theater/theater_replay_length" x="290"/>
@@ -61,8 +58,6 @@
 	<widget name="main_menu/theater/op_replay_4" width="390" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/sel_list_item_bkd" color="#FF2896FF">
 		<on event="a" run="port theater watch"/>
 		<on event="start" run="port theater watch"/>
-		<on event="x" run="port theater delete"/>
-		<on event="y" run="port theater record"/>
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<child widget="main_menu/theater/theater_replay_name" x="12"/>
 		<child widget="main_menu/theater/theater_replay_length" x="290"/>
@@ -70,8 +65,6 @@
 	<widget name="main_menu/theater/op_replay_5" width="390" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/sel_list_item_bkd" color="#FF2896FF">
 		<on event="a" run="port theater watch"/>
 		<on event="start" run="port theater watch"/>
-		<on event="x" run="port theater delete"/>
-		<on event="y" run="port theater record"/>
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<child widget="main_menu/theater/theater_replay_name" x="12"/>
 		<child widget="main_menu/theater/theater_replay_length" x="290"/>
@@ -79,8 +72,6 @@
 	<widget name="main_menu/theater/op_replay_6" width="390" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/sel_list_item_bkd" color="#FF2896FF">
 		<on event="a" run="port theater watch"/>
 		<on event="start" run="port theater watch"/>
-		<on event="x" run="port theater delete"/>
-		<on event="y" run="port theater record"/>
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<child widget="main_menu/theater/theater_replay_name" x="12"/>
 		<child widget="main_menu/theater/theater_replay_length" x="290"/>
@@ -88,8 +79,6 @@
 	<widget name="main_menu/theater/op_replay_7" width="390" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/sel_list_item_bkd" color="#FF2896FF">
 		<on event="a" run="port theater watch"/>
 		<on event="start" run="port theater watch"/>
-		<on event="x" run="port theater delete"/>
-		<on event="y" run="port theater record"/>
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<child widget="main_menu/theater/theater_replay_name" x="12"/>
 		<child widget="main_menu/theater/theater_replay_length" x="290"/>
@@ -97,8 +86,6 @@
 	<widget name="main_menu/theater/op_replay_8" width="390" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/sel_list_item_bkd" color="#FF2896FF">
 		<on event="a" run="port theater watch"/>
 		<on event="start" run="port theater watch"/>
-		<on event="x" run="port theater delete"/>
-		<on event="y" run="port theater record"/>
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<child widget="main_menu/theater/theater_replay_name" x="12"/>
 		<child widget="main_menu/theater/theater_replay_length" x="290"/>
@@ -106,8 +93,6 @@
 	<widget name="main_menu/theater/op_replay_9" width="390" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/sel_list_item_bkd" color="#FF2896FF">
 		<on event="a" run="port theater watch"/>
 		<on event="start" run="port theater watch"/>
-		<on event="x" run="port theater delete"/>
-		<on event="y" run="port theater record"/>
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<child widget="main_menu/theater/theater_replay_name" x="12"/>
 		<child widget="main_menu/theater/theater_replay_length" x="290"/>
@@ -115,8 +100,6 @@
 	<widget name="main_menu/theater/op_replay_10" width="390" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/sel_list_item_bkd" color="#FF2896FF">
 		<on event="a" run="port theater watch"/>
 		<on event="start" run="port theater watch"/>
-		<on event="x" run="port theater delete"/>
-		<on event="y" run="port theater record"/>
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<child widget="main_menu/theater/theater_replay_name" x="12"/>
 		<child widget="main_menu/theater/theater_replay_length" x="290"/>
@@ -133,7 +116,7 @@
 	<widget name="main_menu/theater/theater_details_text" type="text" controller="1" left="412" top="84" width="200" height="318" font="ui\small_ui" color="#FF2896FF">
 	</widget>
 	<widget name="main_menu/theater/button_bar" type="column_list" width="640" height="28" flags="pass_unhandled_to_focused_child left_right_tabs_items">
-		<child widget="main_menu/theater/button_record" y="1"/>
+		<child widget="main_menu/theater/button_record" y="1" platform="desktop android web"/>
 		<child widget="main_menu/theater/button_delete" x="130" y="1" platform="desktop android web"/>
 		<child widget="main_menu/theater/button_export" x="260" y="1" platform="android"/>
 		<child widget="main_menu/theater/button_back" x="510" y="1"/>
@@ -152,6 +135,12 @@
 		<on event="start" run="port theater delete"/>
 		<on event="left_mouse" run="mouse emit accept event"/>
 	</widget>
+	<widget name="main_menu/theater/theater_record_hint" type="text" controller="1" width="150" height="24" string_list="main_menu/theater/record_hint_strings" string_index="0" font="ui\small_ui" color="#FFFFFFFF" text_y="2" text_flags="no_focus_test">
+	</widget>
+	<strings name="main_menu/theater/record_hint_strings">
+		<string text="%y-button RECORD: OFF"/>
+		<string text="%y-button RECORD: ON"/>
+	</strings>
 	<widget name="main_menu/theater/theater_delete_hint" type="text" controller="1" width="200" height="24" text="%x-button DELETE" font="ui\small_ui" color="#FFFFFFFF" text_y="2" text_flags="no_focus_test">
 	</widget>
 	<widget name="main_menu/theater/button_export" type="text" width="128" height="24" bitmap="bitmaps/text_button_background" text="EXPORT" font="ui\small_ui" color="#FFFFFFFF" align="center" text_y="2">

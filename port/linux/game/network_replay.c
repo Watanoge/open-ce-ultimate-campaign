@@ -173,7 +173,9 @@ boolean network_replay_delete(
 		return FALSE;
 	network_replay_folder(path, REPLAY_PATH_SIZE);
 	snprintf(path + strlen(path), sizeof(path) - strlen(path), "/%s", name);
-	return DeleteFileA(path) != 0;
+	/* (the path the card's, as it is: DeleteFileA takes the game's, and put
+	this one under the data folder again, where there is no such file) */
+	return remove(path) == 0;
 }
 
 static unsigned long replay_get_long(
@@ -700,9 +702,8 @@ void network_replay_stop(
 		/* (a game of a few seconds, left at once, is no replay) */
 		if (ticks < REPLAY_MINIMUM_TICKS)
 		{
-			DeleteFileA(replay.path);
-			error(_error_log, "replay: %s was %ld ticks long, under %d seconds: deleted", replay.path, ticks,
-				REPLAY_MINIMUM_TICKS / TICKS_PER_SECOND);
+			error(_error_log, "replay: %s was %ld ticks long, under %d seconds: %s", replay.path, ticks,
+				REPLAY_MINIMUM_TICKS / TICKS_PER_SECOND, remove(replay.path) == 0 ? "deleted" : "NOT deleted");
 			replay.considered = FALSE;
 			replay.client = FALSE;
 			return;

@@ -2894,10 +2894,11 @@ def _theater() -> list:
                       f'<child widget="{base}/theater_list"/>',
                       f'<child widget="{base}/header_theater"/>',
                       f'<child widget="{base}/theater_qr_text" platform="switch ps5"/>',
-                      # (the consoles' DELETE: a hint of the west button
-                      # beside RECORD, where the button bar's DELETE would be,
+                      # (the consoles' RECORD and DELETE: hints of the north
+                      # and west buttons where the button bar's would be,
                       # which a touchscreen keeps; theater_list's bar at 414)
-                      f'<child widget="{base}/theater_delete_hint" x="138" y="415" platform="switch ps5"/>'])
+                      f'<child widget="{base}/theater_record_hint" x="8" y="415" platform="switch ps5"/>',
+                      f'<child widget="{base}/theater_delete_hint" x="160" y="415" platform="switch ps5"/>'])
     lines += _header(f"{base}/header_theater", f"{base}/header_theater")
     rows = []
     for index in range(THEATER_ROWS):
@@ -2905,19 +2906,21 @@ def _theater() -> list:
     lines += _widget(f"{base}/theater_list", [("type", "column_list"), ("width", 640), ("height", 480),
                                               ("flags", "pass_unhandled_to_focused_child up_down_tabs_children"),
                                               ("description", f"{base}/theater_details")],
-                     ['<data input="port theater update"/>', *rows, f'<child widget="{base}/button_bar" y="414"/>'])
+                     ['<data input="port theater update"/>',
+                      # (the west face button - X, a Switch's Y, a PS5's
+                      # Square - deletes the replay chosen, asking first; the
+                      # north - Y, a Switch's X, a PS5's Triangle - turns
+                      # RECORD on or off: the list's, as the main menu's X is,
+                      # whatever row has the focus)
+                      '<on event="x" run="port theater delete"/>',
+                      '<on event="y" run="port theater record"/>',
+                      *rows, f'<child widget="{base}/button_bar" y="414"/>'])
     for index in range(THEATER_ROWS):
         lines += _widget(f"{base}/op_replay_{index + 1}",
                          [("width", 390), ("height", 28), ("flags", "pass_unhandled_to_focused_child"),
                           ("bitmap", "bitmaps/sel_list_item_bkd_top" if index == 0 else "bitmaps/sel_list_item_bkd"),
                           ("color", "#FF2896FF")],
                          ['<on event="a" run="port theater watch"/>', '<on event="start" run="port theater watch"/>',
-                          # (the west face button - X, a Switch's Y, a PS5's
-                          # Square - deletes the replay, asking first; the
-                          # north - Y, a Switch's X, a PS5's Triangle - turns
-                          # RECORD on or off)
-                          '<on event="x" run="port theater delete"/>',
-                          '<on event="y" run="port theater record"/>',
                           '<on event="left_mouse" run="mouse emit accept event"/>',
                           f'<child widget="{base}/theater_replay_name" x="12"/>',
                           f'<child widget="{base}/theater_replay_length" x="290"/>'])
@@ -2942,7 +2945,7 @@ def _theater() -> list:
     lines += _widget(f"{base}/button_bar",
                      [("type", "column_list"), ("width", 640), ("height", 28),
                       ("flags", "pass_unhandled_to_focused_child left_right_tabs_items")],
-                     [f'<child widget="{base}/button_record" y="1"/>',
+                     [f'<child widget="{base}/button_record" y="1" platform="desktop android web"/>',
                       f'<child widget="{base}/button_delete" x="130" y="1" platform="desktop android web"/>',
                       f'<child widget="{base}/button_export" x="260" y="1" platform="android"/>',
                       f'<child widget="{base}/button_back" x="510" y="1"/>'])
@@ -2958,6 +2961,14 @@ def _theater() -> list:
     lines += _strings(f"{base}/record_strings", ["RECORD: OFF", "RECORD: ON"])
     lines += _text_button(f"{base}/button_delete", "%x-button DELETE", ['<on event="a" run="port theater delete"/>',
                                                                       '<on event="start" run="port theater delete"/>'])
+    # (its words a string list's, as button_record's: "port theater update"
+    # chooses OFF or ON)
+    lines += _widget(f"{base}/theater_record_hint", [("type", "text"), ("controller", 1), ("width", 150),
+                                                     ("height", 24), ("string_list", f"{base}/record_hint_strings"),
+                                                     ("string_index", 0), ("font", "ui\\small_ui"),
+                                                     ("color", "#FFFFFFFF"), ("text_y", 2),
+                                                     ("text_flags", "no_focus_test")], [])
+    lines += _strings(f"{base}/record_hint_strings", ["%y-button RECORD: OFF", "%y-button RECORD: ON"])
     lines += _widget(f"{base}/theater_delete_hint", [("type", "text"), ("controller", 1), ("width", 200),
                                                      ("height", 24), ("text", "%x-button DELETE"),
                                                      ("font", "ui\\small_ui"), ("color", "#FFFFFFFF"),

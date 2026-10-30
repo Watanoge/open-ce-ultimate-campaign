@@ -136,7 +136,7 @@ static void replay_page_close_client(
 	page.chunk_length = page.chunk_sent = 0;
 	/* (an upload not finished is no replay) */
 	if (page.state == _replay_page_receiving && page.part_path[0])
-		DeleteFileA(page.part_path);
+		remove(page.part_path);
 	page.part_path[0] = 0;
 	page.state = _replay_page_reading;
 }
@@ -450,14 +450,17 @@ static void replay_page_upload_end(
 	page.state = _replay_page_reading;
 	if (!written || page.first_length < 8 || memcmp(page.first_bytes, "OCREPLAY", 8))
 	{
-		DeleteFileA(page.part_path);
+		remove(page.part_path);
 		page.part_path[0] = 0;
 		replay_page_text("400 Bad Request", "That file is not a replay.");
 		return;
 	}
-	if (!MoveFileA(page.part_path, page.final_path))
+	/* (the paths are the card's as they are, not the game's: DeleteFileA's
+	and MoveFileA's would be put under the data folder again. A replay of
+	that name was refused as the upload began) */
+	if (rename(page.part_path, page.final_path) != 0)
 	{
-		DeleteFileA(page.part_path);
+		remove(page.part_path);
 		page.part_path[0] = 0;
 		replay_page_text("500 Internal Server Error", "The replay cannot be kept.");
 		return;

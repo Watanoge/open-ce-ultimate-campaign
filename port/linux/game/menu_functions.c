@@ -3648,9 +3648,13 @@ static void theater_update(struct widget_instance *list)
 	list's again each time it is drawn, so words set on it never showed) */
 	{
 		struct widget_instance *record = named(list, "button_record", 0);
+		/* (the consoles' hint of the north button in its place: the screen's) */
+		struct widget_instance *hint = named(list->parent, "theater_record_hint", 0);
 
 		if (record)
 			record->parameters.text_box.string_list_index = recording ? 1 : 0;
+		if (hint)
+			hint->parameters.text_box.string_list_index = recording ? 1 : 0;
 	}
 	if (!details)
 		return;
