@@ -749,6 +749,11 @@ static const struct config_setting config_settings[] =
 		"it (what a client that sees everything is sent); a client's, what its\n"
 		"host sends it (far players less often) and its own input. Read at a\n"
 		"game's start; the overlay's System folder has it too." },
+	{ "network.replay_hints", _config_boolean, "true", "HALO_NET_REPLAY_HINTS", _environment_value,
+		_platform_all,
+		"Watching a replay with a controller: the bars of the buttons and of the\n"
+		"camera's controls over the seek bar. The replay's pause menu turns them\n"
+		"on and off (the north button: Y, the Switch's X, the PS5's triangle)." },
 	{ "network.full_detail_to_clients", _config_boolean, "false", "HALO_NET_FULL_DETAIL_TO_CLIENTS",
 		_environment_value, _platform_all,
 		"Hosting: send every client every player every tick (not those far\n"

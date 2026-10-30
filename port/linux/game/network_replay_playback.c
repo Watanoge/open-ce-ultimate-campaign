@@ -50,7 +50,8 @@ button (RB, the Switch's R, the PS5's R1) plays faster and the left one
 slower, to a pause (game_time_set_speed); Back held shows the scores (the
 watched's row as a player's own); B hides the lines over the screen. Start
 puts up the pause menu (the game stopped, the camera kept): B in it leaves,
-Start resumes. A line at the top says who is
+Start resumes, the north button (Y) hides the hints' bars or shows them
+again (network.replay_hints, kept in config.toml). A line at the top says who is
 watched, the view and the speed, a dark bar near the bottom edge the
 buttons, each as Kenney's picture of the controller's
 (hud_hires_prompt_draw), and under it the seek bar: the time, a Halo blue
@@ -131,6 +132,7 @@ int halo_linux_touch_look(short gamepad_index, real *yaw, real *pitch, real *gyr
 
 FILE *platform_fopen_host(char const *path, char const *mode);
 int config_boolean(char const *name);
+int config_write_boolean(const char *name, int value);
 void network_distributed_handle_message(long machine_index, word const *message, word size);
 void network_connection_port_set_last_read_unreliable(boolean unreliable);
 boolean network_game_client_port_replay_begin(struct network_game const *game);
@@ -1621,6 +1623,10 @@ boolean network_replay_playback_idle(
 	}
 	if (playback.paused)
 	{
+		/* (the north button: the hints' bars shown or hidden, kept in
+		config.toml: network.replay_hints) */
+		if (playback_pressed(FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_y))
+			config_write_boolean("network.replay_hints", !config_boolean("network.replay_hints"));
 		if (playback_pressed(FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_b))
 		{
 			error(_error_log, "replay: left at tick %ld", game_time_get());
@@ -2938,12 +2944,14 @@ static void playback_draw_hints(
 }
 
 /* the pause menu: the screen dimmed, PAUSED in its middle, and its
-buttons' bar (nothing in it to choose yet) */
+buttons' bar (resume, the hints shown or hidden, leave) */
 static void playback_draw_pause_menu(
 	long font_index)
 {
-	static struct playback_hint const hints[] = {
+	struct playback_hint const hints[] = {
 		{ { _gamepad_binary_button_start, NONE }, L"RESUME" },
+		{ { FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_y, NONE },
+			config_boolean("network.replay_hints") ? L"HIDE HINTS" : L"SHOW HINTS" },
 		{ { FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_b, NONE }, L"LEAVE" },
 	};
 	struct font_header *font = font_definition_get(font_index);
@@ -3111,6 +3119,13 @@ void network_replay_playback_draw(
 			}
 		}
 		playback_draw_hints(font_index, shown, shown_count, NULL, 0);
+		return;
+	}
+	/* (a controller's hints hidden from the pause menu: the seek bar alone,
+	network.replay_hints) */
+	if (!config_boolean("network.replay_hints"))
+	{
+		playback_draw_seek(font_index);
 		return;
 	}
 	/* (a controller's: R3 is in the camera's bar above, the view's) */
