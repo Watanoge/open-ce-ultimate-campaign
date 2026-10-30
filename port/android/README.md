@@ -489,7 +489,9 @@ again.
 - The phone model, the GPU and the Android version.
 - For each renderer and driver that you tried: the line from the main menu,
   what looked wrong, and screenshots of the same scene.
-- `debug.txt` from the data folder.
+- `debug.txt` from the data folder. It holds the port's lines too (each run
+  begins with a `---- a new run` line that names the phone, then the renderer
+  and its driver, and every warning and error), so it is often enough.
 - If you can use adb: the output of `adb logcat -s halo` during the run.
 - If you want to help more: set `vk_probe = "all"` in the `[debug]` section
   of `config.toml` and start the app. The app tests the Vulkan driver
@@ -816,7 +818,9 @@ and reload, address reuse and allocation failure.
 ## Find problems
 
 - Enter `adb logcat -s halo` to see the log of the port and the errors of
-  the game. `files/debug.txt` is the log of the game.
+  the game. `files/debug.txt` is the log of the game, and it has the port's
+  lines as well (`android:`, and the guest's `port:`), up to 400 lines and
+  200 errors a run (`host_main.c`); logcat has all of them.
 - If the guest code stops, the log shows the registers and the frame chain
   (`host/host_arch.c`), from a stack of the signal handler's own, so a
   stack overflow is reported too.

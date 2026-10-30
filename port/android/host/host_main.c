@@ -22,7 +22,7 @@ display.vk_driver names (host_vk_driver.c). It also reads display.renderer, to
 choose between the two game images (halo_guest.elf, drawing with OpenGL ES,
 and halo_guest_vk.elf, with Vulkan: port/android/VULKAN.md), and
 debug.vk_validation for the Vulkan renderer. The log is logcat's, tag
-"halo".
+"halo", and the game's debug.txt (below: the file players send).
 
 debug.profile_run records a profile of each run into a folder of its own,
 which the launcher makes (Download/halo_profiles/DDMMYYYY_HHMMSS, with the
@@ -56,13 +56,118 @@ Vulkan renderer's GPU times (gpu.txt: host_vk_profile.c) write there.
 #include <time.h>
 #include <unistd.h>
 
-/* ---------- the log: logcat */
+/* ---------- the log: logcat, and the game's debug.txt
+
+Players send debug.txt, not logcat, so the host's lines go there too, dated as the game dates its own (errors.c): the
+run's start (the phone), the renderer and its driver, the write tracking, every warning and error, and the guest's
+platform_log lines (its standard error, "port:"). Each kind has a budget of lines a run, so that a line logged every
+frame cannot fill the file, nor push the errors out. Each line opens the file, appends and closes it: the game's
+renaming of a full debug.txt to debug.old.txt takes nothing from either, and open, writev and close are fine in a
+signal handler (a crash's report, host_memory.c). */
+
+#define DEBUG_MIRROR_LINES 400
+#define DEBUG_MIRROR_ERROR_LINES 200
 
 int host_renderer_vulkan;
+
+/* empty until the data folder is known */
+static char debug_mirror_path[600];
+/* local time's offset from UTC as the run began, in seconds (the guest's TZ is the same fixed offset: host_time_zone) */
+static long debug_mirror_offset;
+static int debug_mirror_lines, debug_mirror_error_lines;
+
+/* the date of a day counted from 1970-01-01 (no locks, unlike localtime_r: a signal handler may call this) */
+static void civil_date(long days, int *year, int *month, int *day)
+{
+	long era, z = days + 719468;
+	unsigned long era_day, era_year, year_day, month_index;
+
+	era = (z >= 0 ? z : z - 146096) / 146097;
+	era_day = (unsigned long)(z - era * 146097);
+	era_year = (era_day - era_day / 1460 + era_day / 36524 - era_day / 146096) / 365;
+	year_day = era_day - (365 * era_year + era_year / 4 - era_year / 100);
+	month_index = (5 * year_day + 2) / 153;
+	*day = (int)(year_day - (153 * month_index + 2) / 5 + 1);
+	*month = (int)(month_index < 10 ? month_index + 3 : month_index - 9);
+	*year = (int)(era_year + era * 400 + (*month <= 2));
+}
+
+static void debug_mirror(int priority, const char *line)
+{
+	static const char guest[] = "halo-linux: ";
+	int error = priority >= HOST_LOG_ERROR;
+	int limit = error ? DEBUG_MIRROR_ERROR_LINES : DEBUG_MIRROR_LINES;
+	int taken, file, year, month, day;
+	long local, seconds;
+	char prefix[80];
+	struct iovec parts[3];
+
+	/* (a dedicated server's echo of debug.txt's own lines: errors.c) */
+	if (!debug_mirror_path[0] || !strncmp(line, "debug: ", 7))
+		return;
+	taken = __sync_fetch_and_add(error ? &debug_mirror_error_lines : &debug_mirror_lines, 1);
+	if (taken > limit)
+		return;
+	local = (long)time(NULL) + debug_mirror_offset;
+	civil_date(local / 86400, &year, &month, &day);
+	seconds = local % 86400;
+	snprintf(prefix, sizeof(prefix), "%02d.%02d.%02d %02ld:%02ld:%02ld  ", month, day, year % 100, seconds / 3600,
+		seconds / 60 % 60, seconds % 60);
+	if (taken == limit)
+	{
+		line = error ? "android: no more of this run's errors here; the rest are in logcat (tag \"halo\")" :
+			"android: no more of this run's lines here; the rest are in logcat (tag \"halo\")";
+	}
+	else if (!strncmp(line, guest, sizeof(guest) - 1))
+	{
+		/* (the guest's standard error, which logcat has as warnings) */
+		snprintf(prefix + strlen(prefix), sizeof(prefix) - strlen(prefix), "port: ");
+		line += sizeof(guest) - 1;
+	}
+	else
+	{
+		snprintf(prefix + strlen(prefix), sizeof(prefix) - strlen(prefix), "android%s: ",
+			priority >= HOST_LOG_FATAL ? " fatal" : error ? " error" : priority == HOST_LOG_WARN ? " warning" : "");
+	}
+	file = open(debug_mirror_path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0664);
+	if (file < 0)
+		return;
+	parts[0].iov_base = prefix;
+	parts[0].iov_len = strlen(prefix);
+	parts[1].iov_base = (void *)line;
+	parts[1].iov_len = strlen(line);
+	parts[2].iov_base = (void *)"\r\n";
+	parts[2].iov_len = 2;
+	writev(file, parts, 3);
+	close(file);
+}
+
+/* this run's lines go to the data folder's debug.txt from here on, the first naming the phone */
+static void debug_mirror_begin(const char *data_root_path)
+{
+	static const char *const names[] = { "ro.product.manufacturer", "ro.product.model", "ro.build.version.release",
+		"ro.build.version.sdk", "ro.soc.manufacturer", "ro.soc.model", "ro.hardware" };
+	char values[7][PROP_VALUE_MAX];
+	time_t now = time(NULL);
+	struct tm local;
+	unsigned index;
+
+	localtime_r(&now, &local);
+	debug_mirror_offset = local.tm_gmtoff;
+	for (index = 0; index < 7; index++)
+	{
+		values[index][0] = 0;
+		__system_property_get(names[index], values[index]);
+	}
+	snprintf(debug_mirror_path, sizeof(debug_mirror_path), "%s/debug.txt", data_root_path);
+	host_logf(HOST_LOG_INFO, "---- a new run: %s %s, Android %s (API %s), SoC %s %s, hardware %s, %ld-byte pages",
+		values[0], values[1], values[2], values[3], values[4], values[5], values[6], sysconf(_SC_PAGESIZE));
+}
 
 static void log_to_logcat(int priority, const char *line)
 {
 	__android_log_write(priority, "halo", line);
+	debug_mirror(priority, line);
 }
 
 /* ---------- a profiled run's folder (debug.profile_run) */
@@ -81,6 +186,7 @@ static void log_to_logcat_and_profile(int priority, const char *line)
 	struct iovec parts[3];
 
 	__android_log_write(priority, "halo", line);
+	debug_mirror(priority, line);
 	clock_gettime(CLOCK_MONOTONIC, &now);
 	seconds = (double)(now.tv_sec - profile_started.tv_sec) + (double)(now.tv_nsec - profile_started.tv_nsec) / 1e9;
 	snprintf(prefix, sizeof(prefix), "%8.2f %c ", seconds, priority >= 0 && priority < 8 ? levels[priority] : '?');
@@ -566,6 +672,7 @@ static void *game_main(void *unused)
 		host_fatal("Android storage is unavailable: %s", SDL_GetError());
 	snprintf(data_root, sizeof(data_root), "%s", external);
 	snprintf(save_root, sizeof(save_root), "%s/save", external);
+	debug_mirror_begin(data_root);
 	/* readable by adb (the shell user), for managing saves */
 	mkdir(save_root, 0775);
 	share_save_tree(save_root);
