@@ -287,11 +287,20 @@ DELETE (pressed twice), EXPORT (Android) and BACK. A recording shorter than
   so a slight tilt moves it slowly, its speed eased up in 0.2 seconds and
   down in 0.08; the right one turns it; the left trigger takes it down and
   the right one up, from still to full in a quarter of a second, so a tap
-  of the Switch's ZL or ZR, which are buttons, is a small step; it follows
-  the player as the view behind them does until one of those is touched,
-  and flies from there; it slides
+  of the Switch's ZL or ZR, which are buttons, is a small step; it slides
   along the level's walls, its scenery and its doors rather than flying
-  through them, `playback_free_camera_move`). Through the eyes, the aim
+  through them, `playback_free_camera_move`). It is a tripod: chosen, it is
+  placed where the view behind the player would be, and tracks them, its
+  aim turning after them a little behind (0.15 seconds), at their upper
+  body (`playback_free_camera_track`); the left stick and the triggers move
+  it and it goes on tracking, the right stick takes the aim and it stops,
+  and R3 starts it again from where it is, or stops it, holding its aim.
+  It tracks the next player A or X chooses, aims at where the player died
+  until they spawn again, and the top line says FREE CAMERA (TRACKING).
+  Until it first moves, it zooms on the player as they go further than 5
+  units, so they stay the size they were (down to 15 degrees of view);
+  once moved it eases back to the usual view, and does not zoom again until
+  it is chosen again (`playback_free_camera_zoom`). Through the eyes, the aim
   turns smoothly between the facings the replay has of the player (all
   of them indexed as it loads, `playback_index_facings`: the host's
   relayed input and a client's own input's records), the aim the
@@ -330,6 +339,20 @@ DELETE (pressed twice), EXPORT (Android) and BACK. A recording shorter than
   (its d-pad's are the A's). Without a picture, a button's name on the
   controller is written instead (the Switch's L, R, - and +, the PS5's
   L1, R1, CREATE and OPTIONS, the Xbox's LB, RB, BACK and START).
+- **On a touchscreen** (Android, while the touch controls show:
+  `touch_input_screen_buttons`) the bar's buttons are boxes in a row, a
+  word each: PREV, NEXT, VIEW, RESET or TRACK (as R3's hint), SLOWER,
+  FASTER, << and >> (the d-pad's left and right: held, they scrub),
+  SCORES (held), HIDE and PAUSE; the pause menu's RESUME and LEAVE; with
+  the lines hidden, SHOW; at the replay's end, <<. The playback says where
+  they are (`touch_input_replay_targets`, `host_touch_targets`), and the
+  touch controls, in a replay (`_touch_scene_replay`), show only their
+  stick and press the controller's button of the box under a finger
+  (`TouchControls.java`'s targets), so the playback reads them as a
+  controller's. Their stick is the left stick (the free camera's move,
+  behind's zoom), and a swipe elsewhere is the right one: the free
+  camera's aim, behind's orbit (`halo_linux_touch_look`, which no player
+  reads in a replay).
 - **The end.** The replay's end, or the game's, returns to the main menu
   four seconds later (`network_game_abort`), unless the d-pad's left
   goes back first.
