@@ -22,9 +22,18 @@ by its key:
 	hud.parent<l>.<any of hud.'s>    of its HUD's parent HUD l levels up
 	                                 (parent1 its parent, parent2 that
 	                                 one's: a visor drawn for many weapons)
+	viewmodel.<x|y|z>                its first-person view moved right, up
+	                                 and forward (world units)
+	viewmodel.<yaw|pitch|roll|scale> and turned and scaled about its gun
 
 each value as the tag keeps it (a projectile's speeds a tick's, angles in
-radians), which the menu shows as Guerilla does (a second's, degrees).
+radians), which the menu shows as Guerilla does (a second's, degrees; a
+viewmodel's distances in centimetres).
+
+A viewmodel's edits are no tag's: the level keeps them by the weapon
+(tag_editor_viewmodel), and first_person_weapons.c moves the weapon's
+first-person arms and gun by them as one piece, as they are drawn. Like a
+HUD's, they are this machine's alone, and change at once in any game.
 
 A level adds a profile's weapons with their edits (tag_editor_weapon_loaded,
 from tag_injector_tags_load): the weapon's own values are changed in it, and
@@ -142,6 +151,8 @@ enum
 
 #define EDITOR_PI 3.14159265358979f
 #define EDITOR_TICKS_PER_SECOND 30.0f
+/* a world unit is ten feet */
+#define EDITOR_CENTIMETRES_PER_WORLD_UNIT 304.8f
 
 /* what an edit is of */
 enum edit_target
@@ -152,6 +163,8 @@ enum edit_target
 	_target_projectile,
 	_target_damage,
 	_target_hud,
+	/* (the weapon's first-person view: no tag's, the level's) */
+	_target_viewmodel,
 
 	NUMBER_OF_EDIT_TARGETS
 };
@@ -178,6 +191,8 @@ enum edit_kind
 	_kind_angle,
 	/* world units a tick, shown a second's */
 	_kind_speed,
+	/* world units, shown in centimetres */
+	_kind_distance,
 	/* whether a HUD element (its map type), a crosshair's item or an
 	overlay's (its flags: a short) is hidden, 1 or 0; kept as it was as
 	the short it is (value_raw) */
@@ -229,6 +244,8 @@ enum editor_page
 	_page_hud,
 	/* the pickup prompt's */
 	_page_pickup,
+	/* the first-person view's */
+	_page_viewmodel,
 };
 
 /* what a row of a list does */
@@ -383,6 +400,9 @@ int port_tag_profiles_tag_remove(long profile, long tag);
 #define DAMAGE_FIELD(key, label, member, kind, step, minimum, maximum) \
 	{ _target_damage, key, label, (unsigned short)offsetof(struct damage_effect_definition, member), kind, step, \
 		minimum, maximum }
+#define VIEWMODEL_FIELD(key, label, member, kind, step, minimum, maximum) \
+	{ _target_viewmodel, key, label, (unsigned short)offsetof(struct tag_editor_viewmodel, member), kind, step, \
+		minimum, maximum }
 
 static struct edit_field const edit_fields[] =
 {
@@ -438,6 +458,14 @@ static struct edit_field const edit_fields[] =
 	DAMAGE_FIELD("falloff", "Full damage within", falloff_radius, _kind_real, 0.1f, 0.0f, 100.0f),
 	DAMAGE_FIELD("force", "Force", damage.instantaneous_acceleration, _kind_real, 0.5f, 0.0f, 500.0f),
 	DAMAGE_FIELD("stun", "Stun", damage.stun, _kind_real, 0.05f, 0.0f, 1.0f),
+
+	VIEWMODEL_FIELD("x", "Right (cm)", x, _kind_distance, 0.25f, -100.0f, 100.0f),
+	VIEWMODEL_FIELD("y", "Up (cm)", y, _kind_distance, 0.25f, -100.0f, 100.0f),
+	VIEWMODEL_FIELD("z", "Forward (cm)", z, _kind_distance, 0.25f, -100.0f, 100.0f),
+	VIEWMODEL_FIELD("yaw", "Yaw, left (deg)", yaw, _kind_angle, 0.5f, -180.0f, 180.0f),
+	VIEWMODEL_FIELD("pitch", "Pitch, up (deg)", pitch, _kind_angle, 0.5f, -180.0f, 180.0f),
+	VIEWMODEL_FIELD("roll", "Roll, right (deg)", roll, _kind_angle, 0.5f, -180.0f, 180.0f),
+	VIEWMODEL_FIELD("scale", "Scale", scale, _kind_real, 0.01f, 0.1f, 4.0f),
 };
 
 /* the words of the keys of the damage effects' parts, and their lists'
@@ -469,6 +497,13 @@ static struct
 		real value;
 	} originals[MAXIMUM_ORIGINALS];
 	short original_count;
+	/* and the first-person views its weapons' edits move (by the weapon) */
+	struct
+	{
+		long weapon;
+		struct tag_editor_viewmodel viewmodel;
+	} viewmodels[MAXIMUM_EDITOR_WEAPONS];
+	short viewmodel_count;
 
 	/* the menu's: the lists gone into and the row chosen in each, whether
 	a list's edits are made to every weapon that shares its tag, and the
@@ -655,7 +690,8 @@ static void typing_begin(
 static real field_factor(
 	short kind)
 {
-	return kind == _kind_angle ? 180.0f / EDITOR_PI : kind == _kind_speed ? EDITOR_TICKS_PER_SECOND : 1.0f;
+	return kind == _kind_angle ? 180.0f / EDITOR_PI : kind == _kind_speed ? EDITOR_TICKS_PER_SECOND :
+		kind == _kind_distance ? EDITOR_CENTIMETRES_PER_WORLD_UNIT : 1.0f;
 }
 
 static void reference_set(
@@ -806,6 +842,36 @@ static long weapon_hud(
 	return level < MAXIMUM_HUD_LEVELS && tag_root(WEAPON_HUD_GROUP_TAG, hud) ? hud : NONE;
 }
 
+/* a weapon's first-person view as the level keeps it (as it is, the first
+time), or NULL (no weapon's, or no room) */
+static struct tag_editor_viewmodel *weapon_viewmodel(
+	long weapon)
+{
+	short index;
+
+	if (!weapon_definition(weapon))
+		return NULL;
+	for (index = 0; index < tag_editor.viewmodel_count; index++)
+	{
+		if (tag_editor.viewmodels[index].weapon == weapon)
+			return &tag_editor.viewmodels[index].viewmodel;
+	}
+	if (tag_editor.viewmodel_count >= MAXIMUM_EDITOR_WEAPONS)
+		return NULL;
+	index = tag_editor.viewmodel_count++;
+	tag_editor.viewmodels[index].weapon = weapon;
+	memset(&tag_editor.viewmodels[index].viewmodel, 0, sizeof(tag_editor.viewmodels[index].viewmodel));
+	tag_editor.viewmodels[index].viewmodel.scale = 1.0f;
+	return &tag_editor.viewmodels[index].viewmodel;
+}
+
+/* a viewmodel value as it is when it is not edited (its scale 1) */
+static real viewmodel_default(
+	struct edit_field const *field)
+{
+	return field->offset == offsetof(struct tag_editor_viewmodel, scale) ? 1.0f : 0.0f;
+}
+
 /* how many HUDs a weapon draws (its own and its parents) */
 static short weapon_hud_levels(
 	long weapon)
@@ -833,6 +899,7 @@ static long target_tag(
 	case _target_weapon:
 	case _target_trigger:
 	case _target_magazine:
+	case _target_viewmodel:
 		return definition ? weapon : NONE;
 	case _target_projectile:
 		return trigger && tag_root(PROJECTILE_GROUP_TAG, trigger->projectile.index) ? trigger->projectile.index : NONE;
@@ -1044,6 +1111,12 @@ static boolean key_parse(
 		result->field = field_find(_target_magazine, rest);
 		return result->field != NULL;
 	}
+	if (!strncmp(key, "viewmodel.", 10))
+	{
+		result->target = _target_viewmodel;
+		result->field = field_find(_target_viewmodel, key + 10);
+		return result->field != NULL;
+	}
 	if (!strncmp(key, "melee.", 6))
 	{
 		result->target = _target_damage;
@@ -1146,6 +1219,7 @@ static void key_prefix(
 		else
 			snprintf(prefix, size, "hud.");
 		break;
+	case _target_viewmodel: snprintf(prefix, size, "viewmodel."); break;
 	default: prefix[0] = 0; break;
 	}
 }
@@ -1185,6 +1259,7 @@ static void *key_address(
 	case _target_weapon: base = (byte *)weapon_definition(weapon); break;
 	case _target_trigger: base = (byte *)weapon_trigger(weapon, key->index); break;
 	case _target_magazine: base = (byte *)weapon_magazine(weapon, key->index); break;
+	case _target_viewmodel: base = (byte *)weapon_viewmodel(weapon); break;
 	case _target_projectile:
 		base = tag_root(PROJECTILE_GROUP_TAG, target_tag(weapon, _target_projectile, key->index, NONE));
 		break;
@@ -1566,6 +1641,8 @@ void tag_editor_weapon_loaded(
 	edits_write(profile, tag, weapon_datum, "weapon.", _target_weapon, TRUE);
 	edits_write(profile, tag, weapon_datum, "trigger", _target_trigger, TRUE);
 	edits_write(profile, tag, weapon_datum, "magazine", _target_magazine, TRUE);
+	/* (and its first-person view, which the level keeps: no tag's) */
+	edits_write(profile, tag, weapon_datum, "viewmodel.", _target_viewmodel, TRUE);
 
 	/* each trigger's projectile, and its damage effects, a copy */
 	for (index = 0; index < definition->weapon.triggers.count; index++)
@@ -1657,6 +1734,7 @@ void tag_editor_level_unloaded(
 	tag_editor.blinked = FALSE;
 	tag_editor.weapon_count = 0;
 	tag_editor.original_count = 0;
+	tag_editor.viewmodel_count = 0;
 	tag_editor.capturing = FALSE;
 	tag_editor.weapon = NONE;
 }
@@ -1751,7 +1829,7 @@ static short sharers_find(
 	long absolute;
 
 	if (datum == NONE || !instances || target == _target_weapon || target == _target_trigger ||
-		target == _target_magazine)
+		target == _target_magazine || target == _target_viewmodel)
 		return 0;
 	for (absolute = 0; absolute < count && found < capacity; absolute++)
 	{
@@ -1925,9 +2003,9 @@ static boolean value_set(
 	if (!key_parse(key, &parsed))
 		return FALSE;
 	address = key_address(context->weapon, &parsed, &kind);
-	/* (a HUD is drawn by this machine alone: moved at once, whatever the
-	game) */
-	if (address && (context->live || parsed.target == _target_hud))
+	/* (a HUD and a viewmodel are drawn by this machine alone: moved at once,
+	whatever the game) */
+	if (address && (context->live || parsed.target == _target_hud || parsed.target == _target_viewmodel))
 	{
 		real original;
 
@@ -1975,6 +2053,7 @@ static short page_target(
 	case _page_projectile: return _target_projectile;
 	case _page_damage: return _target_damage;
 	case _page_hud: return _target_hud;
+	case _page_viewmodel: return _target_viewmodel;
 	}
 	return NONE;
 }
@@ -2028,6 +2107,8 @@ static short page_rows(
 		row_add(rows, &count, _tag_editor_row_folder, _action_page, _page_stats, 0, 0, NULL, "Weapon stats");
 		if (weapon_hud_levels(context->weapon))
 			row_add(rows, &count, _tag_editor_row_folder, _action_page, _page_huds, 0, 0, NULL, "HUD");
+		if (definition->weapon.interface_definition.first_person_animations.index != NONE)
+			row_add(rows, &count, _tag_editor_row_folder, _action_page, _page_viewmodel, 0, 0, NULL, "Viewmodel");
 		row_add(rows, &count, _tag_editor_row_folder, _action_page, _page_pickup, 0, 0, NULL, "Pickup settings");
 		row_add(rows, &count, _tag_editor_row_folder, _action_page, _page_settings, 0, 0, NULL, "Tag settings");
 		row_add(rows, &count, _tag_editor_row_command, _action_reset_all, 0, 0, 0, NULL, "Reset all edits");
@@ -2251,7 +2332,8 @@ static void edits_reset(
 
 		if (tag_editor.originals[index].weapon != context->weapon ||
 			!key_of_list(tag_editor.originals[index].key, prefix, hud_level) ||
-			(!context->live && strncmp(tag_editor.originals[index].key, "hud.", 4)) ||
+			(!context->live && strncmp(tag_editor.originals[index].key, "hud.", 4) &&
+				strncmp(tag_editor.originals[index].key, "viewmodel.", 10)) ||
 			!key_parse(tag_editor.originals[index].key, &parsed) ||
 			!(address = key_address(context->weapon, &parsed, &kind)))
 			continue;
@@ -2327,6 +2409,27 @@ unsigned short const *tag_editor_pickup_text(
 	return text;
 }
 
+boolean tag_editor_viewmodel(
+	long weapon,
+	struct tag_editor_viewmodel *viewmodel)
+{
+	short index;
+
+	for (index = 0; weapon != NONE && index < tag_editor.viewmodel_count; index++)
+	{
+		struct tag_editor_viewmodel const *kept = &tag_editor.viewmodels[index].viewmodel;
+
+		if (tag_editor.viewmodels[index].weapon != weapon)
+			continue;
+		if (kept->x == 0.0f && kept->y == 0.0f && kept->z == 0.0f && kept->yaw == 0.0f && kept->pitch == 0.0f &&
+			kept->roll == 0.0f && kept->scale == 1.0f)
+			return FALSE;
+		*viewmodel = *kept;
+		return TRUE;
+	}
+	return FALSE;
+}
+
 void tag_editor_menu_open(
 	void)
 {
@@ -2359,6 +2462,7 @@ char const *tag_editor_menu_title(
 	case _page_huds: return "HUD";
 	case _page_settings: return "Tag settings";
 	case _page_pickup: return "Pickup settings";
+	case _page_viewmodel: return "Viewmodel";
 	case _page_weapon: return "Weapon";
 	case _page_trigger: return index ? "Secondary trigger" : "Primary trigger";
 	case _page_magazine: return index ? "Second magazine" : "Magazine";
@@ -2398,7 +2502,7 @@ static void row_fill(
 			snprintf(result->value, sizeof(result->value), "%s", context.live ? "LIVE" : "NEXT GAME");
 			snprintf(result->note, sizeof(result->note), "%s", context.live ?
 				"Changes are made at once, and kept in the profile." :
-				"In a network game: values change at the next game, the HUD at once.");
+				"In a network game: values change at the next game, the HUD and viewmodel at once.");
 		}
 		break;
 	case _action_scope:
@@ -2744,8 +2848,16 @@ void tag_editor_menu_adjust(
 
 			shown = (real)(long)(steps + (steps < 0.0f ? -0.5f : 0.5f)) * spec->field->step;
 		}
+		/* (a viewmodel's value back as it is unedited: no edit kept) */
+		if (spec->field->target == _target_viewmodel &&
+			shown - viewmodel_default(spec->field) * factor < spec->field->step * 0.5f &&
+			viewmodel_default(spec->field) * factor - shown < spec->field->step * 0.5f)
+		{
+			value_set(&context, key, 0.0f, TRUE);
+			return;
+		}
 		value_set(&context, key, shown / factor, FALSE);
-		if (!context.live)
+		if (!context.live && spec->field->target != _target_viewmodel)
 			snprintf(status, status_size, "%s: at the next game", spec->label);
 	}
 }

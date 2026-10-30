@@ -127,6 +127,7 @@ symbols in this file:
 #include "sound/sound_manager.h"
 #include "units/units.h"
 #include "view_fov.h" /* port: port/linux/game/view_fov.c */
+#include "tag_editor.h" /* port: port/linux/game/tag_editor.c (a weapon's viewmodel edits) */
 #include "shaders/shader_definitions.h" /* port: (the shield's flare on the arms) */
 #include "shaders/shaders.h"
 /* port: port/linux/game/shield_color.c */
@@ -1169,6 +1170,86 @@ static boolean first_person_weapon_animation_fits(
 	return FALSE;
 }
 
+/* port: the arms and gun moved, turned and scaled as one piece, as the
+weapon's viewmodel edits have it (port/linux/game/tag_editor.c): in the
+camera's frame (x forward, y left, z up), turned and scaled about the gun's
+root node (the first of its model's: the graph's first when it is not known
+yet), then moved right, up and forward */
+static void first_person_weapon_apply_viewmodel(
+	struct first_person_weapon *first_person_weapon,
+	long weapon_definition_index,
+	short node_count)
+{
+	struct tag_editor_viewmodel viewmodel;
+	real_matrix4x3 camera_matrix;
+	real_matrix4x3 inverse_camera;
+	real_matrix4x3 local;
+	real_matrix4x3 camera_local;
+	real_matrix4x3 world;
+	real_point3d pivot;
+	real_point3d turned_pivot;
+	real_vector3d forward;
+	real_vector3d up;
+	real_vector3d right;
+	real_point3d origin;
+	real cosine_yaw, sine_yaw, cosine_pitch, sine_pitch, cosine_roll, sine_roll;
+	short pivot_node= 0;
+	short node_index;
+
+	if (node_count<=0 || !tag_editor_viewmodel(weapon_definition_index, &viewmodel))
+		return;
+	/* (a hand-written scale of none, or less, as small as the editor's least) */
+	viewmodel.scale= PIN(viewmodel.scale, 0.1f, 4.0f);
+	if (first_person_weapon->weapon_node_remapping_table_valid &&
+		first_person_weapon->weapon_node_remapping_table[0]>=0 &&
+		first_person_weapon->weapon_node_remapping_table[0]<node_count)
+	{
+		pivot_node= first_person_weapon->weapon_node_remapping_table[0];
+	}
+
+	matrix4x3_from_point_and_vectors(&camera_matrix, &render.camera.position, &render.camera.forward,
+		&render.camera.up);
+	matrix4x3_inverse(&camera_matrix, &inverse_camera);
+	matrix4x3_transform_point(&inverse_camera, &first_person_weapon->node_matrices[pivot_node].position, &pivot);
+
+	/* (yaw the muzzle to the left, pitch it up, then roll its top to the
+	right about where it points) */
+	cosine_yaw= cosine(viewmodel.yaw);
+	sine_yaw= sine(viewmodel.yaw);
+	cosine_pitch= cosine(viewmodel.pitch);
+	sine_pitch= sine(viewmodel.pitch);
+	cosine_roll= cosine(viewmodel.roll);
+	sine_roll= sine(viewmodel.roll);
+	set_real_vector3d(&forward, cosine_pitch*cosine_yaw, cosine_pitch*sine_yaw, sine_pitch);
+	set_real_vector3d(&up, -sine_pitch*cosine_yaw, -sine_pitch*sine_yaw, cosine_pitch);
+	cross_product3d(&forward, &up, &right);
+	set_real_vector3d(&up,
+		up.i*cosine_roll + right.i*sine_roll,
+		up.j*cosine_roll + right.j*sine_roll,
+		up.k*cosine_roll + right.k*sine_roll);
+	set_real_point3d(&origin, 0.0f, 0.0f, 0.0f);
+	matrix4x3_from_point_and_vectors(&local, &origin, &forward, &up);
+	local.scale= viewmodel.scale;
+
+	/* (the pivot where it was, and the move: right is -y) */
+	matrix4x3_transform_point(&local, &pivot, &turned_pivot);
+	local.position.x= pivot.x - turned_pivot.x + viewmodel.z;
+	local.position.y= pivot.y - turned_pivot.y - viewmodel.x;
+	local.position.z= pivot.z - turned_pivot.z + viewmodel.y;
+
+	matrix4x3_multiply(&camera_matrix, &local, &camera_local);
+	matrix4x3_multiply(&camera_local, &inverse_camera, &world);
+	for (node_index= 0; node_index<node_count; node_index++)
+	{
+		real_matrix4x3 moved;
+
+		matrix4x3_multiply(&world, &first_person_weapon->node_matrices[node_index], &moved);
+		first_person_weapon->node_matrices[node_index]= moved;
+	}
+
+	return;
+}
+
 static void first_person_weapon_build_node_matrices(
 	short local_player_index)
 {
@@ -1498,6 +1579,12 @@ static void first_person_weapon_build_node_matrices(
 			&render.camera.position,
 			&render.camera.forward,
 			&render.camera.up);
+		/* port: moved, turned and scaled as its Tag Editor edits have it (before
+		the blend, which is the camera's frame: an edit stays put in it) */
+		first_person_weapon_apply_viewmodel(
+			first_person_weapon,
+			weapon->definition_index,
+			(short)MIN(animation_graph->nodes.count, MAXIMUM_NODES_PER_ANIMATION));
 		/* the pose between the last two ticks (render_interpolation.c) */
 		/* port: no more nodes than the weapon's matrices hold (a map's count) */
 		render_interpolation_first_person(

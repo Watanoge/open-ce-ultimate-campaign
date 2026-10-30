@@ -55,6 +55,22 @@ struct tag_editor_row
 	char note[TAG_EDITOR_NOTE_LENGTH];
 };
 
+/* a weapon's first-person view (its viewmodel.* edits) moved, turned and
+scaled as one piece: how far right, up and forward of where its animations
+have it (world units), its yaw (the muzzle to the left), pitch (up) and roll
+(its top to the right) in radians, about its gun's root node, and its scale
+(1 as it is) */
+struct tag_editor_viewmodel
+{
+	real x;
+	real y;
+	real z;
+	real yaw;
+	real pitch;
+	real roll;
+	real scale;
+};
+
 /* ---------- prototypes/TAG_EDITOR.C */
 
 /* tag_injector.c's, as a level adds a profile's tags: a weapon of the
@@ -76,6 +92,12 @@ none: its name as the map has it, or not words at all) */
 unsigned short const *tag_editor_pickup_text(
 	long weapon,
 	unsigned char *text_wanted);
+/* a weapon's first-person view as its edits move it
+(source/interface/first_person_weapons.c): FALSE when they do not (none,
+or all as it is) */
+boolean tag_editor_viewmodel(
+	long weapon,
+	struct tag_editor_viewmodel *viewmodel);
 
 /* The overlay's TAG EDITOR: the weapon the first local player holds, its
 values and its HUD, in lists. _open starts at its first list; _title is the

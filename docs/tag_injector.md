@@ -673,12 +673,14 @@ share and is a plain one.
 
 The overlay menu's **TAG EDITOR** (L, R and the d-pad's down, or | on the keyboard) changes the
 weapon the first player holds, when it is one of the played profile's. Its
-first list has four:
+first list has five:
 
 - **Weapon stats**: the weapon's own values (zoom, heat, autoaim), its
   triggers, magazines and projectiles (their damage below them), and its
   melee damage.
 - **HUD**: its HUD and the parent HUDs it draws too (below).
+- **Viewmodel**: its first-person arms and gun moved, turned and scaled as
+  one piece (below).
 - **Pickup settings**: its pickup prompt ("Hold E to pick up ..."):
   **Prompt** ICON, its HUD's icon (its name when its HUD has none), or
   TEXT, words, and **Text**, the words (nothing typed: its name as its map
@@ -712,6 +714,18 @@ element moves it over the game (the d-pad; A switches to its scale, Back
 puts it back, B is done); left or right on it hides it, and shows it again.
 A parent HUD's elements are its keys under `hud.parent1.` (its parent),
 `hud.parent2.` (that one's) and so on; a hidden one's `hide` is 1.
+
+**Viewmodel** places the weapon in the first-person view: **Right**, **Up**
+and **Forward** move it (in centimetres; the profile keeps world units),
+**Yaw** turns its muzzle to the left, **Pitch** up and **Roll** its top to
+the right (degrees; the profile keeps radians), and **Scale** sizes it, all
+about the gun's own root node, with its animations played as they are on
+top. Its keys are `viewmodel.x`, `viewmodel.y`, `viewmodel.z`,
+`viewmodel.yaw`, `viewmodel.pitch`, `viewmodel.roll` and `viewmodel.scale`;
+a value stepped back to where it started is taken out of the profile, so a
+weapon left as it is keeps no edits. Like the HUD, it changes at once in any
+game, and a network game's clients see the host's. A build before it keeps
+the keys and draws the weapon as its map has it.
 
 A weapon given edits plays a copy of each tag they change (its HUD, and a
 parent HUD changed: every HUD up to it), named for its edits, so that the
