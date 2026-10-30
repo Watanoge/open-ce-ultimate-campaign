@@ -233,6 +233,14 @@ enum
 	MAXIMUM_TRACKED_PLAYERS = HALO_PORT_MAXIMUM_NETWORK_PLAYERS,
 	/* a player index in a byte: none */
 	NO_PLAYER = 0xFF,
+	/* (the host, recording a replay) the recorder's machine index: one past
+	the session's machines, which no client or bot holds, so that a game of
+	every machine is recorded too (network_replay.c). It is the host's
+	alone: no message names it, and the game's own tables (players.c's) have
+	no row for it */
+	DISTRIBUTED_RECORDER_MACHINE = HALO_PORT_MAXIMUM_NETWORK_MACHINES,
+	/* the machines a tick's state goes to: the clients' and the recorder's */
+	DISTRIBUTED_VIEWING_MACHINES = HALO_PORT_MAXIMUM_NETWORK_MACHINES + 1,
 };
 
 /* ---------- structures */
@@ -300,9 +308,11 @@ void distributed_count_correction(void);
 /* (the host) the client machines in the game, but for its own; their count */
 short distributed_client_machines(long *machine_indices, short maximum);
 /* ... and the replay recorder's machine (network_replay.c), when one is
-recording: the machines a tick's state goes to */
+recording: the machines a tick's state goes to (DISTRIBUTED_VIEWING_MACHINES
+at most) */
 short distributed_viewing_machines(long *machine_indices, short maximum);
-/* (the host) the replay recorder's machine, NONE when none */
+/* (the host) the replay recorder's machine (DISTRIBUTED_RECORDER_MACHINE),
+NONE when not recording */
 long distributed_recorder_machine(void);
 /* (the host) network.full_detail_to_clients, as this tick read it: every
 client sent every player every tick and every damage event */

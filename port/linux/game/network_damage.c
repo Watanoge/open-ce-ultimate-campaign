@@ -2703,9 +2703,9 @@ void network_damage_host_tick(
 {
 	struct distributed_damage_event_message message;
 	short limit = MIN(MAXIMUM_ENTRIES_PER_MESSAGE, RELIABLE_ENTRIES(struct distributed_damage_event));
-	long machine_indices[HALO_PORT_MAXIMUM_NETWORK_MACHINES];
+	long machine_indices[DISTRIBUTED_VIEWING_MACHINES];
 	short machine_count = damage_event_count ?
-		distributed_viewing_machines(machine_indices, HALO_PORT_MAXIMUM_NETWORK_MACHINES) : 0;
+		distributed_viewing_machines(machine_indices, DISTRIBUTED_VIEWING_MACHINES) : 0;
 	short machine_number;
 
 	distributed_log_reports();

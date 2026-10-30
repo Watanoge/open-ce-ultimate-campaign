@@ -82,11 +82,12 @@ REPLAYS: the system's folder picker, `HaloActivity.exportReplays`).
 of a game (`network_distributed_tick`), and closes it when the map is
 unloaded (`game_dispose_from_old_map`) or a new game starts.
 
-The recorder is a machine slot that no client has, joined or still
-joining, and no player is at, a bot's either (the bots take slots from 65
-up, `bots.h`). It is the highest such slot, found again each tick
-(`distributed_recorder_find` in `network_distributed.c`), so a client or a
-bot taking it moves it. It has no players, so:
+The recorder is a machine index of its own, one past the session's 128
+(`DISTRIBUTED_RECORDER_MACHINE` in `network_distributed.h`), which no
+client or bot ever holds: a game of every machine (the host and 127 bots,
+or 128 players) is recorded too. Only the host's netcode has a row for it;
+no message names it, and `machine_get_player_list` (`players.c`) gives it
+no players. It has no players, so:
 
 - `distributed_host_plan_players` sends it every player's unit and input,
   every tick;

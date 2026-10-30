@@ -382,7 +382,8 @@ with none (dead or joining, it watches one of them) */
 static struct
 {
 	short count;
-	long indices[HALO_PORT_MAXIMUM_NETWORK_MACHINES];
+	/* (and the replay recorder's) */
+	long indices[DISTRIBUTED_VIEWING_MACHINES];
 	short player_unit_count;
 	real_point3d player_unit_origins[MAXIMUM_TRACKED_PLAYERS];
 	struct
@@ -393,7 +394,7 @@ static struct
 		short vehicle_count;
 		long vehicle_indices[MAXIMUM_LOCAL_PLAYERS];
 		short vehicle_player_indices[MAXIMUM_LOCAL_PLAYERS];
-	} machines[HALO_PORT_MAXIMUM_NETWORK_MACHINES];
+	} machines[DISTRIBUTED_VIEWING_MACHINES];
 } objects_host_viewers;
 /* ... each machine it has told all its objects: when, and which players it
 had then (another machine in its place has others) */
@@ -1377,7 +1378,7 @@ static void distributed_host_find_viewers(
 
 	/* (and the replay recorder, which has no players: network_replay.c) */
 	objects_host_viewers.count = distributed_viewing_machines(objects_host_viewers.indices,
-		HALO_PORT_MAXIMUM_NETWORK_MACHINES);
+		DISTRIBUTED_VIEWING_MACHINES);
 	objects_host_viewers.player_unit_count = 0;
 	data_iterator_new(&iterator, player_data);
 	while ((player = data_iterator_next(&iterator)) != NULL &&

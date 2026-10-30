@@ -643,6 +643,18 @@ void players_dispose(
 long *machine_get_player_list(
 	long machine_index)
 {
+	/* port: a machine past the table's (the replay recorder's,
+	port/linux/game/network_distributed.h's DISTRIBUTED_RECORDER_MACHINE)
+	has no players */
+	if (DATUM_INDEX_TO_ABSOLUTE_INDEX(machine_index) >= MAXIMUM_NETWORK_MACHINE_COUNT)
+	{
+		static long no_players[MAXIMUM_LOCAL_PLAYERS];
+		long local_player_index;
+
+		for (local_player_index = 0; local_player_index < MAXIMUM_LOCAL_PLAYERS; local_player_index++)
+			no_players[local_player_index] = NONE;
+		return no_players;
+	}
 	return machine_to_player_table[DATUM_INDEX_TO_ABSOLUTE_INDEX(machine_index)];
 }
 

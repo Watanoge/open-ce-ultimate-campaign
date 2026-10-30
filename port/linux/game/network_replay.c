@@ -7,8 +7,9 @@ dedicated server) writes what a client that sees everything would be sent
 to a file in the data folder's replays/, from the game's first tick until
 its map is unloaded.
 
-That client is the recorder: a machine slot no client and no bot has
-(network_distributed.c's distributed_recorder_machine), with no players, so
+That client is the recorder: a machine index past the session's, which no
+client or bot has (network_distributed.h's DISTRIBUTED_RECORDER_MACHINE),
+with no players, so
 the distributed netcode sends it every player every tick and the objects
 and actors as often as they are near anyone's players, as it does a client
 whose players have never been alive. Its datagrams are written here instead
@@ -1009,6 +1010,10 @@ void network_replay_stop(
 			replay.records[_network_replay_reliable], replay.bytes[_network_replay_reliable] / 1024,
 			replay.records[_network_replay_reliable_to_machine], replay.bytes[_network_replay_reliable_to_machine] / 1024,
 			replay.records[_network_replay_game_message], replay.bytes[_network_replay_game_message] / 1024);
+		/* (a host's with none of the ticks' datagrams plays black: nothing
+		went to its recorder's machine, network_distributed.c) */
+		if (!replay.client && !replay.records[_network_replay_datagram])
+			error(_error_log, "replay: no datagrams were recorded: the replay will play black");
 	}
 	replay.considered = FALSE;
 	replay.client = FALSE;

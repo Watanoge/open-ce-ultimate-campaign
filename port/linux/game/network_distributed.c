@@ -103,7 +103,6 @@ boolean network_distributed_server_send_to_all_reliably(void *message, word size
 boolean network_distributed_server_send_to_machine(long machine_index, void *message, word size);
 boolean network_distributed_server_send_to_machine_reliably(long machine_index, void *message, word size);
 short network_distributed_server_machines(long *machine_indices, short maximum);
-boolean network_distributed_server_slot_taken(long machine_index);
 /* players.c's */
 void network_player_attach_unit(long player_index, long unit_index);
 void network_player_detach_unit(long player_index);
@@ -200,9 +199,10 @@ enum
 	states say the player died, before the unit dies without it (an
 	actor's waits as long: network_objects.c) */
 	DEATH_BLOW_WAIT_TICKS = TICKS_PER_SECOND / 2,
-	/* the machines, and the host: a client's messages' sender */
-	MAXIMUM_SENDERS = HALO_PORT_MAXIMUM_NETWORK_MACHINES + 1,
-	HOST_SENDER = HALO_PORT_MAXIMUM_NETWORK_MACHINES,
+	/* the machines, the replay recorder's (DISTRIBUTED_RECORDER_MACHINE) and
+	the host: a client's messages' sender */
+	MAXIMUM_SENDERS = DISTRIBUTED_VIEWING_MACHINES + 1,
+	HOST_SENDER = DISTRIBUTED_VIEWING_MACHINES,
 	/* a round trip before one is measured, and the longest taken (ticks) */
 	DEFAULT_ROUND_TRIP_TICKS = 6,
 	MAXIMUM_ROUND_TRIP_TICKS = 60,
@@ -633,7 +633,7 @@ static struct
 
 /* the host: whether each client's players could see each player last tick
 (one who comes into sight is sent at once) */
-static boolean distributed_seen[HALO_PORT_MAXIMUM_NETWORK_MACHINES][MAXIMUM_TRACKED_PLAYERS];
+static boolean distributed_seen[DISTRIBUTED_VIEWING_MACHINES][MAXIMUM_TRACKED_PLAYERS];
 /* the host: where each client's players were when last alive (a client
 whose players are dead watches from there) */
 static struct distributed_viewer
@@ -642,7 +642,7 @@ static struct distributed_viewer
 	short cluster_index;
 	real_point3d position;
 	real_vector3d aim;
-} distributed_viewers[HALO_PORT_MAXIMUM_NETWORK_MACHINES][MAXIMUM_LOCAL_PLAYERS];
+} distributed_viewers[DISTRIBUTED_VIEWING_MACHINES][MAXIMUM_LOCAL_PLAYERS];
 /* the host, this tick: every player's unit and input, what each client is
 sent of each player (decided before the damage, which goes where the
 players it hurt do), and the client each player is on (NONE for none: the
@@ -658,7 +658,7 @@ enum
 static struct distributed_unit_state distributed_host_states[MAXIMUM_TRACKED_PLAYERS];
 static struct distributed_relayed_action distributed_host_actions[MAXIMUM_TRACKED_PLAYERS];
 static long distributed_host_update_number;
-static byte distributed_sends[HALO_PORT_MAXIMUM_NETWORK_MACHINES][MAXIMUM_TRACKED_PLAYERS];
+static byte distributed_sends[DISTRIBUTED_VIEWING_MACHINES][MAXIMUM_TRACKED_PLAYERS];
 static long distributed_player_machines[MAXIMUM_TRACKED_PLAYERS];
 /* the host: each player's statistics as last sent (only a change is sent,
 and once a second a few players' whatever they are, round them all) */
@@ -1037,7 +1037,7 @@ static void distributed_batch_flush(
 	if (sender == HOST_SENDER)
 		network_distributed_client_send(batch->data, batch->size);
 	/* (the replay recorder's goes to its file, network_replay.c) */
-	else if (sender == distributed_machines.recorder)
+	else if (sender == DISTRIBUTED_RECORDER_MACHINE)
 		network_replay_record(_network_replay_datagram, batch->data, batch->size);
 	else
 		network_distributed_server_send_to_machine(sender, batch->data, batch->size);
@@ -1184,9 +1184,9 @@ void distributed_send(
 	{
 	case _distributed_to_clients:
 	{
-		long machine_indices[HALO_PORT_MAXIMUM_NETWORK_MACHINES];
+		long machine_indices[DISTRIBUTED_VIEWING_MACHINES];
 		/* (and the replay recorder) */
-		short machine_count = distributed_viewing_machines(machine_indices, HALO_PORT_MAXIMUM_NETWORK_MACHINES);
+		short machine_count = distributed_viewing_machines(machine_indices, DISTRIBUTED_VIEWING_MACHINES);
 		short index;
 
 		for (index = 0; index < machine_count; index++)
@@ -1211,7 +1211,8 @@ void distributed_send_to_machine(
 	short count,
 	word size)
 {
-	if (machine_index < 0 || machine_index >= HALO_PORT_MAXIMUM_NETWORK_MACHINES)
+	/* (or the replay recorder's) */
+	if (machine_index < 0 || machine_index >= DISTRIBUTED_VIEWING_MACHINES)
 		return;
 	distributed_fill_header(message, type, count, size);
 	distributed_batch_add((short)machine_index, message, size, distributed_entry_size(count, size));
@@ -1225,7 +1226,7 @@ void distributed_send_to_machine_reliably(
 	word size)
 {
 	distributed_fill_header(message, type, count, size);
-	if (machine_index == distributed_machines.recorder && machine_index != NONE)
+	if (machine_index == DISTRIBUTED_RECORDER_MACHINE)
 		network_replay_record(_network_replay_reliable_to_machine, message, size);
 	else
 		network_distributed_server_send_to_machine_reliably(machine_index, message, size);
@@ -1388,32 +1389,13 @@ static boolean distributed_machine_is_local(
 	return FALSE;
 }
 
-/* (the host, recording a replay) the recorder's machine: the highest slot
-no client has (joined, joining or loading the game in progress) and no
-player is at, a bot's either; NONE when not recording, or all are taken.
-Found again each tick: a client or a bot may take its slot, and it moves */
+/* (the host, recording a replay) the recorder's machine: one of its own past
+the session's (DISTRIBUTED_RECORDER_MACHINE), which no client or bot takes;
+NONE when not recording */
 static long distributed_recorder_find(
 	void)
 {
-	long machine_index;
-
-	if (!network_replay_recording())
-		return NONE;
-	for (machine_index = HALO_PORT_MAXIMUM_NETWORK_MACHINES - 1; machine_index >= 0; machine_index--)
-	{
-		long *player_list;
-		short local_player_index;
-		boolean empty = TRUE;
-
-		if (network_distributed_server_slot_taken(machine_index))
-			continue;
-		player_list = machine_get_player_list(machine_index);
-		for (local_player_index = 0; local_player_index < MAXIMUM_LOCAL_PLAYERS; local_player_index++)
-			empty &= player_list[local_player_index] == NONE;
-		if (empty && !distributed_machine_is_local(machine_index))
-			return machine_index;
-	}
-	return NONE;
+	return network_replay_recording() ? DISTRIBUTED_RECORDER_MACHINE : NONE;
 }
 
 short distributed_client_machines(
@@ -1528,7 +1510,7 @@ boolean distributed_machine_sees_player(
 	long machine_index,
 	short player_index)
 {
-	return machine_index >= 0 && machine_index < HALO_PORT_MAXIMUM_NETWORK_MACHINES &&
+	return machine_index >= 0 && machine_index < DISTRIBUTED_VIEWING_MACHINES &&
 		player_index >= 0 && player_index < MAXIMUM_TRACKED_PLAYERS &&
 		TEST_FLAG(distributed_sends[machine_index][player_index], _distributed_send_sees_bit);
 }
@@ -3322,10 +3304,10 @@ static void distributed_host_plan_players(
 	static real_point3d origins[MAXIMUM_TRACKED_PLAYERS];
 	static short clusters[MAXIMUM_TRACKED_PLAYERS];
 	static boolean placed[MAXIMUM_TRACKED_PLAYERS];
-	long machine_indices[HALO_PORT_MAXIMUM_NETWORK_MACHINES];
+	long machine_indices[DISTRIBUTED_VIEWING_MACHINES];
 	/* (and the replay recorder, which has no players: it is sent everyone,
 	every tick) */
-	short machine_count = distributed_viewing_machines(machine_indices, HALO_PORT_MAXIMUM_NETWORK_MACHINES);
+	short machine_count = distributed_viewing_machines(machine_indices, DISTRIBUTED_VIEWING_MACHINES);
 	struct structure_bsp *structure_bsp = global_structure_bsp_get();
 	short cluster_count = structure_bsp ? (short)structure_bsp->clusters.count : 0;
 	long now = game_time_get();
@@ -3535,8 +3517,8 @@ input before the units, as the host's tick had them */
 static void distributed_host_send_players(
 	void)
 {
-	long machine_indices[HALO_PORT_MAXIMUM_NETWORK_MACHINES];
-	short machine_count = distributed_viewing_machines(machine_indices, HALO_PORT_MAXIMUM_NETWORK_MACHINES);
+	long machine_indices[DISTRIBUTED_VIEWING_MACHINES];
+	short machine_count = distributed_viewing_machines(machine_indices, DISTRIBUTED_VIEWING_MACHINES);
 	short machine_number;
 
 	for (machine_number = 0; machine_number < machine_count; machine_number++)
