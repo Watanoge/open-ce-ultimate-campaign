@@ -59,13 +59,17 @@ playback first reaches them, the game state's parts in use and the
 simulation's and the netcode's variables outside it (gathered by the guest
 image's linker script, guest.ld's .replay_data and .replay_bss), with
 where the file's records were: copied in one go, then compressed in memory
-on a thread of its own (playback_compressor_main) while the game goes on. The d-pad's left puts
-the last one back (the one before it, just after one), as a core is
-loaded (game_state_port_restore), and its right the next, or with none
-ahead plays ten seconds on: at 50 times, its records before each tick
-(network_replay_playback_tick), the frame it was asked in held, the lines
-over it as they change, and the sound paused (network_replay_frozen,
-rasterizer_port_hold_draw), then at normal speed.
+on a thread of its own (playback_compressor_main) while the game goes on. A tap of
+the d-pad's left puts the last one back (the one before it, just after
+one), as a core is loaded (game_state_port_restore), and of its right the
+next, or with none ahead sets a target ten seconds on and plays to it: at
+50 times, its records before each tick (network_replay_playback_tick), the
+frame it was asked in held, the lines over it as they change, and the
+sound paused (network_replay_frozen, rasterizer_port_hold_draw), then at
+normal speed. Taps add up, each from the last's target. Held, a direction
+scrubs (playback_scrub): the target, a marker on the seek bar, slides that
+way, faster as it is held, and the playback chases it, the keyframes on
+the way put back (playback_seek_chase); back, once it is let go.
 */
 
 #include "cseries.h"
@@ -240,6 +244,14 @@ within this many frames */
 #define REPLAY_SKIP_SPEED 50.0f
 #define REPLAY_SKIP_TICKS_PER_FRAME 60
 #define REPLAY_SKIP_HOLD_FRAMES 3
+/* a d-pad direction held this long (milliseconds) scrubs: the skip's
+target, the marker on the seek bar, slides that way, this many ticks of the
+game a second at first, faster over this long (milliseconds) until it
+crosses the whole bar in this many seconds (never slower than at first) */
+#define REPLAY_SCRUB_HOLD_MILLISECONDS 300
+#define REPLAY_SCRUB_SLOW_TICKS (10 * TICKS_PER_SECOND)
+#define REPLAY_SCRUB_RAMP_MILLISECONDS 1500
+#define REPLAY_SCRUB_CROSSING_SECONDS 4.0f
 /* the text on the screen: how far from its top edge the top line is (and
 twice how far from the bottom the hints' bar), the hints' height (a button's
 picture's), the bar's room either side of them and its colour */
@@ -385,8 +397,8 @@ static struct
 	struct observer_result camera;
 	/* the keyframes, by their ticks; the memory they take; where a
 	keyframe is compressed (as large as the largest it can be); and the
-	tick d-pad right plays to, fast, for the next keyframe (NONE when not
-	skipping) */
+	skip's target, the tick the playback goes to, fast (the marker on the
+	seek bar; NONE when not skipping) */
 	struct replay_keyframe keyframes[REPLAY_MAXIMUM_KEYFRAMES];
 	long keyframe_count;
 	unsigned long keyframe_memory;
@@ -402,6 +414,15 @@ static struct
 	or not (the game drawn as it plays); and the frames waited for it */
 	short skip_hold;
 	short skip_hold_frames;
+	/* the d-pad's direction held (NONE when neither is: the other is not
+	heard meanwhile) and when it was pressed (the clock's milliseconds);
+	whether it is held long enough to scrub, the marker where it has slid
+	to (a tick, in part) and when it last slid */
+	short scrub_button;
+	unsigned long scrub_pressed;
+	boolean scrubbing;
+	real scrub_marker;
+	unsigned long scrub_moved;
 	/* a record's bytes, aligned as the handlers read them */
 	word message[0x10000 / sizeof(word)];
 } playback = { NULL, 0, 0, 0, FALSE, FALSE, FALSE, 0, FALSE, FALSE, NONE };
@@ -491,6 +512,16 @@ static void playback_skip_stop(
 	sound_pause(FALSE);
 }
 
+/* a skip and a scrub ended where the playback is, the d-pad held or not
+(Start, the speed buttons): a press again starts anew */
+static void playback_seek_stop(
+	void)
+{
+	playback_skip_stop();
+	playback.scrub_button = NONE;
+	playback.scrubbing = FALSE;
+}
+
 /* every keyframe let go */
 static void playback_keyframes_free(
 	void)
@@ -506,7 +537,7 @@ static void playback_keyframes_free(
 	playback.keyframe_memory = 0;
 	playback.keyframe_frontier = NONE;
 	playback.keyframes_full = FALSE;
-	playback_skip_stop();
+	playback_seek_stop();
 }
 
 static void playback_free(
@@ -1232,9 +1263,11 @@ static void playback_keyframe_read_game_state(
 then the variables beside it (after the load's procedures, which reset
 some of them), the file where it was then, and what is kept of this
 machine rather than of the game made right again: the clock's times, the
-frame's interpolation, the first-person weapon; the playback's speed */
+frame's interpolation, the first-person weapon; the playback's speed, or a
+skip's (seeking: the skip goes on from it, its frame still held) */
 static void playback_keyframe_restore(
-	long keyframe_index)
+	long keyframe_index,
+	boolean seeking)
 {
 	struct replay_keyframe const *keyframe = &playback.keyframes[keyframe_index];
 	struct playback_keyframe_reading reading;
@@ -1259,21 +1292,55 @@ static void playback_keyframe_restore(
 	}
 	playback.next = keyframe->next;
 	playback.ended = 0;
-	playback_skip_stop();
+	if (!seeking)
+		playback_skip_stop();
 	network_distributed_replay_restored();
 	render_interpolation_reset();
 	first_person_weapons_initialize_for_new_map();
-	game_time_set_speed(replay_speeds[playback.speed]);
-	error(_error_log, "replay: back to keyframe %ld, tick %ld", keyframe_index, keyframe->tick);
+	game_time_set_speed(seeking ? REPLAY_SKIP_SPEED : replay_speeds[playback.speed]);
+	error(_error_log, "replay: to keyframe %ld, tick %ld", keyframe_index, keyframe->tick);
 }
 
-/* d-pad left: back to the last keyframe (the one before it, just after
-one); d-pad right: on to the next, put back if it was taken already, else
-played to, fast */
+/* the keyframe latest at or before the tick, NONE if none is */
+static long playback_keyframe_before(
+	long tick)
+{
+	long index;
+
+	for (index = playback.keyframe_count - 1; index >= 0; index--)
+	{
+		if (playback.keyframes[index].tick <= tick)
+			return index;
+	}
+	return NONE;
+}
+
+/* the skip's target set, the skip started if it was not: the frame it is
+asked in held (network_replay_frozen) and nothing heard; the keyframes on
+the way taken at their own ticks (network_replay_ticks_per_frame) */
+static void playback_skip_to(
+	long target)
+{
+	if (playback.skip_tick == NONE)
+	{
+		playback.skip_hold = _replay_hold_wanted;
+		playback.skip_hold_frames = 0;
+		sound_pause(TRUE);
+	}
+	playback.skip_tick = target;
+	game_time_set_speed(REPLAY_SKIP_SPEED);
+}
+
+/* a tap of the d-pad. Left: back to the last keyframe (the one before it,
+just after one). Right: on to the keyframe ahead, put back at once, else
+the target ten seconds on, played to fast. Taps add up: during a skip each
+goes on from its target, not from where the playback is */
 static void playback_skip(
 	boolean forward)
 {
 	long now = game_time_get();
+	long from = playback.skip_tick != NONE ? playback.skip_tick : now;
+	long target;
 	long index;
 
 	/* (one still being compressed waited for: it may be the one wanted) */
@@ -1282,32 +1349,105 @@ static void playback_skip(
 		return;
 	if (!forward)
 	{
-		for (index = playback.keyframe_count - 1; index > 0; index--)
-		{
-			if (playback.keyframes[index].tick <= now - REPLAY_REWIND_GRACE_TICKS)
-				break;
-		}
-		playback_keyframe_restore(index);
+		index = playback_keyframe_before(from - REPLAY_REWIND_GRACE_TICKS);
+		playback_keyframe_restore(index != NONE ? index : 0, FALSE);
 		return;
 	}
 	for (index = 0; index < playback.keyframe_count; index++)
 	{
-		if (playback.keyframes[index].tick > now)
+		if (playback.keyframes[index].tick > from)
+			break;
+	}
+	if (index < playback.keyframe_count)
+	{
+		/* (not skipping: there at once, as before. Skipping: the skip's
+		new target, put back by playback_seek_chase) */
+		if (playback.skip_tick == NONE)
 		{
-			playback_keyframe_restore(index);
+			playback_keyframe_restore(index, FALSE);
 			return;
 		}
+		target = playback.keyframes[index].tick;
 	}
-	if (playback.ended)
+	else
+	{
+		if (playback.ended)
+			return;
+		target = MIN(from + REPLAY_KEYFRAME_TICKS, playback.end_tick);
+		if (target <= now)
+			return;
+	}
+	playback_skip_to(target);
+}
+
+/* a d-pad direction held: past REPLAY_SCRUB_HOLD_MILLISECONDS it scrubs,
+the marker sliding from the skip's target (or from where the playback is)
+that way, slowly at first and faster as it is held; the skip's target is
+the marker. Let go, the skip goes on to it */
+static void playback_scrub(
+	unsigned long now)
+{
+	real length = (real)(playback.end_tick - playback.start_tick);
+	real seconds;
+	real ramp;
+	real fast;
+	real speed;
+
+	if (playback.scrub_button == NONE)
 		return;
-	/* (ten seconds on from here, played to fast: the frame asked in held
-	and nothing heard, network_replay_frozen; the keyframes on the way taken
-	at their own ticks, network_replay_ticks_per_frame) */
-	playback.skip_tick = now + REPLAY_KEYFRAME_TICKS;
-	playback.skip_hold = _replay_hold_wanted;
-	playback.skip_hold_frames = 0;
-	sound_pause(TRUE);
-	game_time_set_speed(REPLAY_SKIP_SPEED);
+	if (!playback.held[playback.scrub_button])
+	{
+		playback.scrub_button = NONE;
+		playback.scrubbing = FALSE;
+		return;
+	}
+	if (!playback.scrubbing)
+	{
+		if (now - playback.scrub_pressed < REPLAY_SCRUB_HOLD_MILLISECONDS)
+			return;
+		/* (the replay over: nothing ahead to scrub to) */
+		if (playback.scrub_button == _gamepad_binary_button_dpad_right && playback.ended)
+			return;
+		playback.scrubbing = TRUE;
+		playback.scrub_moved = now;
+		playback.scrub_marker = (real)(playback.skip_tick != NONE ? playback.skip_tick : game_time_get());
+		playback_skip_to((long)playback.scrub_marker);
+		return;
+	}
+	seconds = (real)(now - playback.scrub_moved) / 1000.0f;
+	playback.scrub_moved = now;
+	ramp = MIN(1.0f, (real)(now - playback.scrub_pressed - REPLAY_SCRUB_HOLD_MILLISECONDS) /
+		(real)REPLAY_SCRUB_RAMP_MILLISECONDS);
+	fast = MAX((real)REPLAY_SCRUB_SLOW_TICKS, length / REPLAY_SCRUB_CROSSING_SECONDS);
+	speed = (real)REPLAY_SCRUB_SLOW_TICKS + (fast - (real)REPLAY_SCRUB_SLOW_TICKS) * ramp;
+	if (playback.scrub_button == _gamepad_binary_button_dpad_left)
+		speed = -speed;
+	playback.scrub_marker = PIN(playback.scrub_marker + speed * seconds,
+		(real)playback.start_tick, (real)playback.end_tick);
+	playback.skip_tick = (long)playback.scrub_marker;
+}
+
+/* a skip on its way to its target over what has been played already: the
+latest keyframe before the target put back when it is ahead of the
+playback, or when the target is behind it (once left is let go: a scrub
+back freezes the playback until then), and played on from there. Not
+before the skip's frame is held: the frame put back would be the one held */
+static void playback_seek_chase(
+	void)
+{
+	long now = game_time_get();
+	long index;
+
+	if (playback.skip_tick == NONE || playback.skip_hold == _replay_hold_wanted ||
+		playback.scrub_button == _gamepad_binary_button_dpad_left)
+	{
+		return;
+	}
+	index = playback_keyframe_before(playback.skip_tick);
+	if (index == NONE)
+		return;
+	if (playback.keyframes[index].tick > now || playback.skip_tick < now)
+		playback_keyframe_restore(index, TRUE);
 }
 
 boolean network_replay_playback_idle(
@@ -1343,9 +1483,14 @@ boolean network_replay_playback_idle(
 	{
 		playback.skip_hold = _replay_hold_none;
 	}
-	/* (a skip ahead there: the game drawn again, at its normal speed) */
-	if (playback.skip_tick != NONE && (game_time_get() >= playback.skip_tick || playback.ended ||
-		playback.keyframes_full))
+	/* (a skip on its way: a keyframe on the way put back) */
+	playback_seek_chase();
+	if (playback.leaving)
+		return TRUE;
+	/* (a skip there, not scrubbing still: the game drawn again, at its
+	normal speed. The keyframes' memory full, it goes on, taking none) */
+	if (playback.skip_tick != NONE && !playback.scrubbing &&
+		(game_time_get() >= playback.skip_tick || playback.ended))
 	{
 		playback_skip_stop();
 		playback.speed = REPLAY_NORMAL_SPEED;
@@ -1357,8 +1502,12 @@ boolean network_replay_playback_idle(
 	resume) */
 	if (playback_pressed(_gamepad_binary_button_start))
 	{
+		/* (a skip or a scrub ended where the playback is, which resumes at
+		normal speed) */
+		if (playback.skip_tick != NONE)
+			playback.speed = REPLAY_NORMAL_SPEED;
 		playback.paused = !playback.paused;
-		playback_skip_stop();
+		playback_seek_stop();
 		playback.scores = FALSE;
 		game_time_set_speed(playback.paused ? 0.0f : replay_speeds[playback.speed]);
 		if (!playback.paused && playback.ended)
@@ -1378,14 +1527,22 @@ boolean network_replay_playback_idle(
 		playback.watched = playback_next_player(playback.watched, FALSE);
 	if (playback_pressed(FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_x))
 		playback.watched = playback_next_player(playback.watched, TRUE);
-	if (playback_pressed(_gamepad_binary_button_dpad_left))
+	/* (the d-pad: a tap skips, held it scrubs; while one way is held the
+	other is not heard) */
 	{
-		playback_skip(FALSE);
-		if (playback.leaving)
-			return TRUE;
+		boolean left = playback_pressed(_gamepad_binary_button_dpad_left);
+		boolean right = playback_pressed(_gamepad_binary_button_dpad_right);
+
+		if (playback.scrub_button == NONE && (left || right))
+		{
+			playback_skip(right);
+			if (playback.leaving)
+				return TRUE;
+			playback.scrub_button = right ? _gamepad_binary_button_dpad_right : _gamepad_binary_button_dpad_left;
+			playback.scrub_pressed = now;
+		}
+		playback_scrub(now);
 	}
-	if (playback_pressed(_gamepad_binary_button_dpad_right))
-		playback_skip(TRUE);
 	if (playback_pressed(FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_y))
 	{
 		playback.view = (short)((playback.view + 1) % NUMBER_OF_REPLAY_VIEWS);
@@ -1408,12 +1565,12 @@ boolean network_replay_playback_idle(
 	if (playback_pressed(FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_black) &&
 		playback.speed < (short)NUMBEROF(replay_speeds) - 1)
 	{
-		playback_skip_stop();
+		playback_seek_stop();
 		game_time_set_speed(replay_speeds[++playback.speed]);
 	}
 	if (playback_pressed(FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_white) && playback.speed > 0)
 	{
-		playback_skip_stop();
+		playback_seek_stop();
 		game_time_set_speed(replay_speeds[--playback.speed]);
 	}
 	playback_pressed(_gamepad_binary_button_back);
@@ -2412,7 +2569,7 @@ void network_replay_playback_draw(
 		{ { _gamepad_binary_button_right_thumb, NONE }, L"RESET" },
 		{ { FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_white,
 			FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_black }, L"SPEED" },
-		{ { _gamepad_binary_button_dpad_left, NONE }, L"SKIP" },
+		{ { _gamepad_binary_button_dpad_left, NONE }, L"SEEK" },
 		{ { _gamepad_binary_button_back, NONE }, L"SCORES" },
 		{ { FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_b, NONE }, L"HIDE" },
 		{ { _gamepad_binary_button_start, NONE }, L"PAUSE" },

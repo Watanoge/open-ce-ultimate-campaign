@@ -299,7 +299,8 @@ DELETE (pressed twice), EXPORT (Android) and BACK. A recording shorter than
 - **The controls.** A watches the next player alive, X the one before;
   one who dies is watched again when they spawn. The d-pad's left goes
   back to the last keyframe (the one before it, within two seconds of
-  one) and its right on to the next (see "Keyframes"). The right
+  one) and its right on to the next; held, either scrubs (see
+  "Keyframes" and "Scrubbing"). The right
   shoulder button (RB, the Switch's R, the PS5's R1) plays faster (2, 4,
   8 times) and the left one slower (a half, a quarter, then a pause:
   `game_time_set_speed`). Back held shows the scores, the watched
@@ -399,5 +400,37 @@ frames (512 KB a frame at most), the upload into `<name>.part`, which
 becomes the replay only once it is whole and begins as a replay does; a
 name the folder has already is refused.
 
-Not yet: seeking (phase 2), and co-op levels' scripts have not been
-tried.
+Not yet: co-op levels' scripts have not been tried.
+
+## Scrubbing
+
+The d-pad's skips are a seek: the playback has one target, a marker on
+the seek bar, and taps and holds move it; the skip ahead (50 times, the
+frame asked in held, the sound paused, the playhead throbbing) takes the
+playback there (`playback_skip`, `playback_scrub`, `playback_seek_chase`).
+Keyframes stay in memory only.
+
+- **Taps.** Right goes to the keyframe ahead if there is one, else sets
+  the target ten seconds on, exactly (2:34 to 2:44), and plays to it.
+  Left goes back to a keyframe, as now. Taps add up: a tap during a skip
+  moves the target on from where it was (three taps of right, 30
+  seconds), not from where the playback is.
+- **Holding right.** The press does what a tap does; held past about 0.3
+  seconds, the marker slides on, slowly at first (about ten seconds of
+  the game a second), faster over about 1.5 seconds, to a speed that
+  crosses the whole bar in about four. The playback chases it live
+  behind the held frame: where the marker is over what has been played
+  already, the last keyframe before it is put back, and from there it
+  plays to it fast, the playhead moving and throbbing. Let go, the marker
+  stops and the skip goes on to it. It cannot be cancelled.
+- **Holding left.** The press goes back to the keyframe to the left, as a
+  tap does; held, the marker slides back as it slides on. Let go, the
+  keyframe at or before the marker is put back and the playback plays
+  to the marker, fast, as a skip ahead does.
+- The target stays between the start and the replay's length. While a
+  direction is held, the other is not heard.
+- **Start** during a skip or a scrub ends it: the marker goes, the pause
+  menu comes up, and a resume plays on from wherever the playback had
+  got to, at normal speed.
+- With the keyframes' memory full (256 MB), a skip goes on to its
+  target, taking none more, rather than ending at once.
