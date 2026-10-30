@@ -1075,8 +1075,13 @@ int halo_push_to_talk_held(void)
 	}
 	/* (and the first controller's D-pad Down, the touch controls' too, in
 	the game: as its D-pad Up opens the text chat's keyboard, not a binding,
-	and the game still gets it, network_chat.c) */
-	return !input.menus && (chat_pad[0] & (1UL << HALO_CHAT_PAD_DOWN)) != 0;
+	and the game still gets it, network_chat.c; not in a replay's playback,
+	whose D-pad Down is its camera's: network_replay_playback.c) */
+	{
+		extern unsigned char network_replay_playing(void);
+
+		return !input.menus && !network_replay_playing() && (chat_pad[0] & (1UL << HALO_CHAT_PAD_DOWN)) != 0;
+	}
 }
 
 /* A scroll of the wheel switches weapons once: it holds Y for WHEEL_PRESS_MS

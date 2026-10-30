@@ -36,8 +36,10 @@ up from still (the Switch's are buttons: playback_free_camera_rise),
 sliding along walls rather than through them (playback_free_camera_move);
 a tripod, placed where behind's would be when it is chosen, tracking the
 player (playback_free_camera_track) as it moves until the right stick takes
-the aim (R3 tracks again, or stops), and zooming on them as they go further
-until it first moves (playback_free_camera_zoom).
+the aim (R3 or D-pad Up tracks again, or stops; D-pad Down puts it behind
+the player again, tracking them, as when it was chosen), and zooming on them
+as they go further until it first moves (playback_free_camera_zoom). D-pad
+Up turns behind with the player again too, as R3 does.
 Through the eyes, the aim turns smoothly between the facings the replay
 has of the player (playback_index_facings, playback_eyes_aim) and the host's
 corrections of where they are are glided over (playback_eyes_glide): a
@@ -199,6 +201,8 @@ static struct
 #define REPLAY_MAXIMUM_FILE_SIZE (256 * 1024 * 1024)
 /* how long the main menu waits after the replay's end, or the game's */
 #define REPLAY_END_MILLISECONDS 4000
+/* the least time between two of D-pad Down's resets of the free camera */
+#define REPLAY_CAMERA_RESET_MILLISECONDS 150
 
 /* the camera: how far behind and above what it watches (a unit on foot, or
 the vehicle it rides), its pitch, and how much of its turn toward the
@@ -433,6 +437,9 @@ static struct
 	boolean free_placing;
 	boolean free_tracking;
 	boolean free_still;
+	/* when D-pad Down last put the free camera back behind the
+	player (system_milliseconds: REPLAY_CAMERA_RESET_MILLISECONDS) */
+	unsigned long free_reset_at;
 	real free_field_of_view;
 	boolean free_focus_valid;
 	real_point3d free_focus;
@@ -1643,14 +1650,26 @@ boolean network_replay_playback_idle(
 			playback.behind_zoom = 1.0f;
 		}
 	}
-	/* (the right stick's click: behind turns with the player again, at its
-	zoom; the free camera tracks them from where it is, or holds its aim) */
-	if (playback_pressed(_gamepad_binary_button_right_thumb))
+	/* (the right stick's click, or D-pad Up: behind turns with the player
+	again, at its zoom; the free camera tracks them from where it is, or
+	holds its aim. Both asked, so each one's press is seen) */
+	if (playback_pressed(_gamepad_binary_button_right_thumb) | playback_pressed(_gamepad_binary_button_dpad_up))
 	{
 		if (playback.view == _replay_view_behind)
 			playback.behind_orbiting = FALSE;
 		else if (playback.view == _replay_view_free && !playback.free_placing)
 			playback.free_tracking = !playback.free_tracking;
+	}
+	/* (D-pad Down: the free camera placed behind the player again, as when
+	it is chosen, and left there tracking them, whether it tracked them or
+	held its aim; once a press, the next heard no sooner than
+	REPLAY_CAMERA_RESET_MILLISECONDS after) */
+	if (playback_pressed(_gamepad_binary_button_dpad_down) && playback.view == _replay_view_free &&
+		!playback.free_placing &&
+		now - playback.free_reset_at >= REPLAY_CAMERA_RESET_MILLISECONDS)
+	{
+		playback.free_placing = TRUE;
+		playback.free_reset_at = now;
 	}
 	/* (the right shoulder faster, the left slower: the Xbox's black and
 	white, xinput_sdl.c) */
