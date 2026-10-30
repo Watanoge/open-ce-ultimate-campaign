@@ -356,7 +356,7 @@ opened by other apps. On the Switch and the PS5 the Theater shows a QR
 code and an address instead: a page on the local network, while the
 Theater is open, that downloads the replays and uploads others
 (`network.link_page` turns it off, with Direct Link's). The folder keeps
-the newest `network.replays_kept`, and a recording shorter than 5 seconds
+the newest `network.replays_kept`, and a recording shorter than 15 seconds
 is deleted as it ends.
 
 The menus' text is in the language of the Custom Edition whose `loc.map` is

@@ -248,7 +248,7 @@ once for each new file), scrolling over more; A plays the one chosen, and
 the panel says what it is, or why it cannot be played (a replay from
 before format 2, or of another network version). Its buttons are RECORD,
 DELETE (pressed twice), EXPORT (Android) and BACK. A recording shorter than
-5 seconds is deleted as it ends.
+15 seconds is deleted as it ends.
 `port/linux/game/network_replay_playback.c`:
 
 - **As a client with no player and no host.** The file is read whole.

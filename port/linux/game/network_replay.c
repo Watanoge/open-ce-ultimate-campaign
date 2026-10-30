@@ -87,7 +87,7 @@ game's own */
 /* a record's header: its kind, a byte left 0, its size and the tick */
 #define REPLAY_RECORD_HEADER_SIZE 8
 /* a recording shorter than this (ticks) is deleted as it ends */
-#define REPLAY_MINIMUM_TICKS (5 * TICKS_PER_SECOND)
+#define REPLAY_MINIMUM_TICKS (15 * TICKS_PER_SECOND)
 /* the file written out this often (ticks): what a crash loses */
 #define REPLAY_FLUSH_TICKS (5 * TICKS_PER_SECOND)
 /* the file's buffer: on the Switch each write waits for the card, so
