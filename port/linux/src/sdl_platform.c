@@ -1340,6 +1340,12 @@ BOOL platform_video_initialize(unsigned long width, unsigned long height)
 		platform_log("SDL_CreateWindow failed: %s", SDL_GetError());
 		return FALSE;
 	}
+#ifdef HALO_SWITCH
+	/* the console's one window has the focus from the start, which its SDL2
+	need not say with an event (the HOME menu's focus lost and gained still
+	come): unfocused, controller_remap_input takes every pad's buttons */
+	input_state.focused = TRUE;
+#endif
 #ifndef HALO_ANDROID
 	/* the game's icon, which the desktop shows for the window (on Windows
 	also halo.exe's own, port/windows/halo.rc; a web page has its own; not

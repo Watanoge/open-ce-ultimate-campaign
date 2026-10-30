@@ -911,7 +911,11 @@ static int pack_build(long pack)
 	build.chunk = malloc(IO_CHUNK);
 	build.seen = malloc(SEEN_SLOTS * sizeof(*build.seen));
 	if (!build.chunk || !build.seen || build.total <= 0.0)
+	{
+		error(_error_silent, "tag pack: cannot write %s (%s)", path,
+			build.total <= 0.0 ? "none of its maps is there" : "out of memory");
 		goto done;
+	}
 	memset(build.seen, 0, SEEN_SLOTS * sizeof(*build.seen));
 	build.out = CreateFileA(partial, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL);
 	if (build.out == INVALID_HANDLE_VALUE)
@@ -1088,6 +1092,8 @@ enum
 };
 
 static int pack_step;
+/* times the build's dialog was gone before it was seen open, asked again */
+static int pack_dialog_retries;
 /* the pack being written (NONE), and those asked for after it, in turn */
 static long pack_current = NONE;
 static long pack_queue[TAG_PACK_MAPS];
@@ -1235,11 +1241,15 @@ void tag_pack_update(boolean main_menu)
 		memmove(pack_queue, pack_queue + 1, (unsigned long)pack_queued * sizeof(*pack_queue));
 		texts_load(pack_current);
 		display_error_text_deferred(notice_text, 0);
+		error(_error_silent, "tag pack: %s's notice asked for", port_tag_packs_name(pack_current));
+		pack_dialog_retries = 0;
 		pack_step = _pack_notice;
 		return;
 	case _pack_notice:
 		if (ui_widget_port_error_showing())
 			return;
+		error(_error_silent, "tag pack: %s's notice dismissed; its build's dialog asked for",
+			port_tag_packs_name(pack_current));
 		status_set(building_text, 0, "");
 		display_error_text_deferred(status_text, 0);
 		pack_step = _pack_dialog_asked;
@@ -1251,11 +1261,20 @@ void tag_pack_update(boolean main_menu)
 			pack_step = _pack_dialog_up;
 		else if (!ui_widget_port_error_showing())
 		{
-			pack_step = _pack_idle;
-			pack_current = NONE;
+			/* (closed before it was seen open: the notice was answered, so
+			it is asked again, and after a few times the pack is written
+			without it) */
+			pack_dialog_retries++;
+			error(_error_silent, "tag pack: %s's build dialog closed before it was seen (%d)",
+				port_tag_packs_name(pack_current), pack_dialog_retries);
+			if (pack_dialog_retries < 3)
+				pack_step = _pack_notice;
+			else
+				pack_step = _pack_dialog_up;
 		}
 		return;
 	case _pack_dialog_up:
+		error(_error_silent, "tag pack: %s's build dialog up; writing it", port_tag_packs_name(pack_current));
 		pack_step = _pack_idle;
 		if (pack_build(pack_current))
 			status_set(ready_text, -1, NULL);
