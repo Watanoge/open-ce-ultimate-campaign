@@ -1172,7 +1172,8 @@ int bots_game_allowed(void)
 
 int bots_machine_is_bot(long machine_index)
 {
-	return machine_index >= BOTS_FIRST_MACHINE && machine_index < BOTS_FIRST_MACHINE + BOTS_MAXIMUM;
+	return machine_index >= BOTS_MACHINE(BOTS_MAXIMUM - 1) && machine_index <= BOTS_MACHINE(0) &&
+		!network_game_server_port_machine_joined(machine_index);
 }
 
 static int bots_player_is_bot(long player_index)
@@ -1206,7 +1207,7 @@ void bots_network_player(long bot_index, struct network_player *player)
 	player->name[index] = 0;
 	player->primary_color_index = NONE;
 	player->icon_index = 0;
-	player->machine_index = (char)(BOTS_FIRST_MACHINE + bot_index);
+	player->machine_index = (char)BOTS_MACHINE(bot_index);
 	player->controller_index = 0;
 	player->team_index = 0;
 	player->player_list_index = NONE;
@@ -4493,7 +4494,7 @@ static boolean bots_ctf_defender(struct bots_bot *bot, struct player_datum *play
 			continue;
 		team_size++;
 		if (bots_machine_is_bot(other->network_player_data.machine_index) &&
-			other->network_player_data.machine_index - BOTS_FIRST_MACHINE < own_bot_index)
+			BOTS_INDEX(other->network_player_data.machine_index) < own_bot_index)
 		{
 			rank++;
 		}
@@ -4693,7 +4694,7 @@ static boolean bots_king_guard(struct bots_bot *bot, struct player_datum *player
 			continue;
 		team_size++;
 		if (bots_machine_is_bot(other->network_player_data.machine_index) &&
-			other->network_player_data.machine_index - BOTS_FIRST_MACHINE < own_bot_index)
+			BOTS_INDEX(other->network_player_data.machine_index) < own_bot_index)
 		{
 			rank++;
 		}
@@ -7971,7 +7972,7 @@ static void bots_report(void)
 			scores[team] += player->statistics.multiplayer_statistics.ctf_statistics.flag_scores;
 			if (bots_machine_is_bot(player->network_player_data.machine_index))
 			{
-				struct bots_bot *bot = &bots_globals.bots[player->network_player_data.machine_index - BOTS_FIRST_MACHINE];
+				struct bots_bot *bot = &bots_globals.bots[BOTS_INDEX(player->network_player_data.machine_index)];
 
 				if (bot->player_index == iterator.datum_index && bots_ctf_defender(bot, player))
 					defenders[team]++;
@@ -8005,7 +8006,7 @@ static void bots_report(void)
 				on[side]++;
 			if (bot)
 			{
-				struct bots_bot *own = &bots_globals.bots[player->network_player_data.machine_index - BOTS_FIRST_MACHINE];
+				struct bots_bot *own = &bots_globals.bots[BOTS_INDEX(player->network_player_data.machine_index)];
 
 				if (own->player_index == iterator.datum_index && bots_king_guard(own, player))
 					guards++;
@@ -8060,7 +8061,7 @@ void bots_update_actions(struct player_action *actions)
 			bots_tactics_update();
 			bots_profile_part(_bots_part_scan, &scan_started);
 		}
-		bot_index = player->network_player_data.machine_index - BOTS_FIRST_MACHINE;
+		bot_index = BOTS_INDEX(player->network_player_data.machine_index);
 		bot = &bots_globals.bots[bot_index];
 		/* (its level: the setting's, or its own on DISTRIBUTED's curve) */
 		bots_globals.skill = bots_globals.skill_setting == BOTS_SKILL_DISTRIBUTED ?

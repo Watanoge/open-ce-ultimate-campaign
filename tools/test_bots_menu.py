@@ -127,5 +127,8 @@ def test_server_setup_bots():
     assert port_settings.BOTS_SKILL_CHOICES[0] == "distributed"
     assert '{ "bots.skill", _config_string, "\\"distributed\\""' in config
     assert 'if (!strcmp(name, "distributed"))' in bots
-    assert max(port_settings.BOTS_COUNTS) <= int(re.search(r"#define BOTS_MAXIMUM (\d+)",
-                                                           (ROOT / "port/linux/game/bots.h").read_text()).group(1))
+    # (up to the player cap but the host: bots.h's BOTS_MAXIMUM)
+    assert "#define BOTS_MAXIMUM (HALO_PORT_MAXIMUM_NETWORK_PLAYERS - 1)" in (ROOT / "port/linux/game/bots.h").read_text()
+    players = int(re.search(r"#define HALO_PORT_MAXIMUM_NETWORK_PLAYERS (\d+)",
+                            (ROOT / "port/linux/include/halo_port_limits.h").read_text()).group(1))
+    assert max(port_settings.BOTS_COUNTS) == players - 1

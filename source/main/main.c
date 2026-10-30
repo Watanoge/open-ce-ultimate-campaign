@@ -380,7 +380,8 @@ symbols in this file:
 #include "networking/network_game_globals.h"
 #include "networking/network_game_manager.h"
 #include "networking/network_server_manager.h" /* port: a co-op game's level won */
-#include "network_coop.h" /* port: port/linux/game/network_coop.c */
+#include "network_coop.h"
+#include "coop_scripts.h" /* port: port/linux/game/coop_scripts.c */
 #include "campaign_score.h" /* port: port/linux/game/campaign_score.c */
 #include "network_voice.h" /* port: port/linux/game/network_voice.c */
 #include "network_chat.h" /* port: port/linux/game/network_chat.c */
@@ -2045,10 +2046,23 @@ on the host alone. */
 static boolean main_coop_host_revert(
 	void)
 {
+	/* (the last reverts' times: a script whose failure holds again at once
+	after the revert would pull everyone back to the save over and over; a
+	third in a minute respawns the players at the checkpoint instead) */
+	static unsigned long revert_times[2];
+	unsigned long milliseconds = system_milliseconds();
 	long now = game_time_get();
 
 	if (!game_state_port_saved_game_valid())
 		return FALSE;
+	if (revert_times[0] && milliseconds - revert_times[0] < 60000)
+	{
+		error(_error_log, "co-op: a third revert in a minute: the players respawn at the checkpoint instead");
+		revert_times[0] = revert_times[1] = 0;
+		return FALSE;
+	}
+	revert_times[0] = revert_times[1];
+	revert_times[1] = milliseconds;
 	game_state_revert();
 	network_coop_reverted(now);
 	ui_widgets_disable_pause_game(30);
@@ -2174,7 +2188,13 @@ static void main_save_map_private(
 				}
 				else if (main_globals.ticks_until_next_save_check-- <= 0)
 				{
-					if (game_safe_to_save())
+					/* port: in network co-op one player safe is enough, as for
+					the scripts' own test (coop_scripts_safe_to_save): the game's
+					asks it of every player at once, whom one dead, one in the air
+					or one driving past held off, and a level's checkpoint (the
+					Maw's before its Warthog run) gave up; a team wipe went back
+					to the one before */
+					if (coop_scripts_safe_to_save())
 					{
 						if (main_globals.safe_intervals++ >= 3)
 							save_map = TRUE;
@@ -2254,10 +2274,9 @@ static void main_lost_map_private(
 	{
 		main_globals.lost_map = FALSE;
 		main_globals.loss_timer = 0;
-		/* port: in network co-op, everyone dying respawns the players where
-		they were at the last checkpoint, without a revert. A mission the
-		scripts failed (game_lost, with players still alive: d40's timer,
-		a50's Keyes) does revert, or its failure cutscene would never end. */
+		/* port: the co-op host chooses whether a team wipe rewinds or only
+		respawns. Scripted failures still revert, or their cutscene would
+		never end. A missing save falls back to checkpoint positions. */
 		/* port: skull: Iron, a solo death restarts the level, and everyone
 		dead in network co-op reverts to the checkpoint
 		(port/linux/game/skulls.c) */
@@ -2268,7 +2287,8 @@ static void main_lost_map_private(
 			else
 				game_state_revert();
 		}
-		else if ((players_are_all_dead() && !skull_active(_skull_iron)) || !main_coop_host_revert())
+		else if ((players_are_all_dead() && !skull_active(_skull_iron) && !network_coop_wipe_reverts()) ||
+			!main_coop_host_revert())
 			players_respawn_at_checkpoint();
 	}
 	return;

@@ -111,6 +111,7 @@ symbols in this file:
 #include "network_coop.h" /* port: port/linux/game/network_coop.c */
 #include "network_chat.h" /* port: port/linux/game/network_chat.c */
 #include "campaign_score.h" /* port: port/linux/game/campaign_score.c */
+#include "network_votekick.h" /* port: port/linux/game/network_votekick.c */
 #include "text/font_group.h"
 #include "text/text_group.h"
 #include "units/unit_definitions.h"
@@ -1637,6 +1638,8 @@ void hud_draw_screen(
 		hud_messaging_update(render.local_player_index);
 		/* port: network games' text chat, the lines this view's player hears */
 		network_chat_draw(render.local_player_index);
+		/* port: the players' vote running, its box (F1 yes, F2 no) */
+		network_votekick_draw(render.local_player_index);
 	}
 
 	rasterizer_hud_end();

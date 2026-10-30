@@ -124,6 +124,7 @@ symbols in this file:
 
 #if defined(HALO_ANDROID) || defined(HALO_WEB)
 #include "android_ce_texture_cache.h" /* port: port/linux/game/android_ce_texture_cache.c */
+#include "../../port/android/include/android_render_policy.h" /* port: Android chip policy */
 #endif
 
 /* ---------- constants */
@@ -1088,7 +1089,7 @@ void *_texture_cache_bitmap_get_hardware_format(
 	 * bitmaps the Tag Injector adds to a map, and those copied into it from
 	 * others, which its arena was not made to hold: both are read at once
 	 * (tag_injector_read, tag_import_donor_read) */
-	if (android_ce_texture_enabled() && TEST_FLAG(bitmap->flags, _bitmap_cached_bit) &&
+	if (android_texture_fixes && TEST_FLAG(bitmap->flags, _bitmap_cached_bit) &&
 		(custom_edition_cache_tags_loaded() || texture_cache_bitmap_added(bitmap)))
 	{
 		if (texture_cache_bitmap_valid(bitmap))

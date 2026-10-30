@@ -60,7 +60,7 @@ The weapons it drops are the host's, as before.
 const char *config_string(const char *name);
 unsigned long config_changes(void);
 /* port/linux/game/object_bounds_cache.c */
-void object_bounds_cache_update(long object_index, short type, real_point3d const *center, real radius);
+void object_bounds_cache_update(long object_index, real_point3d const *center, real radius);
 
 /* ---------- constants */
 
@@ -1614,7 +1614,7 @@ static void ragdoll_move_body(
 	biped->object.position = ragdoll->positions[0];
 	biped->object.bounding_sphere_center = center;
 	biped->object.bounding_sphere_radius = bounds;
-	object_bounds_cache_update(biped_index, biped->object.type, &center, bounds);
+	object_bounds_cache_update(biped_index, &center, bounds);
 	object_reconnect_to_map(biped_index, NULL);
 	biped->object.translational_velocity = ragdoll->velocities[0];
 	biped->object.angular_velocity = *global_zero_vector3d;

@@ -2,6 +2,7 @@
 # port/android/guest/runtime/guest_host.h, defined in port/android/host's
 # host_main.c and host_touch.c), beyond host_imports.list's.
 host_android_path
+host_android_chip_family
 host_gesture_insets
 host_folder_pick_begin
 host_folder_pick_result
@@ -12,5 +13,6 @@ host_touch_scene
 host_touch_bindings
 host_touch_gyro_mode
 host_touch_menu_fingers
+host_touch_devices
 # the Theater's EXPORT REPLAYS (port/android/host/host_main.c; port/linux/game/menu_functions.c)
 host_android_export_replays

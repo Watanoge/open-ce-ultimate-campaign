@@ -16,10 +16,9 @@ import pytest
 RETAIL_MAPS = Path("assets/maps")
 GAME = Path("build/linux/halo")
 # a player's line of the network test's each second (network_test.c): alive or dead, its kills, deaths, team and
-# machine (a bot's is BOTS_FIRST_MACHINE, 113, and up)
+# machine (a bot's is bots.h's BOTS_MACHINE, 127 down; a local game's players are machine 0's)
 PLAYER = re.compile(r"player (\d+): (?:\((-?[\d.]+) (-?[\d.]+) -?[\d.]+\)|dead).*? s-?\d+ k(-?\d+) d(-?\d+) f-?\d+ "
                     r"t-?\d+ m(\d+)")
-BOTS_FIRST_MACHINE = 113
 
 
 def _game(map_name):
@@ -78,7 +77,7 @@ def test_bots_play_a_local_slayer_game(tmp_path, map_name, variant, count, skill
     status, output, debug = _play(tmp_path, f"local:{map_name}:{variant}", 75, HALO_BOTS=count, HALO_BOT_SKILL=skill)
     assert status == 0, output[-2000:]
     assert not re.search(r"assert|exception", output + debug, re.I), "an assert or exception in the game's log"
-    bots = {index: player for index, player in _players(output).items() if player["machine"] >= BOTS_FIRST_MACHINE}
+    bots = {index: player for index, player in _players(output).items() if player["machine"] != 0}
     assert len(bots) == count, f"{len(bots)} bots in the game, not {count}"
     for index, bot in bots.items():
         assert bot["walked"] >= 30.0, f"bot {index} walked {bot['walked']:.0f} units"
@@ -95,5 +94,5 @@ def test_no_bots_in_a_system_link_game(tmp_path):
     assert status == 0, output[-2000:]
     players = _players(output)
     assert players, "the system link game did not start"
-    assert all(player["machine"] < BOTS_FIRST_MACHINE for player in players.values()), "a bot in a system link game"
+    assert all(player["machine"] == 0 for player in players.values()), "a bot in a system link game"
     assert not re.search(r"\bbots: ", output), "the bots ran in a system link game"

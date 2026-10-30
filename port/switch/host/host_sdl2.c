@@ -1514,3 +1514,32 @@ int host_touch_menu_fingers(void)
 {
 	return 3;
 }
+
+/* (the Switch's touchscreen and its controllers: the touch controls show
+only as touch_controls asks, a controller being there) */
+int host_touch_devices(void)
+{
+	return 1 | 2;
+}
+
+/* (no phone's chip: _android_chip_unknown, which keeps Android's texture
+path as before, android_render_policy.h) */
+int host_android_chip_family(void)
+{
+	return 0;
+}
+
+/* (no browser for a link, and no system keyboard through SDL: the game's own
+on-screen keyboard is the Switch's) */
+int host_sdl_open_url(const char *url)
+{
+	(void)url;
+	return 0;
+}
+
+int host_sdl_text_input(uint32_t window, int type)
+{
+	(void)window;
+	(void)type;
+	return 0;
+}

@@ -55,9 +55,15 @@ static long sends;
 static short next_color;
 
 static boolean network_game_is_splitscreen_local(void) { return local_game; }
+/* (bots.c's: local, system link or a private internet game; here, the case's
+local game) */
+static int bots_game_allowed(void) { return local_game; }
 static long bots_wanted_count(void) { return wanted; }
 static short bots_teams(void) { return teams_setting; }
 static boolean network_game_player_slot_held(long player_index) { (void)player_index; return FALSE; }
+/* (the one machine index a machine that joined holds, or NONE) */
+static long joined_machine = NONE;
+static unsigned char network_game_server_port_machine_joined(long machine_index) { return machine_index == joined_machine; }
 static void get_unique_random_color(struct network_game_server *server, struct network_player *player)
 {
 	(void)server;
@@ -143,7 +149,7 @@ static boolean bot_in(long bot_index)
 	for (index = 0; index < HALO_PORT_MAXIMUM_NETWORK_PLAYERS; index++)
 	{
 		if (network_player_is_valid(&server.game.players[index]) &&
-			server.game.players[index].machine_index == BOTS_FIRST_MACHINE + bot_index)
+			server.game.players[index].machine_index == BOTS_MACHINE(bot_index))
 		{
 			return TRUE;
 		}
@@ -262,21 +268,22 @@ int main(int argc, char **argv)
 		CHECK(bots_in(&team0, &team1) == 0, "%ld bots stayed in a network game", bots_in(&team0, &team1));
 		return 0;
 	}
-	/* Slayer alone (the other gametypes' goals are not the bots' yet): none
-	in CTF, and those of a Slayer lobby leave when it becomes CTF */
+	/* Slayer, CTF and King of the Hill alone (the other gametypes' goals are
+	not the bots'): none in Oddball, and those of a Slayer lobby leave when it
+	becomes Race */
 	CASE("slayer-only")
 	{
-		lobby(game_engine_ctf, 16);
+		lobby(game_engine_oddball, 16);
 		player(0, 0);
 		wanted = 6;
 		network_game_server_port_bots(&server);
-		CHECK(bots_in(&team0, &team1) == 0, "%ld bots in CTF", bots_in(&team0, &team1));
+		CHECK(bots_in(&team0, &team1) == 0, "%ld bots in Oddball", bots_in(&team0, &team1));
 		server.game.variant.game_engine_index = game_engine_slayer;
 		network_game_server_port_bots(&server);
 		CHECK(bots_in(&team0, &team1) == 6, "%ld bots in Slayer, not 6", bots_in(&team0, &team1));
-		server.game.variant.game_engine_index = game_engine_king;
+		server.game.variant.game_engine_index = game_engine_race;
 		network_game_server_port_bots(&server);
-		CHECK(bots_in(&team0, &team1) == 0, "%ld bots stayed for King of the Hill", bots_in(&team0, &team1));
+		CHECK(bots_in(&team0, &team1) == 0, "%ld bots stayed for Race", bots_in(&team0, &team1));
 		return 0;
 	}
 	/* nothing changes once the game is started, nor in the game */
@@ -321,14 +328,45 @@ int main(int argc, char **argv)
 				continue;
 			CHECK(slot->controller_index == 0, "bot of machine %d on controller %d", slot->machine_index,
 				slot->controller_index);
-			CHECK(slot->machine_index >= BOTS_FIRST_MACHINE && slot->machine_index < BOTS_FIRST_MACHINE + BOTS_MAXIMUM,
+			CHECK(slot->machine_index <= BOTS_MACHINE(0) && slot->machine_index >= BOTS_MACHINE(BOTS_MAXIMUM - 1),
 				"bot of machine %d", slot->machine_index);
 			CHECK(slot->primary_color_index != NONE, "bot of machine %d has no colour", slot->machine_index);
 			if (slot->name[0])
 				named++;
 		}
 		CHECK(named == 15, "%ld of 15 bots named", named);
-		CHECK(!bots_machine_is_bot(0) && !bots_machine_is_bot(BOTS_FIRST_MACHINE - 1), "a real machine is a bot");
+		CHECK(!bots_machine_is_bot(0), "the host's machine is a bot");
+		joined_machine = BOTS_MACHINE(20);
+		CHECK(!bots_machine_is_bot(BOTS_MACHINE(20)), "a machine that joined is a bot");
+		joined_machine = NONE;
+		return 0;
+	}
+	/* as many bots as the game holds players but the host, each its own
+	machine from the top down */
+	CASE("to-the-cap")
+	{
+		lobby(game_engine_slayer, HALO_PORT_MAXIMUM_NETWORK_PLAYERS);
+		player(0, 0);
+		wanted = BOTS_MAXIMUM;
+		network_game_server_port_bots(&server);
+		CHECK(bots_in(&team0, &team1) == BOTS_MAXIMUM, "%ld bots, not %d", bots_in(&team0, &team1), BOTS_MAXIMUM);
+		CHECK(server.game.player_count == HALO_PORT_MAXIMUM_NETWORK_PLAYERS, "%d players, not a full game",
+			server.game.player_count);
+		CHECK(bot_in(0) && bot_in(BOTS_MAXIMUM - 1), "the first or the last bot is not in");
+		return 0;
+	}
+	/* a machine that joined holds its index: no bot takes it, and the bots
+	stop below it */
+	CASE("machine-joined")
+	{
+		lobby(game_engine_slayer, HALO_PORT_MAXIMUM_NETWORK_PLAYERS);
+		player(0, 0);
+		joined_machine = BOTS_MACHINE(9);
+		wanted = 20;
+		network_game_server_port_bots(&server);
+		CHECK(bots_in(&team0, &team1) == 9, "%ld bots, not the 9 above the machine", bots_in(&team0, &team1));
+		CHECK(!bot_in(9), "a bot took a machine's index");
+		joined_machine = NONE;
 		return 0;
 	}
 	fprintf(stderr, "unknown case: %s\n", case_name);

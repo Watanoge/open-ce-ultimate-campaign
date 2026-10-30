@@ -58,7 +58,7 @@ OBJECTS.C
 #include "structures/structure_bsp_definitions.h"
 #include "units/units.h"
 /* port: object_bounds_cache.c's */
-void object_bounds_cache_update(long object_index, short type, real_point3d const *center, real radius);
+void object_bounds_cache_update(long object_index, real_point3d const *center, real radius);
 /* port: port/linux/game/first_person_legs.c's */
 void first_person_legs_reset(void);
 
@@ -3090,7 +3090,7 @@ void object_compute_node_matrices(
 		object->object.bounding_sphere_radius *= object->object.scale;
 	}
 	/* port: (and in the packed copy collision reads: object_bounds_cache.c) */
-	object_bounds_cache_update(object_index, object->object.type, &object->object.bounding_sphere_center, object->object.bounding_sphere_radius);
+	object_bounds_cache_update(object_index, &object->object.bounding_sphere_center, object->object.bounding_sphere_radius);
 
 	return;
 }

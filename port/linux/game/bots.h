@@ -5,8 +5,9 @@ controls come from code on the host instead of a controller (the clients
 drive it with the input the host relays them, as they drive its players): it is in the lobby, the scores and the game's
 rules as any player is, spawns, respawns and scores. Each bot is the one
 player of a machine of its own at the top of the machine indices
-(BOTS_FIRST_MACHINE up), which no real machine takes: the host gives the
-machines that join slots below them (network_game_server_add_new_client). The bots have no view and no controller: nothing is
+(BOTS_MACHINE: 127 down), which no real machine holds: the host gives the
+machines that join the lowest free slots, none a bot is of
+(network_game_server_add_new_client). The bots have no view and no controller: nothing is
 drawn for them. */
 #ifndef HALO_BOTS_H
 #define HALO_BOTS_H
@@ -14,11 +15,15 @@ drawn for them. */
 struct player_action;
 struct network_player;
 
-/* the most bots in one game: with one player, 64 (the benchmark's games: benchmark.c), the last bot's machine the
-last a network_player's char machine index holds (127) */
-#define BOTS_MAXIMUM 63
-/* the first bot's machine index (the last machine indices of the session) */
-#define BOTS_FIRST_MACHINE (HALO_PORT_MAXIMUM_NETWORK_MACHINES - BOTS_MAXIMUM)
+/* the most bots in one game: as many players as a game holds, but the one
+hosting it (127) */
+#define BOTS_MAXIMUM (HALO_PORT_MAXIMUM_NETWORK_PLAYERS - 1)
+/* a bot's machine index, and the bot of one: the session's last machine
+indices, the first bot's the last (127) and each next bot's the one below.
+The machines that join take the lowest free ones (network_game_server_add_new_client),
+so the two meet only in a game with no room left */
+#define BOTS_MACHINE(bot_index) (HALO_PORT_MAXIMUM_NETWORK_MACHINES - 1 - (bot_index))
+#define BOTS_INDEX(machine_index) (HALO_PORT_MAXIMUM_NETWORK_MACHINES - 1 - (machine_index))
 
 enum
 {
@@ -35,8 +40,11 @@ void bots_set_count_override(long count);
 short bots_skill(void);
 short bots_teams(void);
 
-/* a machine is a bot's */
+/* a machine is a bot's: one of the bots' indices that no machine that joined
+holds (the host's alone knows: network_game_server_port_machine_joined) */
 int bots_machine_is_bot(long machine_index);
+/* (network_server_manager.c's) whether a machine that joined holds the index */
+unsigned char network_game_server_port_machine_joined(long machine_index);
 /* whether this machine hosts a game bots may play in: local (split screen), system link, or a private internet game
 (not listed in the server browser) */
 int bots_game_allowed(void);

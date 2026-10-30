@@ -52,6 +52,8 @@ BUTTON_ASSETS = Path("port/assets/buttons")
 BUTTON_LIST = BUTTON_ASSETS / "buttons.json"
 # a port's own button art (button_assets.py platform), by the port's name
 BUTTON_PLATFORMS = BUTTON_ASSETS / "platforms"
+CONTROLLER_ASSETS = Path("port/assets/controller_buttons")
+CONTROLLER_LIST = CONTROLLER_ASSETS / "buttons.json"
 FONT_ASSETS = Path("port/assets/fonts")
 FONT_LIST = FONT_ASSETS / "fonts.json"
 MENU_ASSETS = Path("port/assets/menus")
@@ -111,7 +113,8 @@ def textures(platform: Optional[str] = None) -> List[tuple]:
     result = []
     overrides = platform_overrides(platform)
     for folder, listing, title in ((HUD_ASSETS, LAYOUT, False), (TITLE_ASSETS, TITLE_LIST, True),
-                                   (BUTTON_ASSETS, BUTTON_LIST, True), (HUD_ASSETS, CE_LAYOUT, False)):
+                                   (BUTTON_ASSETS, BUTTON_LIST, True), (HUD_ASSETS, CE_LAYOUT, False),
+                                   (CONTROLLER_ASSETS, CONTROLLER_LIST, True)):
         if not (ROOT / listing).is_file():
             continue
         for asset in json.loads((ROOT / listing).read_text())["assets"]:
@@ -153,7 +156,7 @@ def platform_of(prefix: str) -> Optional[str]:
 
 def hud_asset_inputs(platform: Optional[str] = None) -> List[Path]:
     """The files the generated source is made from."""
-    inputs = [listing for listing in (LAYOUT, CE_LAYOUT, CE_STOCK, CUSTOM_EDITION_HUD, TITLE_LIST, BUTTON_LIST, FONT_LIST, MENU_LIST)
+    inputs = [listing for listing in (LAYOUT, CE_LAYOUT, CE_STOCK, CUSTOM_EDITION_HUD, TITLE_LIST, BUTTON_LIST, CONTROLLER_LIST, FONT_LIST, MENU_LIST)
               if (ROOT / listing).is_file()]
     if platform:
         inputs.append(BUTTON_PLATFORMS / platform / "buttons.json")
@@ -172,6 +175,7 @@ def hud_configure_inputs() -> List[Path]:
     list may rename or remove."""
     inputs = []
     for folder, listing in ((HUD_ASSETS, LAYOUT), (HUD_ASSETS, CE_LAYOUT), (TITLE_ASSETS, TITLE_LIST), (BUTTON_ASSETS, BUTTON_LIST),
+                            (CONTROLLER_ASSETS, CONTROLLER_LIST),
                             (FONT_ASSETS, FONT_LIST), (MENU_ASSETS, MENU_LIST)):
         if (ROOT / listing).is_file():
             inputs += [folder, listing]

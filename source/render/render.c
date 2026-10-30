@@ -468,7 +468,8 @@ static void render_window(
 		interface_draw_screen();
 		halo_render_marker("screen flash");
 		rasterizer_screen_flash();
-		halo_screen_ui_offset(TRUE);
+		/* port: the view's menus centred in it (a quarter's are 320 wide) */
+		halo_screen_ui_offset_view(rasterizer_camera->viewport_bounds.x1 - rasterizer_camera->viewport_bounds.x0);
 		halo_render_marker("ui widgets");
 		render_ui_widgets(local_player_index, &rasterizer_camera->viewport_bounds);
 		halo_screen_ui_offset(FALSE);

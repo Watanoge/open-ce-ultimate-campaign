@@ -30,6 +30,7 @@ memory_watch.c detects that by write-protecting the pages.
 #include <string.h>
 #if defined(HALO_ANDROID) || defined(HALO_WEB)
 #include "../game/android_ce_texture_cache.h"
+#include "../../android/include/android_render_policy.h"
 #endif
 
 #ifndef GL_COMPRESSED_RGBA_S3TC_DXT1_EXT
@@ -1363,7 +1364,7 @@ GLuint xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, GLenum *
 	unsigned long watch_serial = memory_watch_serial();
 #if defined(HALO_ANDROID) || defined(HALO_WEB)
 	unsigned long ce_bytes;
-	const void *ce_pixels = android_ce_texture_pixels(resource, &ce_bytes);
+	const void *ce_pixels = android_texture_fixes ? android_ce_texture_pixels(resource, &ce_bytes) : NULL;
 	const void *ce_resource = ce_pixels ? resource : NULL;
 #endif
 

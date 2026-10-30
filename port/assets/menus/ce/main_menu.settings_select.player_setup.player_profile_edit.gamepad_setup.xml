@@ -14,14 +14,14 @@
 	<widget name="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/options_menu" type="column_list" width="640" height="480" flags="pass_unhandled_to_focused_child up_down_tabs_children" description="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/help">
 		<data input="port settings help"/>
 		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_look_sensitivity" x="54" y="73"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_invert_look" x="54" y="103"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_flight_inversion" x="54" y="133"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_autocenter" x="54" y="163"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_button_preset" x="54" y="193"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_joystick_preset" x="54" y="223"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_vibration" x="54" y="253"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_ingame_help" x="54" y="283"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_gyro" x="54" y="313" platform="android switch ps5"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_invert_look" x="54" y="100"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_flight_inversion" x="54" y="127"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_autocenter" x="54" y="154"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_button_preset" x="54" y="181"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_joystick_preset" x="54" y="208"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_vibration" x="54" y="235"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_ingame_help" x="54" y="262"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_gyro" x="54" y="289" platform="android switch ps5"/>
 		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/button_bar" y="414"/>
 	</widget>
 	<widget name="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/button_bar" type="column_list" width="640" height="28" flags="pass_unhandled_to_focused_child left_right_tabs_items">
