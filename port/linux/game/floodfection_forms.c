@@ -112,6 +112,10 @@ these) */
 takes to blend into a new animation */
 #define FORM_TURN_RATE 0.35f
 #define FORM_BLEND_TICKS 6
+/* a strike's frames played over its Spartan's strike's ticks, as much
+slower or faster as this at most */
+#define FORM_MELEE_RATE_MINIMUM 0.75f
+#define FORM_MELEE_RATE_MAXIMUM 2.5f
 /* the zombies' bodies not drawn (the oldest forgotten past it) */
 #define FORM_HIDDEN_BODIES 64
 
@@ -134,6 +138,11 @@ struct form_state
 	/* which way it faces, now and at the tick before (radians) */
 	real yaw;
 	real previous_yaw;
+	/* the Spartan's strike's ticks left at the tick before (bipeds.c's,
+	which every machine runs from the player's input: a new strike's are
+	more), and the frames a tick of the form's strike */
+	short melee_ticks;
+	real melee_rate;
 };
 
 static struct
@@ -274,10 +283,10 @@ static short form_choose_action(
 	char unit_state = unit->unit.animation.state;
 
 	*target_yaw = facing;
-	/* (a strike plays to its end, as the Spartan's) */
-	if (unit_state == _unit_state_melee_attack || unit_state == _unit_state_melee_airborne ||
-		unit->unit.animation.action == _unit_state_melee_attack ||
-		unit->unit.animation.action == _unit_state_melee_airborne)
+	/* (a player's strike is its biped's melee ticks, not an animation
+	state: bipeds.c; it plays to its end, as the Spartan's) */
+	if (biped->biped.player_melee_ticks > 0 ||
+		unit_state == _unit_state_melee_attack || unit_state == _unit_state_melee_airborne)
 	{
 		return _form_action_melee;
 	}
@@ -325,6 +334,7 @@ void floodfection_forms_update(
 	real rate = 1.0f;
 	short action;
 	short form;
+	boolean striking;
 
 	if (!VALID_INDEX(slot, HALO_PORT_MAXIMUM_NETWORK_PLAYERS))
 		return;
@@ -371,18 +381,29 @@ void floodfection_forms_update(
 		state->previous_yaw = state->yaw;
 	}
 	form = state->form;
+	/* (a strike begun since the last tick, one right after another too) */
+	striking = biped->biped.player_melee_ticks > state->melee_ticks;
+	state->melee_ticks = biped->biped.player_melee_ticks;
 	action = form_choose_action(state, biped, &target_yaw);
 	state->previous_yaw = state->yaw;
 	state->yaw += PIN(form_angle_difference(state->yaw, target_yaw), -FORM_TURN_RATE, FORM_TURN_RATE);
 	if (forms.animation_index[form][action] != state->animation_index ||
-		(action != state->action && !form_action_loops(action)))
+		(action != state->action && !form_action_loops(action)) ||
+		(action == _form_action_melee && striking))
 	{
 		state->from_animation_index = state->animation_index;
 		state->from_frame = state->frame;
-		state->blend_ticks = FORM_BLEND_TICKS;
+		state->blend_ticks = action == _form_action_melee ? FORM_BLEND_TICKS / 2 : FORM_BLEND_TICKS;
 		state->animation_index = forms.animation_index[form][action];
 		state->frame = 0.0f;
 		state->previous_frame = 0.0f;
+		/* (the form's strike as long as the Spartan's) */
+		state->melee_rate = 1.0f;
+		if (action == _form_action_melee && biped->biped.player_melee_ticks > 0)
+		{
+			state->melee_rate = PIN((real)form_animation(form, state->animation_index)->frame_count /
+				(real)biped->biped.player_melee_ticks, FORM_MELEE_RATE_MINIMUM, FORM_MELEE_RATE_MAXIMUM);
+		}
 	}
 	state->action = action;
 	animation = form_animation(form, state->animation_index);
@@ -392,6 +413,8 @@ void floodfection_forms_update(
 		rate = PIN(sqrtf(velocity->i * velocity->i + velocity->j * velocity->j) / FORM_RUN_SPEED,
 			FORM_RUN_RATE_MINIMUM, FORM_RUN_RATE_MAXIMUM);
 	}
+	else if (action == _form_action_melee)
+		rate = state->melee_rate;
 	if (state->frame >= (real)animation->frame_count)
 		state->frame -= (real)animation->frame_count;
 	state->previous_frame = state->frame;

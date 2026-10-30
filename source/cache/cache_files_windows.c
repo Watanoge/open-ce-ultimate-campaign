@@ -862,19 +862,11 @@ short cache_file_read(
 	short request_index = cache_request_next_free_index();
 	struct cache_file_request *request = cache_request_get(request_index);
 
-	/* port: the reads of a Halo Custom Edition map are served in place, at
-	once; the request stays free (port/linux/game/custom_edition_cache.c) */
-	if (custom_edition_cache_tags_loaded())
-	{
-		custom_edition_cache_read(tag_index, offset, size, buffer);
-		*completion_flag_reference = TRUE;
-
-		return request_index;
-	}
 	/* port: a tag copied from another map: its bitmap pixels and sound
 	samples stay in that map's tag pack (port/linux/game/tag_import.c);
 	or one the Tag Injector's profile added, in its bundle
-	(port/linux/game/tag_injector.c) */
+	(port/linux/game/tag_injector.c). A Custom Edition map's too
+	(Floodfection's forms), so before its own reads below */
 	{
 		extern int tag_import_donor_read(long, long, long, void *);
 		extern int tag_injector_read(long, long, long, void *);
@@ -886,6 +878,15 @@ short cache_file_read(
 
 			return request_index;
 		}
+	}
+	/* port: the reads of a Halo Custom Edition map are served in place, at
+	once; the request stays free (port/linux/game/custom_edition_cache.c) */
+	if (custom_edition_cache_tags_loaded())
+	{
+		custom_edition_cache_read(tag_index, offset, size, buffer);
+		*completion_flag_reference = TRUE;
+
+		return request_index;
 	}
 	match_assert(
 		"c:\\halo\\SOURCE\\cache\\cache_files_windows.c",

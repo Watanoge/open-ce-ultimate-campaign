@@ -1308,6 +1308,14 @@ long scenario_tags_load(
 			global_tag_instances = cache_file_globals.tag_header->tag_instances;
 			global_tag_count = cache_file_globals.tag_header->tag_count;
 			cache_file_globals.tags_loaded = TRUE;
+			/* (a multiplayer game's mode's tags, Floodfection's forms, before
+			the menus' and the mods', as the randomizer's are below:
+			port/linux/game/randomizer.c) */
+			{
+				extern void randomizer_custom_edition_tags_loaded(char const *scenario_name);
+
+				randomizer_custom_edition_tags_loaded(scenario_name);
+			}
 			/* (the menus' tags, as for this build's maps below) */
 			{
 				extern void menu_tags_loaded(char const *map_name);

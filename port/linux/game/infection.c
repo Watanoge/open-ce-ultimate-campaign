@@ -635,6 +635,7 @@ static real floodfection_voice_vitality[HALO_PORT_MAXIMUM_NETWORK_PLAYERS];
 static long floodfection_voice_time[HALO_PORT_MAXIMUM_NETWORK_PLAYERS];
 static boolean floodfection_voice_airborne[HALO_PORT_MAXIMUM_NETWORK_PLAYERS];
 static boolean floodfection_voice_melee[HALO_PORT_MAXIMUM_NETWORK_PLAYERS];
+static short floodfection_voice_melee_ticks[HALO_PORT_MAXIMUM_NETWORK_PLAYERS];
 /* the Flood's music (Two Betrayals', each machine's own, but with NO MUSIC):
 through the round, and from the last stand (the last humans strengthened,
 or the last one) on; which plays (NONE: none), the humans last counted, and
@@ -675,6 +676,7 @@ static void floodfection_voice(
 	real vitality;
 	boolean airborne;
 	boolean melee;
+	short melee_ticks;
 	boolean same;
 
 	if (!VALID_INDEX(slot, HALO_PORT_MAXIMUM_NETWORK_PLAYERS))
@@ -695,9 +697,12 @@ static void floodfection_voice(
 	}
 	biped = (struct biped_datum *)object_try_and_get_and_verify_type(player->unit_index, _object_mask_biped);
 	airborne = biped && TEST_FLAG(biped->biped.flags, _biped_airborne_bit);
+	/* (a player's strike is its biped's melee ticks, not an animation
+	state: bipeds.c; a new one's are more than the last tick's) */
+	melee_ticks = biped ? biped->biped.player_melee_ticks : 0;
 	melee = unit->unit.animation.state == _unit_state_melee_attack ||
 		unit->unit.animation.state == _unit_state_melee_airborne;
-	if (same && melee && !floodfection_voice_melee[slot])
+	if (same && ((melee && !floodfection_voice_melee[slot]) || melee_ticks > floodfection_voice_melee_ticks[slot]))
 		floodfection_sound(_floodfection_sound_melee, player->unit_index);
 	else if (same && airborne && !floodfection_voice_airborne[slot] &&
 		unit->object.translational_velocity.k > FLOODFECTION_LEAP_SPEED && unit->object.parent_object_index == NONE)
@@ -708,6 +713,7 @@ static void floodfection_voice(
 	floodfection_voice_vitality[slot] = vitality;
 	floodfection_voice_airborne[slot] = airborne;
 	floodfection_voice_melee[slot] = melee;
+	floodfection_voice_melee_ticks[slot] = melee_ticks;
 }
 
 /* how high above a dead zombie's feet its bits are thrown from (world units) */

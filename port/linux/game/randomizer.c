@@ -1709,6 +1709,28 @@ static void multiplayer_tags_loaded(char const *scenario_name, long profile, int
 	}
 }
 
+/* a multiplayer game's mode's tags (Floodfection's burst and forms) */
+static void game_modes_tags_loaded(char const *scenario_name)
+{
+	if (infection_tag_import_wanted() && tag_import_begin())
+	{
+		snprintf(map_name_leaf, sizeof(map_name_leaf), "%s", tag_name_strip_path(scenario_name));
+		infection_tag_import();
+		tag_import_run();
+		tag_import_end();
+		tag_import_log("game modes");
+	}
+}
+
+/* a Custom Edition map's level (cache_files.c): none of the randomizer's,
+the skulls' nor the Tag Injector's, which are this build's maps' alone; its
+game's mode's only */
+void randomizer_custom_edition_tags_loaded(char const *scenario_name)
+{
+	randomizer_tags_unloaded();
+	game_modes_tags_loaded(scenario_name);
+}
+
 void randomizer_tags_loaded(char const *scenario_name)
 {
 	struct network_game *game = network_game_get_game();
@@ -1753,14 +1775,7 @@ void randomizer_tags_loaded(char const *scenario_name)
 	if (!campaign_leaf(scenario_name, leaf, sizeof(leaf)) ||
 		(game && game->variant.game_engine_index != game_engine_none))
 	{
-		if (infection_tag_import_wanted() && tag_import_begin())
-		{
-			snprintf(map_name_leaf, sizeof(map_name_leaf), "%s", tag_name_strip_path(scenario_name));
-			infection_tag_import();
-			tag_import_run();
-			tag_import_end();
-			tag_import_log("game modes");
-		}
+		game_modes_tags_loaded(scenario_name);
 		return;
 	}
 	/* (a campaign profile, played alone as the Tag Injector's profiles are:
