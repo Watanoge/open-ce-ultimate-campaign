@@ -15320,6 +15320,9 @@ static struct gametype_option const gametype_options[] =
 	{ "fl_elite_health_spinner", FLOODFECTION_OPTION(_floodfection_setting_elite_health), 7, { 1, 2, 3, 4, 0, 5, 6 } },
 	{ "fl_elite_speed_spinner", FLOODFECTION_OPTION(_floodfection_setting_elite_speed), 7, { 1, 2, 3, 4, 0, 5, 6 } },
 	{ "fl_elite_shields_spinner", FLOODFECTION_OPTION(_floodfection_setting_elite_no_shields), 2, { 1, 0 } },
+	{ "fl_camera_spinner", FLOODFECTION_OPTION(_floodfection_setting_camera), 4,
+		{ _floodfection_camera_flood, _floodfection_camera_everyone, _floodfection_camera_choice,
+			_floodfection_camera_first_person } },
 	/* player options */
 	{ "number_of_lives_spinner", _option_long, VARIANT_FIELD(universal_variant.lives), 0, 4, { 0, 1, 3, 5 } },
 	{ "maximum_health_spinner", _option_health, 0, 0, 6, { 5, 10, 15, 20, 30, 40 } },
@@ -15430,6 +15433,8 @@ static struct gametype_option const gametype_options[] =
 	/* (the shield effects every machine draws: network_shield_effects.c) */
 	{ "shield_effects_spinner", _option_setting, 0, 0, 7, { 0 }, "network.shield_effects",
 		{ "stock", "glow", "light_show", "overshield", "glow_overshield", "light_show_overshield", "players" } },
+	/* (whether each player may see over their shoulder: network_third_person.c) */
+	{ "third_person_spinner", _option_setting, 0, 0, 2, { 0 }, "network.third_person", { "false", "true" } },
 	/* co-op's options (Server Setup's CO-OP OPTIONS: tools/port_settings.py's
 	COOP_SETUP_SCREENS; coop_enemies.c) */
 	{ "coop_friendly_fire_spinner", _option_setting, 0, 0, 4, { 0 }, "network.coop_friendly_fire",

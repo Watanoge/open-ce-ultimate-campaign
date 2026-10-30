@@ -94,5 +94,11 @@ boolean game_modes_headshot_kills(long object_index, boolean shot);
 boolean game_modes_motion_sensor_hidden(void);
 /* no aim assist: neither autoaim nor magnetism (Hardcore) */
 boolean game_modes_aim_assist_off(void);
+/* a player's view (_third_person_rule_*: third_person.h): the campaign and
+co-op leave it to the player, a mode may force or forbid the view over the
+shoulder (Floodfection's CAMERA), and the rest of multiplayer keeps first
+person (seeing round corners is an advantage) unless the host allows it
+(network.third_person: network_third_person.c) */
+short game_modes_third_person(long player_index);
 
 #endif

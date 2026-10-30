@@ -427,7 +427,18 @@ rider ejection are put back to the host's, and what it draws of the world
 to what everyone's draws (no wireframe, debug drawing mode, environment
 left out, fog, grass or water off), as set before joining too
 (`cheats_network_client_enforce`); its camera stays the player's own
-(no flying or following camera). The host keeps its own.
+(no flying or following camera), but for the view over the shoulder on foot
+where the game allows it: the host's `network.third_person`, or a mode's
+own camera (Floodfection's CAMERA). The host keeps its own.
+
+The host tells each client whether it allows that view
+(`_distributed_message_third_person_policy`, 165, reliably, when the client
+is ready and when it changes: `network_third_person.c`). It is sent in plain
+games too, numbered clear of upstream's kinds: a build without it drops it as
+a kind it does not know and keeps its players in first person, and a client
+of a host that never sends it (upstream's) stays in first person. Only the
+view changes: the shots, aim assist and every message go from the eye as
+before (`third_person.c`).
 
 The host also finds a client whose game runs faster than time (a speed
 hack, which speeds up the machine's own clock, so that nothing on it can

@@ -77,6 +77,7 @@ request #420 by arisson2001rojas-design.
 #include "network_distributed.h"
 #include "network_infection.h"
 #include "tag_import.h"
+#include "third_person.h"
 
 void platform_log(char const *format, ...);
 
@@ -363,6 +364,25 @@ static short floodfection_setting_value(
 }
 
 #define FLOODFECTION_SETTING_VALUE(setting, table) floodfection_setting_value(setting, table, NUMBEROF(table))
+
+short infection_third_person(
+	long player_index)
+{
+	struct player_datum *player = player_try_and_get(player_index);
+
+	switch (floodfection_setting(_floodfection_setting_camera))
+	{
+	case _floodfection_camera_flood:
+		return player && infection_unit_is_zombie(player->unit_index) ?
+			_third_person_rule_forced : _third_person_rule_first_person;
+	case _floodfection_camera_everyone:
+		return _third_person_rule_forced;
+	case _floodfection_camera_choice:
+		return _third_person_rule_choice;
+	default:
+		return _third_person_rule_first_person;
+	}
+}
 
 boolean infection_floodfection_zombie(
 	long object_index)

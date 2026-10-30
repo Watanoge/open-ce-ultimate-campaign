@@ -435,6 +435,54 @@
 		<string text="Elites have no shields."/>
 		<string text="Elites have shields, as Spartans do."/>
 	</strings>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_camera/fl_camera_screen" width="640" height="480" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/gradient">
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_camera/header_fl_camera"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_camera/fl_camera_menu"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_camera/header_fl_camera" controller="1" left="35" top="11" width="363" height="59" type="text" text="CAMERA" font="ui\large_ui" color="#FFFFFFFF" text_x="13" text_y="16">
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_camera/fl_camera_help" type="text" controller="1" left="68" top="341" width="482" height="79" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_camera/cap_fl_camera" font="ui\large_ui" color="#FFFFFFFF">
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_camera/fl_camera_menu" type="column_list" width="640" height="480" flags="pass_unhandled_to_focused_child up_down_tabs_children" description="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_camera/fl_camera_help">
+		<data input="game settings lists text update"/>
+		<on event="created" run="mp profile init floodfection options"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_camera/op_fl_camera" x="54" y="73"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_camera/fl_camera_button_bar" y="414"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_camera/fl_camera_button_bar" type="column_list" width="640" height="28" flags="pass_unhandled_to_focused_child left_right_tabs_items">
+		<data input="common button bar update"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_camera/fl_camera_button_ok" x="380" y="1"/>
+		<child widget="common_button_cancel" x="510" y="1"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_camera/fl_camera_button_ok" type="text" width="128" height="24" bitmap="bitmaps/text_button_background" string_list="strings/common_button_captions" string_index="1" font="ui\small_ui" color="#FFFFFFFF" align="center" text_y="2">
+		<on event="a" run="mp profile set floodfection options" back="true"/>
+		<on event="start" run="mp profile set floodfection options" back="true"/>
+		<on event="left_mouse" run="mouse emit accept event"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_camera/op_fl_camera" width="512" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/option_bkds" color="#FF2896FF">
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_camera/fl_camera_label"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_camera/fl_camera_spinner" x="286" y="1"/>
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_camera/fl_camera_label" type="text" controller="1" width="300" height="22" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_camera/fl_camera_labels" string_index="0" font="ui\large_ui" color="#FF2896FF" text_x="13" text_y="4">
+	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_camera/fl_camera_spinner" type="spinner" top="2" width="206" height="20" flags="pass_unhandled_to_focused_child left_right_tabs_items" string_list="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_camera/var_fl_camera" font="ui\large_ui" color="#FF2896FF" align="center" text_y="4" list_flags="items_from_strings" header_bitmap="bitmaps/arrow_sm_left" footer_bitmap="bitmaps/arrow_sm_right" header_bounds="7 -13 19 -7" footer_bounds="7 208 19 214">
+		<on event="left_mouse" run="mouse spinner 1wide click"/>
+	</widget>
+	<strings name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_camera/var_fl_camera">
+		<string text="FLOOD"/>
+		<string text="EVERYONE"/>
+		<string text="PLAYERS' CHOICE"/>
+		<string text="OFF"/>
+	</strings>
+	<strings name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_camera/fl_camera_labels">
+		<string text="THIRD PERSON:"/>
+	</strings>
+	<strings name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_camera/cap_fl_camera">
+		<string text="The infected see over their shoulder, the\nSpartans in first person."/>
+		<string text="Everyone sees over their shoulder (a scope's\nzoom is first person)."/>
+		<string text="Each player's own Third Person setting\n(Settings &gt; Gameplay), Spartan or infected."/>
+		<string text="Everyone in first person."/>
+	</strings>
 	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/floodfection_screen" width="640" height="480" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/gradient">
 		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/header_floodfection"/>
 		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/floodfection_menu"/>
@@ -448,6 +496,7 @@
 		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/op_fl_loadout" x="54" y="73"/>
 		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/op_fl_last_stand" x="54" y="103"/>
 		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/op_fl_infected" x="54" y="133"/>
+		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/op_fl_camera" x="54" y="163"/>
 		<child widget="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/floodfection_button_bar" y="414"/>
 	</widget>
 	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/floodfection_button_bar" type="column_list" width="640" height="28" flags="pass_unhandled_to_focused_child left_right_tabs_items">
@@ -473,10 +522,16 @@
 		<on event="start" open="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_infected/fl_infected_screen"/>
 		<on event="left_mouse" run="mouse emit accept event"/>
 	</widget>
+	<widget name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/op_fl_camera" type="text" width="512" height="28" bitmap="bitmaps/option_bkds" text="CAMERA" font="ui\large_ui" color="#FF2896FF" text_x="13" text_y="4">
+		<on event="a" open="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_camera/fl_camera_screen"/>
+		<on event="start" open="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/fl_camera/fl_camera_screen"/>
+		<on event="left_mouse" run="mouse emit accept event"/>
+	</widget>
 	<strings name="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/cap_floodfection">
 		<string text="The weapons every Spartan spawns with, and\nwhether the map's weapons can be picked up."/>
 		<string text="The last Spartans' buffs, the last one's, and\nthe Flood's music."/>
 		<string text="How the infected move, how much they take, and\nwhich are elites."/>
+		<string text="Whose view is over the shoulder: the Flood's,\neveryone's, or each player's choice."/>
 	</strings>
 	<widget name="main_menu/settings_select/multiplayer_setup/playlist_edit/playlist_edit_floodfection_item" type="text" left="51" top="342" width="232" height="32" bitmap="bitmaps/list_item_bkd" text="FLOODFECTION" font="ui\large_ui" color="#FF2896FF" text_x="13" text_y="5">
 		<on event="a" open="main_menu/settings_select/multiplayer_setup/floodfection_options_edit/floodfection_screen"/>

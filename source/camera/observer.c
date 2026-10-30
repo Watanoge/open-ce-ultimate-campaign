@@ -108,6 +108,7 @@ symbols in this file:
 #include "cache/predicted_resources.h"
 #include "physics/collisions.h"
 #include "physics/collision_usage.h"
+#include "third_person.h" /* port: port/linux/game/third_person.c */
 #include "scenario/scenario.h"
 #include "structures/structure_bsp_definitions.h"
 
@@ -1151,6 +1152,7 @@ static void observer_postcheck(
 	real focus_distance = PIN(observer->focus_distance, 0.f, REAL_MAX);
 	real_vector2d heading;
 	real water_depth;
+	real_point3d eye_position;
 
 	match_assert(
 		"c:\\halo\\SOURCE\\camera\\observer.c",
@@ -1180,9 +1182,13 @@ static void observer_postcheck(
 	heading.j = observer->forward.j;
 	normalize2d(&heading);
 
+	eye_position = focus_position;
 	focus_position.x += observer->focus_offset.i*heading.i + observer->focus_offset.j*heading.j;
 	focus_position.y += observer->focus_offset.i*heading.j - observer->focus_offset.j*heading.i;
 	focus_position.z += observer->focus_offset.k;
+	/* port: the shoulder of a view over it kept out of walls (only the
+	distance back of the focus is tested below) */
+	third_person_clip_focus(local_player_index, &eye_position, &focus_position);
 
 	if (!TEST_FLAG(observer->last_command.flags, _observer_command_ignore_obstructions_bit) &&
 		focus_distance != 0.f)
@@ -1256,6 +1262,8 @@ static void observer_postcheck(
 	observer->result.forward = observer->forward;
 	observer->result.up = observer->up;
 	observer->result.field_of_view = observer->field_of_view;
+	/* port: and turned to what the player aims at */
+	third_person_converge(local_player_index, &observer->result);
 
 	return;
 }

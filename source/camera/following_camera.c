@@ -42,6 +42,7 @@ symbols in this file:
 
 #include "following_camera.h"
 #include "passenger_camera.h" /* port: port/linux/game/passenger_camera.c */
+#include "third_person.h" /* port: port/linux/game/third_person.c */
 #include "cseries/errors.h" /* port: (error, for a short camera track) */
 #include "observer.h"
 
@@ -197,12 +198,14 @@ void following_camera_update(
 	struct player_control_unit_camera_info camera_info;
 	struct camera_command *command;
 	boolean passenger; /* port: only this local display view borrows a seat's camera */
+	boolean third_person; /* port: the view over the shoulder on foot */
 
 	match_assert("c:\\halo\\SOURCE\\camera\\following_camera.c", 138, camera);
 	match_assert("c:\\halo\\SOURCE\\camera\\following_camera.c", 139, result);
 
 	player_control_get_unit_camera_info(controls->local_player_index, &camera_info);
 	passenger = passenger_camera_info(controls->local_player_index, &camera_info);
+	third_person = !passenger && third_person_active(controls->local_player_index);
 	command = &result->command;
 
 	command->position = camera_info.position;
@@ -237,7 +240,8 @@ void following_camera_update(
 			camera->crouched = crouched;
 		}
 
-		if (controls->active && !passenger) /* port: no free orbit outside the passenger's firing arc */
+		/* port: no free orbit outside the passenger's firing arc, nor over the shoulder */
+		if (controls->active && !passenger && !third_person)
 		{
 			camera->facing_offset.yaw += controls->facing_delta.yaw;
 			camera->facing_offset.pitch += controls->facing_delta.pitch;
@@ -268,16 +272,24 @@ void following_camera_update(
 			magnitude3d(&command->forward) < 1.0001f,
 			"magnitude3d(&result->forward) > 0.9999f && magnitude3d(&result->forward) < 1.0001f");
 
-		camera_track_splut(camera_info.camera, facing.pitch, &track_offset);
-		command->depth = magnitude3d(&track_offset);
-		command->offset.i =
-			(command->depth * cosine(facing.pitch) + track_offset.i) * camera->distance_scale;
-		command->offset.j = -track_offset.j * camera->distance_scale;
-		command->offset.k =
-			(command->depth * sine(facing.pitch) + track_offset.k) * camera->distance_scale;
-		command->depth = MAX(
-			(command->depth - 0.6f) * camera->distance_scale + 0.6f,
-			0.6f);
+		/* port: over the shoulder, its own place, not the unit's camera track */
+		if (third_person)
+		{
+			third_person_command(controls->local_player_index, &facing, command);
+		}
+		else
+		{
+			camera_track_splut(camera_info.camera, facing.pitch, &track_offset);
+			command->depth = magnitude3d(&track_offset);
+			command->offset.i =
+				(command->depth * cosine(facing.pitch) + track_offset.i) * camera->distance_scale;
+			command->offset.j = -track_offset.j * camera->distance_scale;
+			command->offset.k =
+				(command->depth * sine(facing.pitch) + track_offset.k) * camera->distance_scale;
+			command->depth = MAX(
+				(command->depth - 0.6f) * camera->distance_scale + 0.6f,
+				0.6f);
+		}
 
 		object_get_velocities(camera_info.unit_index, &command->velocity, NULL);
 		SET_FLAG(command->flags, 0, TRUE);

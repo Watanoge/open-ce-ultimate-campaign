@@ -483,6 +483,12 @@ static const struct config_setting config_settings[] =
 		"Moving the mouse forward looks down." },
 	{ "network.block_mouse_aim_assist", _config_boolean, "false", "HALO_NET_BLOCK_MOUSE_AIM_ASSIST", _environment_value,
 		_platform_all, "Host: disable optional mouse magnetism for mouse/keyboard players. Controllers and touch keep their own assist." },
+	{ "network.third_person", _config_boolean, "false", "HALO_NET_THIRD_PERSON", _environment_value, _platform_all,
+		"Host: in a multiplayer game, each player may see over their shoulder on\n"
+		"foot (their own game.third_person); false keeps everyone in first person.\n"
+		"A mode's own camera (Floodfection's CAMERA) decides in its games. Players\n"
+		"of builds without it stay in first person. THIRD PERSON in Server Setup >\n"
+		"Player Options writes its choice here." },
 	{ "network.shield_effects", _config_string, "\"stock\"", "HALO_NET_SHIELD_EFFECTS", _environment_value, _platform_all,
 		"Host: the shield effects every player of a network game sees, whatever\n"
 		"their own: \"stock\", \"glow\", \"light_show\", \"overshield\",\n"
@@ -645,6 +651,21 @@ static const struct config_setting config_settings[] =
 	{ "game.ragdoll_ai", _config_string, "\"none\"", "HALO_RAGDOLL_AI", _environment_value, _platform_all,
 		"How an AI's body falls, the same choices as game.ragdoll_players.\n"
 		"Settings > Gameplay, or here. A cinematic keeps its own." },
+	/* port: the view over the shoulder on foot (port/linux/game/third_person.c) */
+	{ "game.third_person", _config_boolean, "false", "HALO_THIRD_PERSON", _environment_value, _platform_all,
+		"Settings > Gameplay > Third Person. On foot, the view over your shoulder\n"
+		"instead of first person, where the game leaves it to you: the campaign\n"
+		"and co-op; in multiplayer, a game whose host allows it (network.third_person)\n"
+		"or a mode that does (Floodfection's CAMERA set to PLAYERS' CHOICE). A mode\n"
+		"may also force either view. A scope's zoom is first person. Shots still\n"
+		"go from your eye." },
+	{ "game.third_person_shoulder", _config_string, "\"right\"", "HALO_THIRD_PERSON_SHOULDER", _environment_value,
+		_platform_all,
+		"Over which shoulder the third-person view looks: \"right\", \"left\" or\n"
+		"\"center\" (above the head)." },
+	{ "game.third_person_distance", _config_string, "\"normal\"", "HALO_THIRD_PERSON_DISTANCE", _environment_value,
+		_platform_all,
+		"How far back the third-person view is: \"near\", \"normal\" or \"far\"." },
 	{ "game.campaign_score", _config_boolean, "false", "HALO_CAMPAIGN_SCORE", _environment_value, _platform_all,
 		"Settings > Gameplay > Scoring's SCORING. Score the campaign as Halo 3: a\n"
 		"kill is its enemy's points times its style (one shot one kill, headshot,\n"

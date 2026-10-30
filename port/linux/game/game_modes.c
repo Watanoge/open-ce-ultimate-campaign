@@ -43,6 +43,8 @@ of their own (menu_functions.c's OPENCE).
 #include "game_modes.h"
 #include "gun_game.h"
 #include "infection.h"
+#include "network_third_person.h"
+#include "third_person.h"
 
 #include <string.h>
 
@@ -520,4 +522,14 @@ boolean game_modes_aim_assist_off(
 	void)
 {
 	return game_modes_hardcore();
+}
+
+short game_modes_third_person(
+	long player_index)
+{
+	if (!game_engine_running())
+		return _third_person_rule_choice;
+	if (game_modes_mode_variant() == _game_mode_variant_floodfection)
+		return infection_third_person(player_index);
+	return network_third_person_allowed() ? _third_person_rule_choice : _third_person_rule_first_person;
 }

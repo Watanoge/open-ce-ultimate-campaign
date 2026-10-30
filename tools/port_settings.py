@@ -652,7 +652,8 @@ _GAMEPLAY_HEADER = ("header_gameplay", f"{PE}/gameplay/header_gameplay")
 SCREENS["gameplay"] = {
     "screen": "gameplay_settings_screen",
     "header": _GAMEPLAY_HEADER,
-    "spacing": 30,
+    # (27, as Graphics': ten rows, the Android's folder last, above the help)
+    "spacing": 27,
     "rows": [
         ("TERMINAL OUTPUT:", "game.terminal_output",
          [("NONE", "none"), ("MENUS ONLY", "menus"), ("ALWAYS", "always")],
@@ -675,6 +676,8 @@ SCREENS["gameplay"] = {
     "handlers": ['<on event="created" run="port custom maps init"/>'],
     "categories": [
         ("RAGDOLLS", "gameplay/ragdolls", "How the bodies of players and the AI fall."),
+        ("THIRD PERSON", "gameplay/third_person",
+         "The view over your shoulder on foot, which\nsides and how far back."),
         ("RANDOMIZER", "gameplay/randomizer",
          "The randomizer: a campaign level's enemies\nand weapons swapped."),
         ("SKULLS", "gameplay/skulls", "The Master Chief Collection's skulls, and\nhow they are found."),
@@ -695,6 +698,23 @@ SCREENS["gameplay/ragdolls"] = {
         ("AI RAGDOLLS:", "game.ragdoll_ai",
          [("NONE", "none"), ("WOODY", "woody"), ("HALO 2", "halo2")],
          "How an AI's body falls:\nthe animation, a loose ragdoll, or Halo 2's.",
+         None),
+    ],
+}
+# (the view over the shoulder on foot: port/linux/game/third_person.c; where
+# the game leaves it to the player, the campaign and co-op, or a mode such as
+# Floodfection's CAMERA)
+SCREENS["gameplay/third_person"] = {
+    "screen": "third_person_settings_screen", "header": _GAMEPLAY_HEADER, "spacing": 30,
+    "rows": [
+        ("THIRD PERSON:", "game.third_person", ON_OFF,
+         "On foot, the view over your shoulder: the\ncampaign, co-op, and modes that allow it.",
+         None),
+        ("SHOULDER:", "game.third_person_shoulder", [("RIGHT", "right"), ("LEFT", "left"), ("CENTER", "center")],
+         "Over which shoulder the view looks, or from\nabove your head. Shots go from your eye.",
+         None),
+        ("DISTANCE:", "game.third_person_distance", [("NEAR", "near"), ("NORMAL", "normal"), ("FAR", "far")],
+         "How far behind you the view is. A scope's\nzoom is first person.",
          None),
     ],
 }
@@ -2148,6 +2168,17 @@ SLAYER_EDIT = "main_menu/settings_select/multiplayer_setup/playlist_edit/slayer_
 PLAYER_EDIT = "main_menu/settings_select/multiplayer_setup/player_options_edit"
 # (its rows, the PC version's, in order: ce_menus.py moves them 27 apart)
 PLAYER_OPTIONS_ROWS = ['number_of_lives', 'maximum_health', 'shields', 'respawn_time', 'respawn_time_growth', 'odd_man_out', 'invisible_players', 'suicide_penalty']
+# (and the host's own below them: _player_options_extras)
+PLAYER_OPTIONS_HOST_ROWS = ['aim_assist', 'shield_effects', 'third_person']
+PLAYER_OPTIONS_SPACING = 25
+
+
+def player_options_row_top(index: int) -> int:
+    """where Player Options' row is (ce_menus.py's CHILD_OFFSETS, and the
+    host's rows after them)"""
+    return 73 + PLAYER_OPTIONS_SPACING * index
+
+
 # the vehicle sets' PC set (game_engine.h's VARIANT_VEHICLE_SET_PC), between
 # GUN TURRETS and CUSTOM (menu_functions.c's VEHICLE_PRESET_PC), and its help
 # among the sets' (its rows' values' in turn: gametype_option_help)
@@ -2160,6 +2191,13 @@ AIM_ASSIST_HELP = [
 # (network_shield_effects.c): their words, then their helps
 SHIELD_EFFECTS = ['STOCK', 'GLOW', 'LIGHT SHOW', 'OVERSHIELD', 'GLOW+OVERSHIELD', 'SHOW+OVERSHIELD',
                   "PLAYERS' OWN"]
+# whether the host lets each player see over their shoulder
+# (network_third_person.c): its words, then their helps
+THIRD_PERSON_WORDS = ["OFF", "ALLOWED"]
+THIRD_PERSON_HELP = [
+    "Everyone plays in first person.",
+    "Each player may see over their shoulder (their\\nThird Person setting). Older builds: first person.",
+]
 SHIELD_EFFECTS_HELP = [
     "Everyone sees the stock game's shields and\\novershield, whatever their own settings.",
     "Everyone's shields light their surroundings as\\nthey flare.",
@@ -2260,6 +2298,14 @@ FLOOD_SCREENS = [
         ("fl_elite_shields", "ELITE SHIELDS:", ["OFF", "ON"], [
             "Elites have no shields.", "Elites have shields, as Spartans do."]),
     ]),
+    # (infection.c's _floodfection_camera_*: third_person.c's view)
+    ("fl_camera", "CAMERA", "Whose view is over the shoulder: the Flood's,\\neveryone's, or each player's choice.", [
+        ("fl_camera", "THIRD PERSON:", ["FLOOD", "EVERYONE", "PLAYERS' CHOICE", "OFF"], [
+            "The infected see over their shoulder, the\\nSpartans in first person.",
+            "Everyone sees over their shoulder (a scope's\\nzoom is first person).",
+            "Each player's own Third Person setting\\n(Settings > Gameplay), Spartan or infected.",
+            "Everyone in first person."]),
+    ]),
 ]
 
 STRING_INSERTS = {
@@ -2273,8 +2319,8 @@ STRING_INSERTS = {
         "Choose the rules of OpenCE's\\ngametypes: SWAT, Infection,\\nGun Game and Hardcore.\\nThis gametype:",
         # (and its FLOODFECTION's, a Floodfection gametype's: FLOOD_ITEM)
         "The Spartans' loadout and last\\nstands, and the infected's\\nforms.\\nThis gametype:"])],
-    f"{PLAYER_EDIT}/player_options_labels": [(8, ["AIM ASSIST:", "SHIELD EFFECTS:"])],
-    f"{PLAYER_EDIT}/cap_player_options": [(28, AIM_ASSIST_HELP + SHIELD_EFFECTS_HELP)],
+    f"{PLAYER_EDIT}/player_options_labels": [(8, ["AIM ASSIST:", "SHIELD EFFECTS:", "THIRD PERSON:"])],
+    f"{PLAYER_EDIT}/cap_player_options": [(28, AIM_ASSIST_HELP + SHIELD_EFFECTS_HELP + THIRD_PERSON_HELP)],
     # (Teamplay Options' voice chat and vote kick rows, after its own:
     # TEAMPLAY_ROWS)
     f"{TEAMPLAY_EDIT}/teamplay_options_labels": [(3, [label for _, label, *_ in TEAMPLAY_EXTRA_ROWS])],
@@ -2477,11 +2523,12 @@ WIDGET_PATCHES = {
             f'<child widget="{DAILY_ITEM}" x="{DAILY_ITEM_PLACE[0]}" y="{DAILY_ITEM_PLACE[1]}"/>']}},
     f"{PLAYER_EDIT}/player_options_menu": {"insert_before": {
         f"{PLAYER_EDIT}/player_button_bar": [
-            f'<child widget="{PLAYER_EDIT}/op_aim_assist" x="54" y="289"/>',
-            f'<child widget="{PLAYER_EDIT}/op_shield_effects" x="54" y="316"/>']}},
-    # (its rows 27 apart, not 30, so that ten fit above the help, which keeps
-    # the three lines some have: ce_menus.py's CHILD_OFFSETS)
-    f"{PLAYER_EDIT}/player_options_help": {"set": {"top": 345, "height": 60}},
+            f'<child widget="{PLAYER_EDIT}/op_{row}" x="54" y="{player_options_row_top(index)}"/>'
+            for index, row in enumerate(PLAYER_OPTIONS_HOST_ROWS, len(PLAYER_OPTIONS_ROWS))]}},
+    # (its rows PLAYER_OPTIONS_SPACING apart, not 30, so that eleven fit above
+    # the help, which keeps the three lines some have: ce_menus.py's
+    # CHILD_OFFSETS)
+    f"{PLAYER_EDIT}/player_options_help": {"set": {"top": 352, "height": 60}},
     # (the gametype editor's OPENCE OPTIONS, after its own rows: _opence_options)
     f"{PLAYLIST_EDIT}/edit_playlist_select_list": {
         "insert_before": {f"{PLAYLIST_EDIT}/playlist_edit_button_bar": [f'<child widget="{OPENCE_ITEM}"/>',
@@ -3780,12 +3827,13 @@ def _item_options_extras() -> list:
 
 
 def _player_options_extras() -> list:
-    """The host's aim-assist policy and shield effects, hidden while editing
-    saved gametypes."""
+    """The host's aim-assist policy, shield effects and third person,
+    hidden while editing saved gametypes."""
     base = PLAYER_EDIT
     lines = []
     for key, label_index, words in (("aim_assist", 8, ["ALLOWED", "BLOCK M+KB"]),
-                                    ("shield_effects", 9, SHIELD_EFFECTS)):
+                                    ("shield_effects", 9, SHIELD_EFFECTS),
+                                    ("third_person", 10, THIRD_PERSON_WORDS)):
         lines += _widget(f"{base}/op_{key}", [("width", 512), ("height", 28),
             ("flags", "pass_unhandled_to_focused_child"), ("bitmap", "bitmaps/option_bkds"),
             ("color", "#FF2896FF")], [f'<child widget="{base}/{key}_label"/>',
@@ -3802,7 +3850,7 @@ def _player_options_extras() -> list:
             ("footer_bitmap", "bitmaps/arrow_sm_right"), ("header_bounds", "7 -13 19 -7"),
             ("footer_bounds", "7 208 19 214")], ['<on event="left_mouse" run="mouse spinner 1wide click"/>'])
     return lines + _strings(f"{base}/var_aim_assist", ["ALLOWED", "BLOCK M+KB"]) + \
-        _strings(f"{base}/var_shield_effects", SHIELD_EFFECTS)
+        _strings(f"{base}/var_shield_effects", SHIELD_EFFECTS) + _strings(f"{base}/var_third_person", THIRD_PERSON_WORDS)
 
 
 def _opence_options() -> list:

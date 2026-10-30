@@ -82,6 +82,7 @@ machine (their datum identifiers need not be).
 #include "network_chat.h"
 #include "network_aim_assist.h"
 #include "network_shield_effects.h"
+#include "network_third_person.h"
 #include "map_share.h"
 #include "tag_multiplayer.h"
 #include "network_afk.h"
@@ -4073,6 +4074,7 @@ void network_distributed_new_game(
 	network_coop_new_game();
 	network_aim_assist_reset();
 	network_shield_effects_reset();
+	network_third_person_reset();
 	network_votekick_new_game();
 	network_afk_new_game();
 	network_map_vote_reset();
@@ -4999,6 +5001,11 @@ void network_distributed_handle_message(
 		network_shield_effects_handle_message(machine_index, message, size);
 		return;
 	}
+	if (network_third_person_handles_message(message, size))
+	{
+		network_third_person_handle_message(machine_index, message, size);
+		return;
+	}
 	if (network_voice_handles_message(message, size))
 	{
 		network_voice_handle_message(machine_index, message, size);
@@ -5420,6 +5427,7 @@ void network_distributed_handle_message(
 		skulls_send_tags(machine_index);
 		infection_send_originals(machine_index);
 		network_shield_effects_send(machine_index);
+		network_third_person_send(machine_index);
 		network_objects_client_asked(machine_index, header.count != 0);
 		/* (a machine new at its index, which may have joined the game in
 		progress: every player's statistics and the game type's state, after

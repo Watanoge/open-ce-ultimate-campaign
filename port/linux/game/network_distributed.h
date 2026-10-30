@@ -180,6 +180,12 @@ enum
 	it is ready. A build without it (upstream's) drops it as a kind it does
 	not know, and plays the game as Infection */
 	_distributed_message_floodfection_originals = 164,
+	/* whether the host leaves the view over the shoulder to each player
+	(port/linux/game/network_third_person.c), to every client, reliably,
+	when it is ready and when it changes. Sent in plain games too: a build
+	without it (upstream's) drops it as a kind it does not know, and its
+	players stay in first person */
+	_distributed_message_third_person_policy = 165,
 
 	NUMBER_OF_DISTRIBUTED_MESSAGES
 };

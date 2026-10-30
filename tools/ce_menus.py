@@ -87,11 +87,12 @@ CHILD_OFFSETS = {
     # screen's border picture outlines (its own box is gone)
     ("ui\\shell\\main_menu\\multiplayer_type_select\\join_game\\op_browser_mode",
      "ui\\shell\\main_menu\\multiplayer_type_select\\join_game\\browser_mode_spinner"): (16, 1),
-    # Player Options' rows 27 apart, not 30, so that the host's AIM ASSIST and
-    # SHIELD EFFECTS fit below them and above the help, which some fill with
-    # three lines (port_settings.WIDGET_PATCHES)
+    # Player Options' rows closer than 30, so that the host's AIM ASSIST,
+    # SHIELD EFFECTS and THIRD PERSON fit below them and above the help, which
+    # some fill with three lines (port_settings.WIDGET_PATCHES)
     **{("ui\\shell\\main_menu\\settings_select\\multiplayer_setup\\player_options_edit\\player_options_menu",
-        f"ui\\shell\\main_menu\\settings_select\\multiplayer_setup\\player_options_edit\\op_{row}"): (54, 73 + 27 * index)
+        f"ui\\shell\\main_menu\\settings_select\\multiplayer_setup\\player_options_edit\\op_{row}"):
+       (54, port_settings.player_options_row_top(index))
        for index, row in enumerate(port_settings.PLAYER_OPTIONS_ROWS)},
     # the main menu's items closer together, for MODS and THEATER
     # (port_settings.MAIN_MENU_ITEMS)

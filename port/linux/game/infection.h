@@ -45,6 +45,8 @@ enum
 	each spawn of RANDOM's (a table's place: 0 25%) */
 	_floodfection_setting_elites = FLOODFECTION_SETTING(2, 0, 2),
 	_floodfection_setting_elite_chance = FLOODFECTION_SETTING(2, 2, 3),
+	/* whose view is over the shoulder (_floodfection_camera_*) */
+	_floodfection_setting_camera = FLOODFECTION_SETTING(2, 5, 2),
 	/* the share of the players the last humans strengthened are (a table's
 	place: 0 10%, 1 none), and the last one not strengthened, not shown to
 	the zombies, and no Flood music (1 each) */
@@ -59,6 +61,16 @@ enum
 	_floodfection_elites_none,
 	_floodfection_elites_random
 };
+enum
+{
+	_floodfection_camera_flood = 0,
+	_floodfection_camera_everyone,
+	_floodfection_camera_choice,
+	_floodfection_camera_first_person
+};
+/* a player's view in a Floodfection game (_third_person_rule_*:
+third_person.h): its CAMERA setting's, by the player's role */
+short infection_third_person(long player_index);
 /* the object is a Floodfection zombie's unit: hit, it bleeds as the Flood
 (projectiles.c), and a headshot does not kill it outright (damage.c) */
 boolean infection_floodfection_zombie(long object_index);

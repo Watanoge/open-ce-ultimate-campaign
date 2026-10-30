@@ -590,6 +590,8 @@
 		<string text="For everyone, shields light their surroundings,\nand the overshield rises and stays lit."/>
 		<string text="For everyone, Light Show's shield glow, and the\novershield rising and staying lit."/>
 		<string text="Not synced: each player sees the shield effects\nof their own Video Setup settings."/>
+		<string text="Everyone plays in first person."/>
+		<string text="Each player may see over their shoulder (their\nThird Person setting). Older builds: first person."/>
 	</strings>
 	<strings name="main_menu/settings_select/multiplayer_setup/player_options_edit/player_options_labels" map="ui\shell\main_menu\settings_select\multiplayer_setup\player_options_edit\player_options_labels">
 		<string text="NUMBER OF LIVES:" map="0"/>
@@ -602,6 +604,7 @@
 		<string text="SUICIDE PENALTY:" map="7"/>
 		<string text="AIM ASSIST:"/>
 		<string text="SHIELD EFFECTS:"/>
+		<string text="THIRD PERSON:"/>
 	</strings>
 	<strings name="main_menu/settings_select/multiplayer_setup/player_options_edit/var_invisible_players" map="ui\shell\main_menu\settings_select\multiplayer_setup\player_options_edit\var_invisible_players">
 		<string text="YES" map="0"/>
