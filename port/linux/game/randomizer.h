@@ -34,6 +34,12 @@ gave it, its new unit, else NONE. Once out of the seat, landed and standing,
 walking or fighting, it is swapped again (randomizer_tick) */
 long randomizer_rider_restore(long unit_index);
 
+/* EXTRA ENEMIES (game.randomizer_extra_enemies): how many times as large
+the level's squads of enemies are (coop_enemies.c), 1 for none. As the
+level loading had it: the randomizer on, a campaign level played alone or
+hosted, no campaign profile in its place, and no daily challenge */
+int randomizer_extra_enemies(void);
+
 /* the roll the level was laid out with (its own, its host's, or a daily
 challenge's seed: community.c sends it with a challenge's run) */
 unsigned long randomizer_roll(void);

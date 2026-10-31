@@ -9,14 +9,16 @@ Network co-op's extra enemies, for its players (coop_enemies.c).
 
 /* network_coop.c: a game begins (its EXTRA ENEMIES read), or the host's
 game state went back (a cutscene skipped): the dropships' riders kept are
-forgotten */
+forgotten (and, for the randomizer's EXTRA ENEMIES, with each map and each
+game state reverted or loaded: randomizer.c, game_state.c) */
 void coop_enemies_new_game(
 	void);
 void coop_enemies_reset(
 	void);
 
 /* encounters.c: how many enemies more a squad placed with `count` gets
-(none but on a co-op host, for an encounter of the players' enemies) */
+(for an encounter of the players' enemies: co-op's, on a co-op host, and
+the randomizer's EXTRA ENEMIES, played alone or hosted) */
 short coop_enemies_extra_count(
 	long encounter_index,
 	short count);
@@ -57,8 +59,9 @@ boolean coop_enemies_rider_unseated(
 	long vehicle_index,
 	long unit_index);
 
-/* network_coop.c, after each of the host's ticks: the riders kept placed
-at their vehicle's seats once its own riders get out */
+/* network_coop.c, after each of the host's ticks (randomizer.c's tick,
+played alone): the riders kept placed at their vehicle's seats once its own
+riders get out */
 void coop_enemies_update(
 	void);
 

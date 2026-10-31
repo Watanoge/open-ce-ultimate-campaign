@@ -808,6 +808,13 @@ static const struct config_setting config_settings[] =
 		"The randomizer screen, when the enemy weapon type is \"tag_injector\":\n"
 		"the custom type of the Tag Injector profile's weapons an actor may be\n"
 		"given." },
+	{ "game.randomizer_extra_enemies", _config_integer, "1", "HALO_RANDOMIZER_EXTRA_ENEMIES", _environment_value,
+		_platform_all,
+		"The randomizer screen's EXTRA ENEMIES: each squad of the players'\n"
+		"enemies a campaign level places is this many times as large (1, off,\n"
+		"to 32), as co-op's static multiplier (network.coop_enemies_multiplier)\n"
+		"makes them; a co-op game's extra enemies come on top of it. Played\n"
+		"alone or as a co-op host, never in a daily challenge." },
 	{ "game.randomizer_crazy", _config_boolean, "false", "HALO_RANDOMIZER_CRAZY", _environment_value, _platform_all,
 		"Settings > Gameplay > Randomizer's Go Crazy. true: the parts of it on\n"
 		"(game.randomizer_crazy_weapons, _enemies, _flamethrower), and as many\n"

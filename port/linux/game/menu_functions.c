@@ -1996,7 +1996,7 @@ oldest first; a new name past eight drops the oldest. A setting added at
 the end is its default in a setup saved before it */
 #define RANDOMIZER_PROFILE_MAX 8
 #define RANDOMIZER_PROFILE_NAME 24
-#define RANDOMIZER_KEY_COUNT 19
+#define RANDOMIZER_KEY_COUNT 20
 /* the longest value of a setup's setting (a custom type's name) */
 #define RANDOMIZER_VALUE_LENGTH TAG_INJECTOR_CUSTOM_TYPE_LENGTH
 /* a setup, as config.toml has it: its name, and each value after a ; */
@@ -2027,6 +2027,8 @@ static char const *const randomizer_keys[RANDOMIZER_KEY_COUNT] =
 	"game.randomizer_custom_type",
 	"game.randomizer_pickup_custom",
 	"game.randomizer_weapon_custom",
+	/* (EXTRA ENEMIES; a setup saved before it has none) */
+	"game.randomizer_extra_enemies",
 };
 
 static struct
@@ -2628,7 +2630,8 @@ static void randomizer_custom_rows_show(struct widget_instance *list);
 
 /* "randomizer screen update": the rows that mean something with what the
 spinners above them show (tools/port_settings.py's RANDOMIZER_ROWS), one
-under the other (closer when there are more than twelve); a hidden row takes
+under the other (closer when there are more than twelve), EXTRA ENEMIES on
+top with a small space under it; a hidden row takes
 no focus. The flamethrower, with Go Crazy's FLAMETHROWER off, not a type to
 be chosen, nor TAG INJECTOR without a profile of tags of its kind played
 (randomizer_tags), whose custom types the rows of TAG INJECTOR's show. And a
@@ -2686,31 +2689,34 @@ static void randomizer_screen_update(struct widget_instance *list)
 	pickup_one = pickups && randomizer_spinner_is(list, "pickup_pool_spinner", "one");
 	weapons = randomizer_spinner_is(list, "enemy_weapons_spinner", "true");
 	weapon_one = weapons && randomizer_spinner_is(list, "weapon_pool_spinner", "one");
-	rows[0].row = "op_enemies", rows[0].shown = TRUE;
-	rows[1].row = "op_allies", rows[1].shown = enemies;
-	rows[2].row = "op_pool", rows[2].shown = enemies;
-	rows[3].row = "op_type", rows[3].shown = one_type;
-	rows[4].row = "op_custom_type", rows[4].shown = custom_type;
-	rows[5].row = "op_grunt_rank", rows[5].shown = one_type && randomizer_spinner_is(list, "type_spinner", "grunt");
-	rows[6].row = "op_elite_rank", rows[6].shown = one_type && randomizer_spinner_is(list, "type_spinner", "elite");
-	rows[7].row = "op_jackal_rank", rows[7].shown = one_type && randomizer_spinner_is(list, "type_spinner", "jackal");
-	rows[8].row = "op_hunter_rank", rows[8].shown = one_type && randomizer_spinner_is(list, "type_spinner", "hunter");
-	rows[9].row = "op_flood_combat_rank";
-	rows[9].shown = one_type && randomizer_spinner_is(list, "type_spinner", "flood_combat");
-	rows[10].row = "op_pickups", rows[10].shown = TRUE;
-	rows[11].row = "op_pickup_pool", rows[11].shown = pickups;
-	rows[12].row = "op_pickup_type", rows[12].shown = pickup_one;
-	rows[13].row = "op_pickup_custom";
-	rows[13].shown = pickup_one && randomizer_spinner_is(list, "pickup_type_spinner", "tag_injector");
-	rows[14].row = "op_enemy_weapons", rows[14].shown = TRUE;
-	rows[15].row = "op_weapon_pool", rows[15].shown = weapons;
-	rows[16].row = "op_weapon_type", rows[16].shown = weapon_one;
-	rows[17].row = "op_weapon_custom";
-	rows[17].shown = weapon_one && randomizer_spinner_is(list, "weapon_type_spinner", "tag_injector");
+	rows[0].row = "op_extra_enemies", rows[0].shown = TRUE;
+	rows[1].row = "op_enemies", rows[1].shown = TRUE;
+	rows[2].row = "op_allies", rows[2].shown = enemies;
+	rows[3].row = "op_pool", rows[3].shown = enemies;
+	rows[4].row = "op_type", rows[4].shown = one_type;
+	rows[5].row = "op_custom_type", rows[5].shown = custom_type;
+	rows[6].row = "op_grunt_rank", rows[6].shown = one_type && randomizer_spinner_is(list, "type_spinner", "grunt");
+	rows[7].row = "op_elite_rank", rows[7].shown = one_type && randomizer_spinner_is(list, "type_spinner", "elite");
+	rows[8].row = "op_jackal_rank", rows[8].shown = one_type && randomizer_spinner_is(list, "type_spinner", "jackal");
+	rows[9].row = "op_hunter_rank", rows[9].shown = one_type && randomizer_spinner_is(list, "type_spinner", "hunter");
+	rows[10].row = "op_flood_combat_rank";
+	rows[10].shown = one_type && randomizer_spinner_is(list, "type_spinner", "flood_combat");
+	rows[11].row = "op_pickups", rows[11].shown = TRUE;
+	rows[12].row = "op_pickup_pool", rows[12].shown = pickups;
+	rows[13].row = "op_pickup_type", rows[13].shown = pickup_one;
+	rows[14].row = "op_pickup_custom";
+	rows[14].shown = pickup_one && randomizer_spinner_is(list, "pickup_type_spinner", "tag_injector");
+	rows[15].row = "op_enemy_weapons", rows[15].shown = TRUE;
+	rows[16].row = "op_weapon_pool", rows[16].shown = weapons;
+	rows[17].row = "op_weapon_type", rows[17].shown = weapon_one;
+	rows[18].row = "op_weapon_custom";
+	rows[18].shown = weapon_one && randomizer_spinner_is(list, "weapon_type_spinner", "tag_injector");
 	for (index = 0; index < (short)NUMBEROF(rows); index++)
 		shown = (short)(shown + rows[index].shown);
-	/* (more than twelve rows: closer, above the help) */
-	pitch = shown > 12 ? 24 : 26;
+	/* (more than eleven rows: closer, above the help; more than thirteen,
+	closer still, above the buttons, a row sooner each for the space under
+	the first) */
+	pitch = shown > 13 ? 22 : shown > 11 ? 24 : 26;
 	shown = 0;
 	for (index = 0; index < (short)NUMBEROF(rows); index++)
 	{
@@ -2721,7 +2727,8 @@ static void randomizer_screen_update(struct widget_instance *list)
 		row->visible = rows[index].shown;
 		if (!rows[index].shown)
 			continue;
-		row->vertical_offset = (short)(70 + shown * pitch);
+		/* (the first, EXTRA ENEMIES, a third of a row above the rest) */
+		row->vertical_offset = (short)(70 + shown * pitch + (shown ? pitch / 3 : 0));
 		shown++;
 	}
 	randomizer_custom_rows_show(list);

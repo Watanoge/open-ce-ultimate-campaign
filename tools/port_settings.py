@@ -1434,6 +1434,12 @@ TAG_INJECTOR_CHOICE = ("TAG INJECTOR", "tag_injector")
 RANDOMIZER_WEAPON_POOLS = [("ANY", "any"), ("COVENANT", "covenant"), ("HUMAN", "human"),
                            ("PRECISION", "precision"), ("AUTOMATIC", "automatic"), ("POWER", "power"),
                            ("ONE TYPE", "one"), TAG_INJECTOR_CHOICE]
+# the space under the randomizer screen's first row, EXTRA ENEMIES, above
+# the rest (menu_functions.c's randomizer_screen_update, a third of a row)
+RANDOMIZER_FIRST_GAP = 26 // 3
+# EXTRA ENEMIES' multipliers, as co-op's STATIC MULTIPLIER has them
+# (COOP_ENEMIES_MULTIPLIERS)
+RANDOMIZER_EXTRA_ENEMIES = [2, 4, 8, 16, 32]
 # the randomizer screen's rows, top to bottom. menu_functions.c's
 # randomizer_rows_show shows a row only while what it depends on is chosen
 # (a pool's type with ONE TYPE, a rank with its type, a custom type with
@@ -1441,6 +1447,10 @@ RANDOMIZER_WEAPON_POOLS = [("ANY", "any"), ("COVENANT", "covenant"), ("HUMAN", "
 # type's: the Tag Injector profile's, which menu_functions.c shows and steps
 # through (_randomizer_value_row)
 RANDOMIZER_ROWS = [
+    # (co-op's STATIC MULTIPLIER, for the randomizer's level: coop_enemies.c)
+    ("extra_enemies", "EXTRA ENEMIES:", "game.randomizer_extra_enemies",
+     [("OFF", "1"), *[(f"{value}X", str(value)) for value in RANDOMIZER_EXTRA_ENEMIES]],
+     "Each squad of enemies that many times as large,\nwith co-op's extra enemies on top of it."),
     ("enemies", "ENEMIES:", "game.randomizer_enemies", OFF_ON,
      "On: a squad's actors are taken from the pool."),
     ("allies", "ALLIES TOO:", "game.randomizer_allies", OFF_ON,
@@ -1539,7 +1549,7 @@ def _randomizer_screen() -> list:
     labels = []
     for index, (key, label, setting, choices, _) in enumerate(RANDOMIZER_ROWS):
         # (each where it is with every row shown; the screen moves them up)
-        children.append(f'<child{attributes([("widget", f"{base}/op_{key}"), ("x", 54), ("y", 70 + index * 26)])}/>')
+        children.append(f'<child{attributes([("widget", f"{base}/op_{key}"), ("x", 54), ("y", 70 + index * 26 + (RANDOMIZER_FIRST_GAP if index else 0))])}/>')
         if choices is None:
             extra += _randomizer_value_row(base, key, index)
         else:

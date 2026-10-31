@@ -103,6 +103,7 @@ symbols in this file:
 #include "game_state.h"
 #include "coop_vehicles.h" /* port: preserve replacement-vehicle homes across reverts */
 #include "network_coop.h" /* port: checkpoint membership for host team-wipe reverts */
+#include "coop_enemies.h" /* port: the dropships' riders kept, of the state gone */
 #include "game.h"
 #include "tag_files.h"
 #include "cache_files.h"
@@ -417,6 +418,9 @@ void game_state_revert(
 	game_state_call_after_load_procs();
 	/* port: the skulls found and not kept are lost (port/linux/game/skulls.c) */
 	skulls_game_state_reverted();
+	/* port: and the extra enemies' riders kept, of the game state reverted
+	from (port/linux/game/coop_enemies.c) */
+	coop_enemies_reset();
 
 	return;
 }
@@ -1071,6 +1075,9 @@ void game_state_try_and_load_from_persistent_storage(
 		game_state_call_after_load_procs();
 		/* port: the skulls lost before it was saved (port/linux/game/skulls.c) */
 		skulls_game_state_loaded();
+		/* port: the extra enemies' riders kept, of the game state replaced
+		(port/linux/game/coop_enemies.c) */
+		coop_enemies_reset();
 		game_state_save();
 	}
 

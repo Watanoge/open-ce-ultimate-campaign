@@ -42,6 +42,7 @@ request #420 by arisson2001rojas-design.
 */
 
 #include "cseries.h"
+#include "cutscene/cinematics.h"
 #include "effects/effect_definitions.h"
 #include "effects/effects.h"
 #include "game/game.h"
@@ -300,7 +301,7 @@ boolean infection_melee_rider_visible(
 
 /* ---- Floodfection's look */
 
-/* the Flood's fog: from a few world units off, opaque at its end, which the
+/* the Flood's fog (Floodfection's, and a campaign's with Outbreak on): from a few world units off, opaque at its end, which the
 window clears to (the sky not drawn). Outdoors as far as a field needs;
 under a roof (a cluster with no sky: Prisoner's rooms, a base's halls) much
 closer, as rooms a few units across would hardly be tinted by the
@@ -312,6 +313,9 @@ outdoors' */
 /* the share of the way from one to the other each frame drawn, walking in
 or out a door */
 #define FLOODFECTION_FOG_BLEND 0.08f
+/* the seconds the fog takes to thin out as a cutscene starts, and to close
+in again after it */
+#define FLOODFECTION_FOG_CUTSCENE_FADE_SECONDS 2.0f
 
 static real_rgb_color const floodfection_zombie_color = { { 0.30f, 0.48f, 0.12f } };
 static real_rgb_color const floodfection_fog_color = { { 0.16f, 0.20f, 0.09f } };
@@ -319,6 +323,11 @@ static real_rgb_color const floodfection_fog_color = { { 0.16f, 0.20f, 0.09f } }
 /* each local player's fog distances as last drawn, 0 before the first */
 static real floodfection_fog_start[MAXIMUM_NUMBER_OF_LOCAL_PLAYERS];
 static real floodfection_fog_opaque[MAXIMUM_NUMBER_OF_LOCAL_PLAYERS];
+/* how much of the fog is over the view, 1 out of a cutscene and 0 in one,
+eased between them from floodfection_fog_fade_time's (real time); below 0
+before the first frame drawn, which takes the one it wants at once */
+static real floodfection_fog_fade = -1.0f;
+static unsigned long floodfection_fog_fade_time;
 
 static boolean infection_floodfection(
 	void)
@@ -409,6 +418,41 @@ void infection_change_color(
 		*color = player_profile_get_rgb_color(player_get(player_index)->network_player_data.primary_color_index);
 }
 
+void infection_fog_reset(
+	void)
+{
+	csmemset(floodfection_fog_start, 0, sizeof(floodfection_fog_start));
+	csmemset(floodfection_fog_opaque, 0, sizeof(floodfection_fog_opaque));
+	floodfection_fog_fade = -1.0f;
+}
+
+/* the fog's share eased a frame on toward a cutscene's 0 or the game's 1;
+TRUE, in a cutscene: the sky shown through it (and hidden again after) at
+once, as the sky draws unfogged, under the fade to black that starts and ends
+most cutscenes */
+static boolean floodfection_fog_fade_update(
+	void)
+{
+	boolean cutscene = cinematic_globals && game_in_progress() && cinematic_in_progress();
+	real wanted = cutscene ? 0.0f : 1.0f;
+	unsigned long now = system_milliseconds();
+
+	if (floodfection_fog_fade < 0.0f)
+		floodfection_fog_fade = wanted;
+	else
+	{
+		real step = (real)(now - floodfection_fog_fade_time) / (1000.0f * FLOODFECTION_FOG_CUTSCENE_FADE_SECONDS);
+
+		if (floodfection_fog_fade < wanted)
+			floodfection_fog_fade = MIN(wanted, floodfection_fog_fade + step);
+		else
+			floodfection_fog_fade = MAX(wanted, floodfection_fog_fade - step);
+	}
+	floodfection_fog_fade_time = now;
+
+	return cutscene;
+}
+
 boolean infection_fog(
 	short local_player_index,
 	boolean indoors,
@@ -416,8 +460,10 @@ boolean infection_fog(
 {
 	real start = indoors ? FLOODFECTION_INDOOR_FOG_START_DISTANCE : FLOODFECTION_FOG_START_DISTANCE;
 	real opaque = indoors ? FLOODFECTION_INDOOR_FOG_OPAQUE_DISTANCE : FLOODFECTION_FOG_OPAQUE_DISTANCE;
+	boolean cutscene;
 
-	if (!infection_floodfection())
+	/* (skull_active: a campaign's level alone) */
+	if (!infection_floodfection() && !skull_active(_skull_outbreak))
 		return FALSE;
 	if (VALID_INDEX(local_player_index, MAXIMUM_NUMBER_OF_LOCAL_PLAYERS))
 	{
@@ -431,6 +477,29 @@ boolean infection_fog(
 		}
 		*last_start = start;
 		*last_opaque = opaque;
+	}
+	cutscene = floodfection_fog_fade_update();
+	if (floodfection_fog_fade < 1.0f)
+	{
+		/* thinning to the map's own fog (scenario_get_atmospheric_fog's), or
+		none on a map without, and back */
+		real fade = floodfection_fog_fade;
+		real map_density = fog->atmospheric_maximum_distance != 0.0f ? fog->atmospheric_maximum_density : 0.0f;
+
+		if (fade <= 0.0f)
+			return !cutscene;
+		if (map_density > 0.0f)
+		{
+			start = fog->atmospheric_minimum_distance + (start - fog->atmospheric_minimum_distance) * fade;
+			opaque = fog->atmospheric_maximum_distance + (opaque - fog->atmospheric_maximum_distance) * fade;
+		}
+		fog->atmospheric_color.red += (floodfection_fog_color.red - fog->atmospheric_color.red) * fade;
+		fog->atmospheric_color.green += (floodfection_fog_color.green - fog->atmospheric_color.green) * fade;
+		fog->atmospheric_color.blue += (floodfection_fog_color.blue - fog->atmospheric_color.blue) * fade;
+		fog->atmospheric_maximum_density = map_density + (1.0f - map_density) * fade;
+		fog->atmospheric_minimum_distance = start;
+		fog->atmospheric_maximum_distance = MAX(opaque, start + 0.0001f);
+		return !cutscene;
 	}
 	fog->atmospheric_color = floodfection_fog_color;
 	fog->atmospheric_maximum_density = 1.0f;
@@ -806,8 +875,7 @@ static void floodfection_burst_reset(
 	floodfection_humans_seen = NONE;
 	floodfection_horde_start = NONE;
 	floodfection_nav_index_found = FALSE;
-	csmemset(floodfection_fog_start, 0, sizeof(floodfection_fog_start));
-	csmemset(floodfection_fog_opaque, 0, sizeof(floodfection_fog_opaque));
+	infection_fog_reset();
 	floodfection_forms_reset();
 }
 

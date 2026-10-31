@@ -83,6 +83,7 @@ Tag Injector's stock HUDs; on a multiplayer map, the game mode's
 void platform_log(char const *format, ...);
 #include "randomizer.h"
 #include "community.h"
+#include "coop_enemies.h"
 #include "infection.h"
 #include "tag_import.h"
 #include "tag_injector.h"
@@ -286,6 +287,8 @@ static char protected_names[PROTECTED_MAX][32];
 static int protected_count;
 static struct setup current;
 static int loaded;
+/* EXTRA ENEMIES, as the level loading had it (randomizer_extra_enemies) */
+static int extra_enemies = 1;
 static char map_name_leaf[32];
 static int remote_on;
 /* the setup as the host advertises it (halo_port_limits.h): which swaps,
@@ -1743,6 +1746,7 @@ void randomizer_tags_loaded(char const *scenario_name)
 	long campaign_profile = NONE;
 
 	randomizer_tags_unloaded();
+	extra_enemies = 1;
 	/* (a multiplayer game's shared weapons, on the game's own multiplayer
 	maps) */
 	{
@@ -1806,6 +1810,10 @@ void randomizer_tags_loaded(char const *scenario_name)
 	{
 		setup_from_config(&current);
 		randomize = setup_swaps(&current);
+		/* (the host's alone, which runs the AI; and never a challenge's,
+		which is the same for everyone) */
+		if (!community_challenge_running())
+			extra_enemies = (int)PIN(config_integer("game.randomizer_extra_enemies"), 1, 32);
 	}
 	/* (and the skull the enemies carry, which the randomizer may be off for) */
 	skull = skulls_carried_wanted();
@@ -2180,6 +2188,13 @@ void randomizer_initialize(void)
 void randomizer_initialize_for_new_map(void)
 {
 	state_reset();
+	/* (EXTRA ENEMIES' riders kept, of the map before: coop_enemies.c) */
+	coop_enemies_reset();
+}
+
+int randomizer_extra_enemies(void)
+{
+	return extra_enemies;
 }
 
 void randomizer_actor_placed(long actor_index, long requested)
@@ -2340,6 +2355,10 @@ void randomizer_tick(void)
 	long now;
 	long rider;
 
+	/* (EXTRA ENEMIES' riders kept, placed once their dropship's get out,
+	played alone: a co-op host places them after its ticks, network_coop.c) */
+	if (game_connection() == _game_connection_local)
+		coop_enemies_update();
 	if (!state || network_game_distributed_client())
 		return;
 	now = game_time_get();

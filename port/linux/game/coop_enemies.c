@@ -12,6 +12,11 @@ than the ground round them, the clients' objects or the host's ticks could
 take). STATIC MULTIPLIER (network.coop_enemies_multiplier):
 each squad is that many times as large, for any number of players.
 
+The randomizer's EXTRA ENEMIES (game.randomizer_extra_enemies:
+randomizer_extra_enemies) is a STATIC MULTIPLIER of its own, for a level
+played alone too: each squad that many times as large first, and co-op's
+EXTRA ENEMIES grow that.
+
 Extra enemies are placed in widening rings around the squad's starting
 locations, on a spot on the same floor, reachable without passing through
 a wall, crate or machine, with room to stand and nobody already there. A
@@ -26,7 +31,8 @@ kept: once the dropship's own riders get out (vehicle_unload, or any other
 way), they are placed beside those riders, a few ticks apart, and drop and
 fight as they do. A dropship gone first takes them with it.
 
-Only the host runs the AI, so all of this is the host's.
+Only the host runs the AI, so all of this is the host's (or, played
+alone, the one machine's).
 */
 
 #include "cseries.h"
@@ -45,6 +51,7 @@ Only the host runs the AI, so all of this is the host's.
 #include "scenario/scenario_definitions.h"
 #include "units/units.h"
 #include "units/unit_definitions.h"
+#include "randomizer.h"
 
 #include "coop_enemies.h"
 #include "network_coop.h"
@@ -162,12 +169,26 @@ static boolean coop_enemies_host(
 	return game_connection() == _game_connection_network_server && network_coop_active();
 }
 
-/* whether this game has extra enemies (it is a co-op host's, with some
+/* the machine that runs the AI: a co-op host, or a game played alone */
+static boolean coop_enemies_runs_ai(
+	void)
+{
+	return coop_enemies_host() || game_connection() == _game_connection_local;
+}
+
+/* whether co-op's EXTRA ENEMIES are on (it is a co-op host's, with some
 chosen) */
-static boolean coop_enemies_on(
+static boolean coop_enemies_coop_on(
 	void)
 {
 	return coop_enemies.mode != _coop_enemies_none && coop_enemies_host();
+}
+
+/* whether this game has extra enemies: co-op's, or the randomizer's */
+static boolean coop_enemies_on(
+	void)
+{
+	return coop_enemies_coop_on() || (randomizer_extra_enemies() > 1 && coop_enemies_runs_ai());
 }
 
 /* the players in the game, every machine's: the network game's (a level
@@ -440,7 +461,7 @@ short coop_enemies_extra_count(
 	short count)
 {
 	struct encounter_datum *encounter;
-	long extra, room;
+	long extra, room, randomized;
 	short players;
 
 	if (count <= 0 || !coop_enemies_on())
@@ -448,15 +469,19 @@ short coop_enemies_extra_count(
 	encounter = encounter_get(encounter_index);
 	if (!game_team_is_enemy(_game_team_player, encounter->team_index))
 		return 0;
-	if (coop_enemies.mode == _coop_enemies_multiplier)
-		extra = (long)count * (coop_enemies.multiplier - 1);
-	else
+	/* (the randomizer's first, the squad as co-op's then grow it) */
+	randomized = coop_enemies_runs_ai() ? (long)count * randomizer_extra_enemies() : (long)count;
+	extra = randomized - count;
+	if (coop_enemies_coop_on() && coop_enemies.mode == _coop_enemies_multiplier)
+		extra += randomized * (coop_enemies.multiplier - 1);
+	else if (coop_enemies_coop_on())
 	{
 		players = coop_enemies_player_count();
-		if (players <= 1)
-			return 0;
-		extra = ((long)count * coop_enemies.percent * (players - 1) + 50) / 100;
-		extra = MIN(extra, (long)count * (COOP_ENEMIES_MAXIMUM_GROWTH - 1));
+		if (players > 1)
+		{
+			extra += MIN((randomized * coop_enemies.percent * (players - 1) + 50) / 100,
+				randomized * (COOP_ENEMIES_MAXIMUM_GROWTH - 1));
+		}
 	}
 	room = MAXIMUM_ACTORS - COOP_ENEMIES_LEVEL_ACTORS - actor_data->actual_count;
 	return (short)PIN(extra, 0, MAX(room, 0));
@@ -623,7 +648,7 @@ void coop_enemies_update(
 	long now = game_time_get();
 	short vehicle_number;
 
-	if (!coop_enemies_host())
+	if (!coop_enemies_runs_ai())
 		return;
 	for (vehicle_number = coop_enemies.vehicle_count - 1; vehicle_number >= 0; vehicle_number--)
 	{

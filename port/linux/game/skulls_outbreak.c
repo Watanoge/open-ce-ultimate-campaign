@@ -48,6 +48,7 @@ clients, which play it (_distributed_message_skulls_outbreak_burst).
 #include "saved games/game_state.h"
 #include "tag_files/tag_groups.h"
 #include "units/units.h"
+#include "infection.h"
 #include "network_distributed.h"
 
 /* cseries_windows.h's */
@@ -142,6 +143,8 @@ void skulls_outbreak_initialize(void)
 void skulls_outbreak_initialize_for_new_map(void)
 {
 	outbreak_reset();
+	/* (the Flood's fog, Outbreak's look in the campaign: infection.c) */
+	infection_fog_reset();
 }
 
 /* the variants of the names the level has */

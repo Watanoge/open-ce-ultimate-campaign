@@ -74,7 +74,13 @@ short infection_third_person(long player_index);
 /* the object is a Floodfection zombie's unit: hit, it bleeds as the Flood
 (projectiles.c), and a headshot does not kill it outright (damage.c) */
 boolean infection_floodfection_zombie(long object_index);
+/* the Flood's fog over the view (render.c), in a Floodfection game or a
+campaign's level with Outbreak on, thinned away over a cutscene and back
+after it: TRUE, and the sky not to be drawn (FALSE in a cutscene) */
 boolean infection_fog(short local_player_index, boolean indoors, struct render_fog *fog);
+/* its eased distances forgotten, as a map loads (Floodfection's, and
+skulls_outbreak_initialize_for_new_map's) */
+void infection_fog_reset(void);
 /* the level loading is a Floodfection game's, and its tags of Two Betrayals
 (the burst, the flood bits, the zombies' forms) added to the level's import
 (randomizer_tags_loaded, tag_import.c) */
