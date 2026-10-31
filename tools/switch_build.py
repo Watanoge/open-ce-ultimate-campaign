@@ -179,7 +179,7 @@ def _uam_build(n: Writer, devkitpro: Path, host_cc: Path, host_arch: str) -> Opt
     ar = host_cc.parent / "aarch64-none-elf-ar"
     n.rule(
         name="switch_uam",
-        command=(f"rm -rf {meson_dir} && meson setup -Db_staticpic=false --cross-file {cross_file.resolve()} "
+        command=(f"export DEVKITPRO={devkitpro} && rm -rf {meson_dir} && meson setup -Db_staticpic=false --cross-file {cross_file.resolve()} "
                  f"--native-file {native_file.resolve()} "
                  f"{meson_dir.resolve()} {UAM_DIR.resolve()} > /dev/null && ninja -C {meson_dir} libuam.a > /dev/null && "
                  f"rm -f $out && cd {meson_dir} && {ar} rcs {library.resolve()} $$({ar} t libuam.a)"),
@@ -314,6 +314,8 @@ def generate_switch_build(n: Writer, sln: Any) -> None:
     # the C++ driver, for linking against Mesa
     n.variable("switch_host_gxx", str(host_cc.parent / "aarch64-none-elf-g++"))
     n.variable("switch_specs", str(devkitpro / "libnx" / "switch.specs"))
+    # (switch.specs names its files by $DEVKITPRO, which the shell need not set)
+    n.variable("switch_devkitpro", str(devkitpro))
     # libnx is a separate tree from the portlibs, and the link needs both;
     # the paths are spelled out per -L below rather than in one variable,
     # because a space-separated list is not what -L takes
@@ -854,7 +856,7 @@ def generate_switch_build(n: Writer, sln: Any) -> None:
     nacp = BUILD / "halo.nacp"
     n.rule(
         name="switch_host_link",
-        command=(f"$switch_host_gxx -specs=$switch_specs -g {host_arch} -o $out $in "
+        command=(f"DEVKITPRO=$switch_devkitpro $switch_host_gxx -specs=$switch_specs -g {host_arch} -o $out $in "
                  + " ".join(f"-L{path}" for path in (portlibs / "lib", devkitpro / "libnx" / "lib")) + " "
                  + " ".join(f"-l{lib}" for lib in HOST_LIBRARIES)
                  + " -Wl,-Map,$out.map"),
