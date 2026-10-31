@@ -6,11 +6,20 @@ subscribing (its kept slots, most of them games long gone) leaving every live
 game a place */
 #include "config.inc"
 
+/* (the hosts heard and not shown: a newer version's counted here, and one
+whose clock is off) */
+enum
+{
+	_hidden_newer,
+	_hidden_clock,
+};
+
 static int newer_count;
-static void newer_heard(const unsigned char *key_hash)
+static void hidden_heard(const unsigned char *key_hash, int reason)
 {
 	(void)key_hash;
-	newer_count++;
+	if (reason == _hidden_newer)
+		newer_count++;
 }
 
 #include "under_test.inc"

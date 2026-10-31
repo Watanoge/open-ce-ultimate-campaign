@@ -482,6 +482,10 @@ static void replay_page_upload_end(
 		replay_page_text("400 Bad Request", "That file is not a replay.");
 		return;
 	}
+	/* (the paths are the card's as they are, not the game's: DeleteFileA,
+	MoveFileA and the game's remove and rename would put them under the data
+	folder again. A replay of
+	that name was refused as the upload began) */
 	if (platform_rename_host(page.part_path, page.final_path) != 0)
 	{
 		platform_remove_host(page.part_path);

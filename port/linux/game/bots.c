@@ -523,7 +523,7 @@ bots_combat_jump_delay's); recruit is below easy, and veteran halfway from
 heroic to legendary in every number */
 static struct bots_skill_definition const bots_skills[NUMBER_OF_BOTS_SKILLS] =
 {
-	{ "recruit", 1.4f, 16.0f, 80.0f, 22.0f, 2.5f, 5.0f, 2.6f, 0.0f, 0.0f, 4, 24, 0.0f, 0.0f, 0.25f, 0.00f, 10.0f },
+	{ "recruit", 1.4f, 16.0f, 80.0f, 22.0f, 2.5f, 5.0f, 2.6f, 0.0f, 0.0f, 4, 24, 0.05f, 0.0f, 0.25f, 0.00f, 10.0f },
 	{ "easy", 0.75f, 22.0f, 100.0f, 12.0f, 1.4f, 8.0f, 2.2f, 0.3f, 0.04f, 6, 14, 0.15f, 0.0f, 0.35f, 0.00f, 15.0f },
 	{ "normal", 0.45f, 32.0f, 120.0f, 7.0f, 0.9f, 13.0f, 1.8f, 0.7f, 0.10f, 9, 9, 0.4f, 0.4f, 0.50f, 0.25f, 25.0f },
 	{ "heroic", 0.30f, 42.0f, 140.0f, 4.0f, 0.6f, 20.0f, 1.5f, 0.8f, 0.16f, 12, 6, 0.7f, 0.8f, 0.65f, 0.35f, 30.0f },
@@ -1146,9 +1146,14 @@ short bots_skill(void)
 		if (!strcmp(name, bots_skills[skill].name))
 			return skill;
 	}
-	/* (a number, 0 to 3) */
+	/* (a number, 0 to 3: the four levels the bots first had, easy to
+	legendary) */
 	if (name[0] >= '0' && name[0] <= '3' && !name[1])
-		return (short)(name[0] - '0');
+	{
+		static short const numbered[] = { _bots_skill_easy, _bots_skill_normal, _bots_skill_heroic, _bots_skill_legendary };
+
+		return numbered[name[0] - '0'];
+	}
 	return _bots_skill_normal;
 }
 
@@ -5810,8 +5815,11 @@ static boolean bots_level_retreat_goal(struct bots_bot *bot, struct bots_tick *t
 its weapon's distance, at a fight's start and now and then at a new strafe),
 a retreat along a path when losing (still shooting; not back to where the
 enemy was), a run in to finish a won fight, a step in for a blow, jumps at
-the level's rhythm */
-static void bots_level_move(struct bots_bot *bot, struct bots_tick *tick, struct object_datum *target)
+the level's rhythm. A bot that holds its place (on the hill, carrying the
+flag or the ball, at a vantage point) neither halts, retreats, runs in nor
+steps in; nor does one backing from a zombie (Infection) close in */
+static void bots_level_move(struct bots_bot *bot, struct bots_tick *tick, struct object_datum *target, boolean holding,
+	boolean keep_off)
 {
 	struct bots_bot_combat *combat = &bot->combat;
 	short skill = bots_globals.skill;
@@ -5825,10 +5833,21 @@ static void bots_level_move(struct bots_bot *bot, struct bots_tick *tick, struct
 		tick->weapon_index != NONE ? bots_weapon_loaded(tick->weapon_index) : 1.0f,
 		tick->object->object.bounding_sphere_center.z - target_point->z);
 	boolean new_fight = now - combat->last_fight_tick > TICKS_PER_SECOND * 2 || now < combat->last_fight_tick;
-	int started, ended;
-	boolean retreating = bots_combat_retreat_step(&combat->retreat, skill, confidence, own_shield, now,
-		bots_combat_hash01((unsigned long)bot->player_index, (unsigned long)combat->retreat.next_allowed), &started, &ended);
+	int started = FALSE, ended = FALSE;
+	boolean retreating = FALSE;
 
+	if (!holding)
+	{
+		retreating = (boolean)bots_combat_retreat_step(&combat->retreat, skill, confidence, own_shield, now,
+			bots_combat_hash01((unsigned long)bot->player_index, (unsigned long)combat->retreat.next_allowed), &started,
+			&ended);
+	}
+	else if (combat->retreat.active)
+	{
+		/* (its place comes first: a retreat is given up) */
+		bots_combat_retreat_reset(&combat->retreat);
+		ended = TRUE;
+	}
 	if (new_fight)
 	{
 		combat->halt_until_tick = bot->target_first_seen_tick + bots_combat_initial_halt_ticks(skill,
@@ -5848,7 +5867,7 @@ static void bots_level_move(struct bots_bot *bot, struct bots_tick *tick, struct
 		}
 	}
 	combat->last_fight_tick = now;
-	if (now < combat->halt_until_tick)
+	if (now < combat->halt_until_tick && !holding && !keep_off)
 	{
 		real range = bots_weapon_range(tick->weapon_index);
 
@@ -5864,7 +5883,7 @@ static void bots_level_move(struct bots_bot *bot, struct bots_tick *tick, struct
 		bots_level_retreat_goal(bot, tick, target_point);
 		bots_globals.combat_counts[_bots_combat_count_retreats]++;
 	}
-	if (ended)
+	if (ended && bot->goal_kind == _bots_goal_roam)
 		bot->goal_kind = _bots_goal_none;
 	if (retreating)
 	{
@@ -5883,9 +5902,9 @@ static void bots_level_move(struct bots_bot *bot, struct bots_tick *tick, struct
 		tick->throttle_scale = 1.0f;
 		combat->charging = FALSE;
 	}
-	else
+	else if (!holding && !keep_off)
 	{
-		boolean charge = bots_combat_charge(skill, confidence, target_shield, target->object.body_vitality,
+		boolean charge = (boolean)bots_combat_charge(skill, confidence, target_shield, target->object.body_vitality,
 			tick->target_distance);
 
 		if (charge)
@@ -5904,6 +5923,8 @@ static void bots_level_move(struct bots_bot *bot, struct bots_tick *tick, struct
 		}
 		combat->charging = charge;
 	}
+	else
+		combat->charging = FALSE;
 	if (combat->next_jump_tick > 0 && now >= combat->next_jump_tick)
 	{
 		long delay = bots_combat_jump_delay(skill, bots_random_real(bot));
@@ -6208,16 +6229,21 @@ static void bots_bot_fight(struct bots_bot *bot, struct bots_tick *tick)
 			}
 		}
 	}
-	/* crouches, halts, a retreat, a charge, a step in, jumps, by level (not a
-	zombie's, which runs straight at them) */
-	if (zombie)
-		return;
-	if (bots_combat_crouch_chance(bots_globals.skill) > 0.0f &&
-		bots_combat_crouch_step(&bot->combat.crouch, bots_globals.skill, now, bots_random_real(bot)))
+	/* crouches, halts, a retreat, a charge, a step in, jumps, by level (on
+	foot: a rider's vehicle moves it; not a zombie's: Infection's own fight) */
+	if (!zombie && tick->object->object.parent_object_index == NONE)
 	{
-		tick->flags |= FLAG(_unit_control_crouch_modifier_bit);
+		boolean on_hill = bots_king_active() && bots_king_on_hill(tick->player->unit_index);
+		boolean holding = on_hill || bot->held_objective || bots_tactics_holding((long)(bot - bots_globals.bots));
+		boolean keep_off = infection_enabled() && infection_unit_is_zombie(target_player->unit_index);
+
+		if (bots_combat_crouch_chance(bots_globals.skill) > 0.0f &&
+			bots_combat_crouch_step(&bot->combat.crouch, bots_globals.skill, now, bots_random_real(bot)))
+		{
+			tick->flags |= FLAG(_unit_control_crouch_modifier_bit);
+		}
+		bots_level_move(bot, tick, target_object, holding, keep_off);
 	}
-	bots_level_move(bot, tick, target_object);
 }
 
 /* walking to the goal, looking where it goes; there, a look about (and the

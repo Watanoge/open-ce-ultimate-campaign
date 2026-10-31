@@ -48,10 +48,16 @@ Where the proposal differs from this netcode:
   phase 0 has measured what takes the room.
 - **Out-of-order packets.** The host records what it sends, before the
   transport, so nothing is lost or reordered.
-- **Versions.** The messages change with nearly every network version (39
-  now). A replay plays only on a build of its network version. The header
-  says which, with the map and the game variant, and anything else is
-  refused with a message. A Custom Edition map's replay needs that map
+- **Versions.** The messages can change with a network version (41 now).
+  The header says which a replay was recorded in, with the map and the
+  game variant. A replay plays on a build of its network version or of a
+  later one whose messages are its own but for some kinds, which are not
+  read from it (`replay_changed_messages`, from
+  `port/linux/network_format.txt`'s fingerprints: 40 changed only a
+  client's join request, no replay's; 41 a vote's status). The oldest
+  played is 39, the first whose replays could be; older ones are refused
+  with a message. A version that changes what a replay has more deeply
+  sets the oldest to itself. A Custom Edition map's replay needs that map
   (map sharing's hashes can check it).
 
 ## The plan
@@ -282,7 +288,7 @@ once for each new file), scrolling over more; A plays the one chosen, and
 the panel says what it is, or why it cannot be played (a replay from
 before format 2, or of another network version). Its buttons are RECORD,
 DELETE (pressed twice), EXPORT (Android) and BACK. A recording shorter than
-5 seconds is deleted as it ends.
+15 seconds is deleted as it ends.
 `port/linux/game/network_replay_playback.c`:
 
 - **As a client with no player and no host.** The file is read whole.
@@ -321,11 +327,20 @@ DELETE (pressed twice), EXPORT (Android) and BACK. A recording shorter than
   so a slight tilt moves it slowly, its speed eased up in 0.2 seconds and
   down in 0.08; the right one turns it; the left trigger takes it down and
   the right one up, from still to full in a quarter of a second, so a tap
-  of the Switch's ZL or ZR, which are buttons, is a small step; it follows
-  the player as the view behind them does until one of those is touched,
-  and flies from there; it slides
+  of the Switch's ZL or ZR, which are buttons, is a small step; it slides
   along the level's walls, its scenery and its doors rather than flying
-  through them, `playback_free_camera_move`). Through the eyes, the aim
+  through them, `playback_free_camera_move`). It is a tripod: chosen, it is
+  placed where the view behind the player would be, and tracks them, its
+  aim turning after them a little behind (0.15 seconds), at their upper
+  body (`playback_free_camera_track`); the left stick and the triggers move
+  it and it goes on tracking, the right stick takes the aim and it stops,
+  and R3 starts it again from where it is, or stops it, holding its aim.
+  It tracks the next player A or X chooses, aims at where the player died
+  until they spawn again, and the top line says FREE CAMERA (TRACKING).
+  Until it first moves, it zooms on the player as they go further than 5
+  units, so they stay the size they were (down to 15 degrees of view);
+  once moved it eases back to the usual view, and does not zoom again until
+  it is chosen again (`playback_free_camera_zoom`). Through the eyes, the aim
   turns smoothly between the facings the replay has of the player (all
   of them indexed as it loads, `playback_index_facings`: the host's
   relayed input and a client's own input's records), the aim the
@@ -339,7 +354,8 @@ DELETE (pressed twice), EXPORT (Android) and BACK. A recording shorter than
 - **The controls.** A watches the next player alive, X the one before;
   one who dies is watched again when they spawn. The d-pad's left goes
   back to the last keyframe (the one before it, within two seconds of
-  one) and its right on to the next (see "Keyframes"). The right
+  one) and its right on to the next; held, either scrubs (see
+  "Keyframes" and "Scrubbing"). The right
   shoulder button (RB, the Switch's R, the PS5's R1) plays faster (2, 4,
   8 times) and the left one slower (a half, a quarter, then a pause:
   `game_time_set_speed`). Back held shows the scores, the watched
@@ -363,6 +379,20 @@ DELETE (pressed twice), EXPORT (Android) and BACK. A recording shorter than
   (its d-pad's are the A's). Without a picture, a button's name on the
   controller is written instead (the Switch's L, R, - and +, the PS5's
   L1, R1, CREATE and OPTIONS, the Xbox's LB, RB, BACK and START).
+- **On a touchscreen** (Android, while the touch controls show:
+  `touch_input_screen_buttons`) the bar's buttons are boxes in a row, a
+  word each: PREV, NEXT, VIEW, RESET or TRACK (as R3's hint), SLOWER,
+  FASTER, << and >> (the d-pad's left and right: held, they scrub),
+  SCORES (held), HIDE and PAUSE; the pause menu's RESUME and LEAVE; with
+  the lines hidden, SHOW; at the replay's end, <<. The playback says where
+  they are (`touch_input_replay_targets`, `host_touch_targets`), and the
+  touch controls, in a replay (`_touch_scene_replay`), show only their
+  stick and press the controller's button of the box under a finger
+  (`TouchControls.java`'s targets), so the playback reads them as a
+  controller's. Their stick is the left stick (the free camera's move,
+  behind's zoom), and a swipe elsewhere is the right one: the free
+  camera's aim, behind's orbit (`halo_linux_touch_look`, which no player
+  reads in a replay).
 - **The end.** The replay's end, or the game's, returns to the main menu
   four seconds later (`network_game_abort`), unless the d-pad's left
   goes back first.
@@ -439,5 +469,37 @@ frames (512 KB a frame at most), the upload into `<name>.part`, which
 becomes the replay only once it is whole and begins as a replay does; a
 name the folder has already is refused.
 
-Not yet: seeking (phase 2), and co-op levels' scripts have not been
-tried.
+Not yet: co-op levels' scripts have not been tried.
+
+## Scrubbing
+
+The d-pad's skips are a seek: the playback has one target, a marker on
+the seek bar, and taps and holds move it; the skip ahead (50 times, the
+frame asked in held, the sound paused, the playhead throbbing) takes the
+playback there (`playback_skip`, `playback_scrub`, `playback_seek_chase`).
+Keyframes stay in memory only.
+
+- **Taps.** Right goes to the keyframe ahead if there is one, else sets
+  the target ten seconds on, exactly (2:34 to 2:44), and plays to it.
+  Left goes back to a keyframe, as now. Taps add up: a tap during a skip
+  moves the target on from where it was (three taps of right, 30
+  seconds), not from where the playback is.
+- **Holding right.** The press does what a tap does; held past about 0.3
+  seconds, the marker slides on, slowly at first (about ten seconds of
+  the game a second), faster over about 1.5 seconds, to a speed that
+  crosses the whole bar in about four. The playback chases it live
+  behind the held frame: where the marker is over what has been played
+  already, the last keyframe before it is put back, and from there it
+  plays to it fast, the playhead moving and throbbing. Let go, the marker
+  stops and the skip goes on to it. It cannot be cancelled.
+- **Holding left.** The press goes back to the keyframe to the left, as a
+  tap does; held, the marker slides back as it slides on. Let go, the
+  keyframe at or before the marker is put back and the playback plays
+  to the marker, fast, as a skip ahead does.
+- The target stays between the start and the replay's length. While a
+  direction is held, the other is not heard.
+- **Start** during a skip or a scrub ends it: the marker goes, the pause
+  menu comes up, and a resume plays on from wherever the playback had
+  got to, at normal speed.
+- With the keyframes' memory full (256 MB), a skip goes on to its
+  target, taking none more, rather than ending at once.

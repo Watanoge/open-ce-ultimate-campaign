@@ -259,10 +259,10 @@ the paths. Refer to [port/linux/README.md](../linux/README.md#settings).
 Some video settings also apply on Android, with these notes; the first three
 have rows of their own in Video Setup:
 
-- `display.resolution_scaling` (`RESOLUTION` in the menus) is `"original"`
-  (the default) for the Xbox's 640x480 scaled up, or `"native"` for the
-  display's own resolution: sharper, but more work for the GPU, and the
-  display must fit in the GPU's largest render target.
+- `display.resolution_limit` (`MAXIMUM RESOLUTION` in the menus) is the
+  most lines the game draws at, no more than the screen has: `"native"`, or
+  `"2160"`, `"1440"`, `"1080"`, `"720"` or `"480"`. More are sharper, but more
+  work for the GPU.
 - `display.max_fps` (`FRAME RATE LIMIT`) limits the frame rate while
   `display.vsync` is off: `0` (the default) is twice the display's refresh
   rate, `-1` no limit, or the most frames each second.

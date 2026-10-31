@@ -5760,7 +5760,9 @@ static boolean mods_screen_reset(void)
 is, so that it is still off when it can be) */
 static boolean mods_toggle(struct widget_instance *widget)
 {
-	short place = mod_row_place(mod_row(widget));
+	struct widget_instance *row = mod_row(widget);
+	/* (the list's north button: the one chosen) */
+	short place = row ? mod_row_place(row) : (mods_screen.chosen < (short)port_mods_count() ? mods_screen.chosen : NONE);
 	long mod = mod_at_place(place);
 
 	if (place == NONE)
@@ -5794,6 +5796,9 @@ static boolean mods_move(struct widget_instance *widget, short places)
 		mods_screen.first = (short)(moved - MOD_ROWS + 1);
 	if (row && row->parent)
 		focus_row(row->parent, (short)(moved - mods_screen.first));
+	/* (the list's shoulders: its focus follows the mod too) */
+	else if (!row && widget && !strcmp(widget->name + MAX(0, (long)strlen(widget->name) - 9), "mods_list"))
+		focus_row(widget, (short)(moved - mods_screen.first));
 	return TRUE;
 }
 
@@ -9318,6 +9323,23 @@ static void tags_update(struct widget_instance *list)
 	}
 }
 
+/* "port mods accept" (A, or Start, on a row): the Switch's and the PS5's
+save and go back, as OK, the north button turning a mod on or off; a
+touchscreen's tap, and the other platforms' A, turn it on or off */
+static boolean mods_accept(struct widget_instance *widget, boolean *widget_deleted)
+{
+#if defined(HALO_SWITCH) || defined(HALO_PS5)
+	mods_save();
+	ui_play_audio_feedback_sound(SOUND_FORWARD);
+	ui_widget_port_go_back(widget);
+	*widget_deleted = TRUE;
+	return TRUE;
+#else
+	(void)widget_deleted;
+	return mods_toggle(widget);
+#endif
+}
+
 /* ---------- the main menu's Theater (port/linux/REPLAY.md): the replays a
 host or a client records (network_replay.c), a row each, the newest first,
 scrolling over more (as the Mods screen's rows): A plays the one chosen
@@ -9352,6 +9374,10 @@ static struct
 	char chosen_name[NETWORK_REPLAY_NAME_SIZE];
 	unsigned long refreshed;
 	boolean listed;
+	/* the folder's replays (all of them, not only those listed) and their
+	bytes, as of the last refresh */
+	long total;
+	unsigned long long bytes;
 	/* why the last A could not play its replay (and what DELETE did),
 	until another is chosen */
 	char why[160];
@@ -9374,6 +9400,9 @@ static void theater_refresh(void)
 		return;
 	theater.listed = TRUE;
 	theater.refreshed = now;
+	/* (the folder looked at here, every few seconds: not each frame, which
+	read every replay's size from the card 60 times a second) */
+	network_replay_summary(&theater.total, &theater.bytes);
 	count = network_replay_list(names, THEATER_REPLAYS);
 	for (index = 0; index < count; index++)
 	{
@@ -9472,6 +9501,8 @@ static void theater_update(struct widget_instance *list)
 	long count;
 
 	theater_refresh();
+	count = theater.total;
+	bytes = theater.bytes;
 #ifdef LINK_PAGE
 	/* (the replay page, while the Theater is up) */
 	network_replay_page_wanted();
@@ -9532,13 +9563,16 @@ static void theater_update(struct widget_instance *list)
 	list's again each time it is drawn, so words set on it never showed) */
 	{
 		struct widget_instance *record = named(list, "button_record", 0);
+		/* (the consoles' hint of the north button in its place: the screen's) */
+		struct widget_instance *hint = named(list->parent, "theater_record_hint", 0);
 
 		if (record)
 			record->parameters.text_box.string_list_index = recording ? 1 : 0;
+		if (hint)
+			hint->parameters.text_box.string_list_index = recording ? 1 : 0;
 	}
 	if (!details)
 		return;
-	network_replay_summary(&count, &bytes);
 	if (count)
 	{
 		snprintf(line, sizeof(line), "%ld replay%s, %llu.%llu MB", count, count == 1 ? "" : "s",
@@ -9596,9 +9630,9 @@ static void theater_update(struct widget_instance *list)
 	text_set_length(named(details, "theater_details_text", 0), wide, NUMBEROF(wide));
 }
 
-/* "port theater delete" (A on DELETE): the first press asks, the second
-deletes the replay chosen (the one asked about, unless another was chosen
-since) */
+/* "port theater delete" (A on DELETE, or the west button on a replay's
+row): the first press asks, the second deletes the replay chosen (the one
+asked about, unless another was chosen since) */
 static boolean theater_delete(void)
 {
 	char const *name;
@@ -9610,7 +9644,14 @@ static boolean theater_delete(void)
 	if (strcmp(theater.deleting, name))
 	{
 		strcpy(theater.deleting, name);
-		snprintf(theater.why, sizeof(theater.why), "Press DELETE again to delete it.");
+		/* (the consoles have no DELETE: their west button's name) */
+#if defined(HALO_SWITCH)
+		snprintf(theater.why, sizeof(theater.why), "Press Y again to delete it.");
+#elif defined(HALO_PS5)
+		snprintf(theater.why, sizeof(theater.why), "Press SQUARE again to delete it.");
+#else
+		snprintf(theater.why, sizeof(theater.why), "Press DELETE (or X) again to delete it.");
+#endif
 		return TRUE;
 	}
 	theater.deleting[0] = 0;
@@ -12027,6 +12068,7 @@ static void lobby_browser_begin(void);
 static void lobby_browser_update(struct widget_instance *list);
 static boolean lobby_browser_select(struct widget_instance *widget, short controller, short row,
 	boolean *widget_deleted);
+static void browser_list_show(struct widget_instance *screen, boolean shown);
 
 /* "gamespy screen init": the mode's title and parts; the games' client */
 static boolean browser_initialize(struct widget_instance *screen, struct event_record *event,
@@ -12056,6 +12098,8 @@ static boolean browser_initialize(struct widget_instance *screen, struct event_r
 	visible_set(named(screen, "button_clipboard", 0), multiplayer.mode == _multiplayer_mode_direct_link);
 #endif
 	visible_set(named(screen, "join_game_button_refresh", 0), multiplayer.mode == _multiplayer_mode_server_browser);
+	/* (the Switch's and the PS5's hints in the buttons' place: the mode's) */
+	browser_list_show(screen, TRUE);
 	{
 		struct widget_instance *list = named(screen, "join_game_items_list", 0);
 		struct widget_instance *child;
@@ -12329,6 +12373,10 @@ static struct
 	{ "op_sort_header_ping", NONE },
 };
 
+/* the columns the d-pad's left and right go through, as they are on the
+screen, left to right (sort_headers' indices: those that sort) */
+static short const sort_columns[] = { 4, 5, 0, 1, 2, 3 };
+
 static struct
 {
 	struct p2p_listing games[LOBBY_BROWSER_GAMES];
@@ -12341,6 +12389,9 @@ static struct
 	/* the order (network.browser_sort's); the source the tab showed */
 	short order;
 	boolean reverse;
+	/* the column the d-pad's left and right highlight, which its up and
+	down sort by (a sort_columns' index; NONE: the order's) */
+	short column;
 	short source;
 	/* the error panel was shown since the browser opened */
 	boolean error_shown;
@@ -12485,6 +12536,7 @@ static void lobby_browser_begin(void)
 	lobby_browser.source = NONE;
 	lobby_browser.order = (short)p2p_lobby_sort_parse(config_string("network.browser_sort"), &reverse);
 	lobby_browser.reverse = reverse != 0;
+	lobby_browser.column = NONE;
 	/* (going on with the join the password screen began) */
 	lobby_browser.joining = lobby_browser.password_joined;
 	lobby_browser.ready = FALSE;
@@ -12686,9 +12738,25 @@ static void lobby_browser_focus_row(struct widget_instance *list, short row)
 /* the column titles' arrows: the one the list is sorted by shows the way
 (up: A to Z, or the fewest first), in white (its bitmaps' second frame: the
 first, blue, is lost on the title's blue) */
+/* the column highlighted: the d-pad's, else the order's */
+static short lobby_browser_column(void)
+{
+	short index;
+
+	if (lobby_browser.column != NONE)
+		return lobby_browser.column;
+	for (index = 0; index < NUMBEROF(sort_columns); index++)
+	{
+		if (sort_headers[sort_columns[index]].order == lobby_browser.order)
+			return index;
+	}
+	return 0;
+}
+
 static void lobby_browser_sort_arrows(struct widget_instance *list)
 {
 	short index;
+	short highlighted = sort_columns[lobby_browser_column()];
 
 	for (index = 0; index < NUMBEROF(sort_headers); index++)
 	{
@@ -12706,6 +12774,10 @@ static void lobby_browser_sort_arrows(struct widget_instance *list)
 		visible_set(arrows, sorted);
 		visible_set(up_arrow, up);
 		visible_set(down_arrow, !up);
+		/* (the column the d-pad highlights as it is, the others dimmed, as
+		the source tab while it has not the focus) */
+		if (header)
+			header->alpha_modifier = index == highlighted ? 1.0f : TAB_UNFOCUSED_ALPHA;
 		if (up_arrow)
 			up_arrow->animation.current_frame_index = 1;
 		if (down_arrow)
@@ -12717,8 +12789,25 @@ static void lobby_browser_sort_arrows(struct widget_instance *list)
 them through) */
 static void browser_list_show(struct widget_instance *screen, boolean shown)
 {
+	boolean server_browser = multiplayer.mode == _multiplayer_mode_server_browser;
+
 	visible_set(named(screen, "join_game_items_list", 0), shown);
 	visible_set(named(screen, "header_join_game", 0), shown);
+	/* (the Switch's and the PS5's hints with it, the mode's: under a panel
+	its own buttons are the ones to press; LAN's and Direct Link's join and
+	go back alone) */
+	visible_set(named(screen, "browser_hint_join", 0), shown);
+	visible_set(named(screen, "browser_hint_back", 0), shown);
+	visible_set(named(screen, "browser_hint_refresh", 0), shown && server_browser);
+	visible_set(named(screen, "browser_hint_filters", 0), shown && server_browser);
+	visible_set(named(screen, "browser_hint_mode", 0), shown && server_browser);
+	visible_set(named(screen, "browser_hint_l_switch", 0), shown && server_browser);
+	visible_set(named(screen, "browser_hint_r_switch", 0), shown && server_browser);
+	visible_set(named(screen, "browser_hint_l_ps5", 0), shown && server_browser);
+	visible_set(named(screen, "browser_hint_r_ps5", 0), shown && server_browser);
+	visible_set(named(screen, "browser_hint_sort", 0), shown && server_browser);
+	visible_set(named(screen, "browser_hint_dpad_switch", 0), shown && server_browser);
+	visible_set(named(screen, "browser_hint_dpad_ps5", 0), shown && server_browser);
 }
 
 /* the error panel over the list, with its words (NONE: hidden, the focus
@@ -12799,6 +12888,101 @@ static boolean browser_panel_close(struct widget_instance *widget)
 		return TRUE;
 	}
 	return FALSE;
+}
+
+/* whether the server browser's source tab has the list's focus */
+static boolean list_focused_tab(struct widget_instance *screen)
+{
+	struct widget_instance *list = named(screen, "join_game_items_list", 0);
+
+	return list && list->focused_child && !strcmp(list->focused_child->name + MAX(0,
+		(long)strlen(list->focused_child->name) - 15), "op_browser_mode");
+}
+
+/* halo_linux_source_fixups.h: the server browser's list sorts with the
+d-pad's up and down (its stick goes through the rows) */
+unsigned char ui_widget_port_dpad_updown_taken(void *instance)
+{
+	struct widget_instance *widget = instance;
+	size_t length = widget && widget->name ? strlen(widget->name) : 0;
+
+	return multiplayer.mode == _multiplayer_mode_server_browser && length >= 20 &&
+		!strcmp(widget->name + length - 20, "join_game_items_list");
+}
+
+/* the server browser's buttons by the controller's, whatever row has the
+focus (tools/port_settings.py: the north refreshes, the west opens the
+filters, the shoulders change the source tab); nothing while a panel is up
+over the list, a join is under way, or in LAN's and Direct Link's lists */
+static boolean browser_shortcut(struct widget_instance *widget, char const *name)
+{
+	struct widget_instance *screen = screen_of(widget);
+	struct widget_instance *filters = named(screen, "filters_screen", 0);
+	struct widget_instance *panel = named(screen, "gamespy_error_fullscreen", 0);
+
+	if (multiplayer.mode != _multiplayer_mode_server_browser || lobby_browser.joining ||
+		(filters && filters->visible) || (panel && panel->visible))
+	{
+		return TRUE;
+	}
+	/* (the d-pad's left and right on the source tab change it, as its own
+	did: the list takes them from its rows) */
+	if ((!strcmp(name, "port browser column previous") || !strcmp(name, "port browser column next")) &&
+		list_focused_tab(screen))
+	{
+		name = !strcmp(name, "port browser column next") ? "port browser mode next" : "port browser mode previous";
+	}
+	if (!strcmp(name, "port browser column previous") || !strcmp(name, "port browser column next"))
+	{
+		short count = (short)NUMBEROF(sort_columns);
+
+		lobby_browser.column = (short)((lobby_browser_column() + (!strcmp(name, "port browser column next") ? 1 : -1) +
+			count) % count);
+		ui_play_audio_feedback_sound(SOUND_CURSOR);
+		return TRUE;
+	}
+	if (!strcmp(name, "port browser sort decreasing") || !strcmp(name, "port browser sort increasing"))
+	{
+		short order = sort_headers[sort_columns[lobby_browser_column()]].order;
+		/* (names, maps and types first go A to Z, increasing; players and
+		the others the most first, decreasing: lobby_browser_sort_arrows) */
+		boolean text = order == P2P_LOBBY_SORT_NAME || order == P2P_LOBBY_SORT_MAP || order == P2P_LOBBY_SORT_TYPE;
+		boolean decreasing = !strcmp(name, "port browser sort decreasing");
+		char text_order[32];
+
+		lobby_browser.order = order;
+		lobby_browser.reverse = text == decreasing;
+		p2p_lobby_sort_text(lobby_browser.order, lobby_browser.reverse, text_order, sizeof(text_order));
+		config_write("network.browser_sort", text_order);
+		ui_play_audio_feedback_sound(SOUND_CURSOR);
+		return TRUE;
+	}
+	if (!strcmp(name, "port browser refresh"))
+	{
+		p2p_lobby_refresh();
+		lobby_browser.begin_time = system_milliseconds();
+		ui_play_audio_feedback_sound(SOUND_FORWARD);
+	}
+	else if (!strcmp(name, "port browser filters"))
+	{
+		filters_show(screen, TRUE, FALSE);
+		ui_play_audio_feedback_sound(SOUND_FORWARD);
+	}
+	else
+	{
+		/* (the tab's spinner one way or the other, round; the list's update
+		takes it up: lobby_browser_source) */
+		struct widget_instance *spinner = named(screen, "browser_mode_spinner", 0);
+		struct pc_menu_setting *setting = spinner ? pc_menu_setting_get(spinner->definition_tag_index) : NULL;
+		short step = !strcmp(name, "port browser mode next") ? 1 : -1;
+
+		if (!spinner || !setting || setting->value_count <= 0 || master_list_policy() != _master_listings_both)
+			return TRUE;
+		spinner->parameters.list.selected_index = (short)((spinner->parameters.list.selected_index + step +
+			setting->value_count) % setting->value_count);
+		ui_play_audio_feedback_sound(SOUND_CURSOR);
+	}
+	return TRUE;
 }
 
 /* Filters' help: its row's, for the value shown (the PC version's
@@ -16393,6 +16577,10 @@ boolean pc_menu_event_function_invoke(
 		{
 			return lobby_browser_sort_choose(widget);
 		}
+		else if (!strncmp(name, "port browser ", 13))
+		{
+			return browser_shortcut(widget, name);
+		}
 		else if (!strcmp(name, "gamespy update filter settings"))
 		{
 			filters_show(screen_of(widget), FALSE, TRUE);
@@ -16683,6 +16871,10 @@ boolean pc_menu_event_function_invoke(
 		else if (!strcmp(name, "port mods toggle"))
 		{
 			return mods_toggle(widget);
+		}
+		else if (!strcmp(name, "port mods accept"))
+		{
+			return mods_accept(widget, widget_deleted);
 		}
 		else if (!strcmp(name, "port mods move up") || !strcmp(name, "port mods move down"))
 		{

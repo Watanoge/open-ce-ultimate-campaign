@@ -28,6 +28,8 @@ NEGATIVE_CONTROLS = {
     "distributed-flat": ("bots_combat.c", ("_bots_skill_easy, _bots_skill_veteran, _bots_skill_normal, _bots_skill_heroic,",
                                            "_bots_skill_easy, _bots_skill_veteran, _bots_skill_recruit, _bots_skill_legendary,"),
                          "distributed"),
+    "numbers-are-new-levels": ("bots.c", ("return numbered[name[0] - '0'];", "return (short)(name[0] - '0');"),
+                               "settings"),
     "recruit-reacts-quicker": ("bots_combat.c", ("skill == _bots_skill_recruit ? 1.0f : 0.85f", "0.85f"), "reaction"),
     "normal-aim-trails": ("bots_combat.c", ("skill == _bots_skill_easy ? 6 : 0", "skill == _bots_skill_easy ? 6 : 2"),
                           "aim"),
@@ -53,7 +55,8 @@ NEGATIVE_CONTROLS = {
     "low-ground-credited": ("bots_combat.c", ("\tif (height_above <= 0.0f)\n\t\treturn 0.0f;\n", ""), "moves"),
 }
 
-SKILL_FUNCTIONS = ("bots_skill",)
+# bots.c's settings read the environment first (HALO_BOT_SKILL), then config_string
+SKILL_FUNCTIONS = ("bots_setting_string", "bots_skill")
 
 
 def generated(fault_file=None, fault=None):
@@ -74,13 +77,15 @@ def generated(fault_file=None, fault=None):
 
 
 @pytest.mark.parametrize("case", CASES)
-def test_case(case):
+def test_case(case, monkeypatch):
+    monkeypatch.delenv("HALO_BOT_SKILL", raising=False)
     status, output = run(build("bots_levels", generated()), case)
     assert status == 0, output
 
 
 @pytest.mark.parametrize("control", NEGATIVE_CONTROLS)
-def test_negative_control(control):
+def test_negative_control(control, monkeypatch):
+    monkeypatch.delenv("HALO_BOT_SKILL", raising=False)
     fault_file, fault, case = NEGATIVE_CONTROLS[control]
     status, output = run(build("bots_levels", generated(fault_file, fault)), case)
     assert status == CHECK_FAILED, f"the levels with a fault ({control}) passed '{case}': the test cannot see it"

@@ -25,7 +25,7 @@ NEGATIVE_CONTROLS = {
 
 # the filters' checks taken out: the lookups as they were (for the benchmark)
 UNFILTERED = [("menu", "\tif (!(art_filter[bit >> 3] & 1 << (bit & 7)))\n\t\treturn 0;\n", ""),
-              ("hud", "\tif (!(placeholder_filter[bit >> 3] & 1 << (bit & 7)))\n\t\treturn 0;\n", "")]
+              ("hud", "\tif (!(placeholder_filter[bit >> 3] & 1 << (bit & 7)))\n\t\treturn -1;\n", "")]
 
 
 def first_function(source, *names):
@@ -60,6 +60,11 @@ def under_test(faults=()):
         text += "#define placeholder_register(asset, texture) run_register_placeholder(asset, (texture) != NULL, (texture) ? (texture)[1] : 0)\n"
     else:
         text += "#define placeholder_register hud_hires_register_placeholder\n"
+    # (the lookup, where a build has it apart from the texture's)
+    try:
+        text += function(hud, "hud_hires_placeholder_asset") + "\n"
+    except LookupError:
+        pass
     text += function(hud, "hud_hires_placeholder_texture") + "\n"
     return (("under_test.inc", text),)
 

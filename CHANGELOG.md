@@ -1,5 +1,54 @@
 # Changelog
 
+## Build 130
+
+- Replays: the D-pad scrubs. A tap of left or right skips 10 seconds and taps add up; held, it slides a marker along the seek bar, and the playback catches up to it. (thelinkin3000)
+- Replays: replays recorded on network versions 39 and 40 (Build 128 and earlier) play again. (thelinkin3000)
+- Replays: the free camera is a tripod. It follows the player you're watching and zooms in on them until you move it. (thelinkin3000)
+- Replays: D-pad Up switches the free camera between following the player and holding still, as R3 does; D-pad Down or L3 puts it back behind the player, following them. (thelinkin3000)
+- Replays: with a controller, a second bar above the buttons shows the camera's controls: in the free camera, move, aim, track and follow player; in the behind view, zoom, orbit and reset. The north button in the pause menu (X on Switch, triangle on PS5) hides or shows the hints, and the choice is remembered. (thelinkin3000)
+- Replays: on a touchscreen, the buttons sit in two rows and are pressed where they are drawn; they used to answer below themselves, near the seek bar. New UP, DOWN and PLAYER buttons on the right raise and lower the free camera and put it behind the player. (thelinkin3000)
+- Replays: skipping ahead in a foggy part of a level (Chill Out) no longer crashes the game. (thelinkin3000)
+- Replays: a recording shorter than 15 seconds is deleted as the game ends; the limit was 5 seconds. (thelinkin3000)
+- Theater: deleting a replay works; it always said the replay could not be deleted. Short recordings are now really deleted, and replays uploaded from the replay page are kept. (thelinkin3000)
+- Theater: on Switch and PS5, Y (square on PS5) deletes the chosen replay after asking and X (triangle on PS5) turns RECORD on or off; the bottom bar shows button hints, with RECORD showing ON or OFF. (thelinkin3000)
+- Theater: the replay list no longer reads the SD card every frame, which kept the CPU busy while the screen was open. (thelinkin3000)
+- Server browser: on Switch and PS5, X (triangle on PS5) refreshes, Y (square on PS5) opens the filters and the shoulder buttons change between all, dedicated and P2P games, from any row; the bottom bar shows button hints. (thelinkin3000)
+- Server browser: the D-pad sorts the list. Left and right highlight a column; up sorts it A to Z or fewest first, as the column's arrow shows, and down sorts it the other way. The left stick still moves through the servers. (thelinkin3000)
+- Mods: on Switch and PS5, A saves, X (triangle on PS5) turns the selected mod on or off, the shoulder buttons move it up or down and B cancels; the bottom bar shows button hints. (thelinkin3000)
+- Select Profile: on Switch and PS5 the bottom bar shows button hints for SELECT, CREATE NEW, DELETE and BACK. (thelinkin3000)
+
+Thanks to puginatux for helping design and test Theater mode.
+
+## Build 129
+
+- Network: this build plays with current OpenCE builds and servers (network version 41); it no longer plays with Build 128 or older. (thelinkin3000)
+- Bots: six skill levels, from Recruit to Legendary, in the overlay menu's Difficulty and bots.skill; easy, normal, heroic and legendary keep their numbers. Each level now fights as a player of that level does: how soon it reacts, where it aims, how it paces the pistol and zooms the sniper, its blows, grenades, strafes, halts, jumps and crouches, when it retreats or closes in. Bots holding the hill, a flag or ball, or a vantage point stay put, and Infection zombies fight as before. (PeterRichardsonGolf's levels, ported to our bots by thelinkin3000)
+
+### From OpenCE
+
+- Votes: vote popups, end-of-game and map votes (with the map's picture), AFK kicks and co-op loading zone majorities; vote with the D-pad's left and right, and a host can set the share of votes needed. (MrBruh)
+- Dedicated servers can refuse VPN addresses unless the player shows a Discord account linked under Settings > Network Setup > DISCORD ACCOUNT. (MrBruh)
+- The host's notices show to the players whatever game.console_log says. (MrBruh)
+- Co-op: a network checkpoint saves once one player is safe, a dedicated co-op game gets its settings, a public dedicated server counts as public for team wipes, hosts can choose to rewind to a checkpoint after a team wipe, and clients get the level's surfaces back after a revert. (MrBruh, Steve Rice)
+- Players turn with their aim in every network game, and while in the air, whatever their own setting, so shots go where everyone sees them aimed. (MrBruh, Constantine Luke Matthew Bubar)
+- Custom Edition maps with map protection load. (hispanorum)
+- Split screen: ADD PLAYER is the Xbox's SELECT PROFILE screen, four players at once; quarter-screen menus are centred, and the pause menu's box and dim fit each player's screen. Custom Edition maps' own pause screens are laid out as the Xbox's. (bnunu)
+- Text chat: half its size, scrolls back while you type, and stays in place when you die. (bnunu)
+- Lobby: START NOW starts the match at once, and a dedicated server's director runs its countdown. (medic-code)
+- Server browser: listings it cannot show no longer take queue places, and a host is not timed again right after a probe. (bnunu, medic-code)
+- Android: the keyboard comes up when you type a name on the touchscreen. (Guven)
+- Android: the carnage report has CONTINUE and LEAVE buttons on the touchscreen, and shows its A and B prompt with a controller connected. (Guven)
+- Android (OpenGL): models and level geometry are drawn from GPU buffers of their own and uploads go into pooled buffers, which fixes long spikes on Snapdragon phones; the fixes are chosen by the phone's GPU family. (TwistedFlog, chestahh)
+- Android: FRAME RATE LIMIT in Video Setup. SHOW FRAMES in Graphics draws the frame rate at the bottom right of a game, on every platform. (Kenneth Mosquera)
+- Android: TONE CURVE in Extra Effects picks HDR's curve, Gran Turismo 7's among them. (bnunu)
+- The high-res HUD's reticles and sniper zoom artwork are corrected. (chestahh)
+- Particles are drawn only once their tick's update has run, and widescreen cinematics keep their video margins black. (Steve Rice)
+- Collision tests skip the objects a shot's line misses on a cache of their bounds, and the high-res texture lookups go through a filter: less work each frame. (hkmodd)
+- Mods can say their multipurpose maps are in the Xbox's channel order. (bnunu)
+- display.stats_log writes a line a second to the log (frame rate, game mode, map, GPU and resolution) for bug reports. (JoshRob297)
+- The debug camera's controller fly cam is kept, and it saves and loads the player's camera. (Guven, hispanorum)
+
 ## Build 128
 
 - Gamepads: BUTTON LAYOUT, under Settings > Gamepads, has the button and stick layouts on a screen of their own, with a picture of your controller below them showing what each button does in the layout chosen. It changes as you pick another layout: the Xbox controller on PC, Android and the web, the DualSense on the PS5, the Pro Controller on the Switch, tinted blue as the original Xbox's pictures of its controller were. (thelinkin3000)

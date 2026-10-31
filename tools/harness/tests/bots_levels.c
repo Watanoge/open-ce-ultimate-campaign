@@ -126,6 +126,13 @@ int main(int argc, char **argv)
 		}
 		skill_setting = "distributed";
 		CHECK(bots_skill() == BOTS_SKILL_DISTRIBUTED, "bots.skill \"distributed\" is level %d", bots_skill());
+		/* (the numbers 0 to 3 are the four levels the bots first had) */
+		skill_setting = "0";
+		CHECK(bots_skill() == _bots_skill_easy, "bots.skill \"0\" is not easy");
+		skill_setting = "2";
+		CHECK(bots_skill() == _bots_skill_heroic, "bots.skill \"2\" is not heroic");
+		skill_setting = "3";
+		CHECK(bots_skill() == _bots_skill_legendary, "bots.skill \"3\" is not legendary");
 		skill_setting = "";
 		CHECK(bots_skill() == _bots_skill_normal, "no bots.skill is not normal");
 		skill_setting = "impossible";

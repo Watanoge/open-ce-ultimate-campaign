@@ -176,6 +176,9 @@ unsigned char menu_port_back(void *widget);
 /* a weapon's pickup prompt as the Tag Editor's Pickup settings have it
 (port/linux/game/tag_editor.h; source/interface/hud.c) */
 unsigned short const *tag_editor_pickup_text(long weapon, unsigned char *text_wanted);
+/* TRUE when a list's d-pad up and down are its own handlers', not a step
+through its rows (the server browser's sort: port/linux/game/menu_functions.c) */
+unsigned char ui_widget_port_dpad_updown_taken(void *widget);
 /* the Switch GPU, waited on before a map's memory goes
 (port/switch/guest/d3d8_dk.c) */
 #ifdef HALO_SWITCH

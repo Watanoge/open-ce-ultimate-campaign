@@ -235,8 +235,9 @@ gamepads operate controllers 2 to 4. With two or more players on this
 computer (co-op, or split screen in a network game) and only one gamepad,
 that gamepad is controller 2 (player 2) and the keyboard and mouse stay
 controller 1; with more gamepads, SPACE on the ADD PLAYER screen does the
-same for the first (refer to the network games' split screen below). The gamepad changes controller only when none of its buttons
-is held. The profile's button layout (Settings > Gamepads > BUTTON
+same for the first (refer to the network games' split screen below). The
+gamepad changes controller only when none of its buttons is held. The
+profile's button layout (Settings > Gamepads > BUTTON
 LAYOUT, which shows the layout chosen on a picture of the controller,
 what each button does by it) is the gamepads' only. Besides the Xbox's
 five, it has the Master Chief
@@ -355,7 +356,7 @@ opened by other apps. On the Switch and the PS5 the Theater shows a QR
 code and an address instead: a page on the local network, while the
 Theater is open, that downloads the replays and uploads others
 (`network.link_page` turns it off, with Direct Link's). The folder keeps
-the newest `network.replays_kept`, and a recording shorter than 5 seconds
+the newest `network.replays_kept`, and a recording shorter than 15 seconds
 is deleted as it ends.
 
 The menus' text is in the language of the Custom Edition whose `loc.map` is
@@ -491,12 +492,15 @@ knocks the zoom out); its blows and grenades follow its level (how near,
 how soon, how often; from `"heroic"` a throw leads the target's path, from
 `"veteran"` one goes to where a target was last seen); it strafes in the
 level's rhythm, from long sidesteps to short jiggles at the top, halts,
-crouches and jumps; it steps in for a blow when near; from `"normal"` it
-backs off along a path when it is losing, and from `"veteran"` as soon as
-its shields pop; from `"heroic"` it runs in to finish a won fight; it does
-not see a player far above or below where it looks (unless near, or shot by
-them); and from `"veteran"` it prefers high ground as it roams. halo.log's
-bots line each minute is followed by the fight's counts.
+crouches and jumps; from `"easy"` it steps in for a blow when near; from
+`"normal"` it backs off along a path when it is losing, and from
+`"veteran"` as soon as its shields pop; from `"heroic"` it runs in to finish
+a won fight; it does not see a player far above or below where it looks
+(unless near, or shot by them); and from `"veteran"` it prefers high ground
+as it roams. Infection's zombies keep their own fight, and a bot on the
+hill, carrying the flag or the ball, or holding a vantage point never backs
+off nor runs in. halo.log's bots line each minute is followed by the
+fight's counts.
 
 `"distributed"`, the default, gives each bot a level of its own on a curve:
 of every 24 bots, 2 are `"recruit"`, 4 `"easy"`, 6 `"normal"`, 6
@@ -507,24 +511,6 @@ take the middle levels, so a few bots are a curve too: 1 or 2 `"normal"`,
 then `"heroic"`, `"easy"`, `"veteran"`, and so on. A bot keeps its level
 (by its number: Johnson is always `"normal"`). halo.log's bots line gives
 each bot's level by its first letter (`3:4/2/h`).
-
-`bots.skill` sets six levels, from `"recruit"` (for new players: it reacts
-late, aims loosely and never throws) to `"legendary"`. Each level fights as
-a player of that level does (`game/bots_combat.c`): its reaction is never
-the same twice; the lower levels' aim trails a target that turns back, and
-every level but `"legendary"` keeps an aim error at long range; from
-`"normal"` up a bot aims at the head once the shields are down, paces the
-pistol at range and zooms the sniper rifle (again, a moment after a hit
-knocks the zoom out); its blows and grenades follow its level (how near,
-how soon, how often; from `"heroic"` a throw leads the target's path, from
-`"veteran"` one goes to where a target was last seen); it strafes in the
-level's rhythm, from long sidesteps to short jiggles at the top, halts,
-crouches and jumps; it steps in for a blow when near; from `"normal"` it
-backs off along a path when it is losing, and from `"veteran"` as soon as
-its shields pop; from `"heroic"` it runs in to finish a won fight; it does
-not see a player far above or below where it looks (unless near, or shot by
-them); and from `"veteran"` it prefers high ground as it roams. halo.log's
-bots line each minute is followed by the fight's counts.
 
 ## OpenCE gametypes
 
@@ -809,6 +795,7 @@ the setting for one start of the game. It has priority over the file.
 | `network.stun_servers` | Google and Cloudflare | `HALO_NET_STUN` | The public STUN servers (`host:port`, with commas between them) that give the internet address of a machine. |
 | `network.client_timeout_seconds` | `15` | `HALO_NET_CLIENT_TIMEOUT_SECONDS` | Hosting: the seconds the host waits for a machine it hears nothing from before it drops it (5 to 300; the stock game waits 15). The same seconds are how long each machine's reliable stream waits for its peer to read before it gives up, and how long a host in a game waits for its own network to come back (an address renewed, a wifi drop) before it ends the game; each machine reads its own setting. A longer wait keeps players whose connection stalls (a browser tab in the background), but a machine that is really gone leaves its players frozen for longer. |
 | `network.record_replays` | `false` | `HALO_NET_RECORD_REPLAYS` | `true` records each network game to `replays/` in the data folder, one `.ocreplay` file a game. A host records all of it: what a client that sees every player is sent (a player's game or a dedicated server's). A client records what its host sends it (the players far from its own, or out of sight, less often; only the events the host sends it) and its own players' input. The main menu's Theater plays them; `tools/replay_stats.py` measures them. It is read when a game starts, so turning it on during a game (the overlay's System folder has Record Replays) records from the next one. Refer to [REPLAY.md](REPLAY.md). |
+| `network.replay_hints` | `true` | `HALO_NET_REPLAY_HINTS` | Watching a replay with a controller: `true` shows the bars of the buttons and of the camera's controls over the seek bar; `false` hides them, the seek bar and the top line kept. The replay's pause menu turns them on and off with the north button (Y; the Switch's X, the PS5's triangle). A touchscreen's boxes stay: they are its controls. |
 | `network.replays_kept` | `30` | `HALO_NET_REPLAYS_KEPT` | How many replays `replays/` keeps: as a recording starts, the oldest past this many are deleted. `0` keeps them all. |
 | `network.full_detail_to_clients` | `false` | `HALO_NET_FULL_DETAIL_TO_CLIENTS` | Hosting: `true` sends every client every player every tick (not those far from its own players, or out of their sight, less often) and every damage event (not only those near its players), as a host's replay recorder is sent, so that a client's replay holds all of the game. A client downloads more, the more players there are. The objects and the AI's units are sent as before. |
 | `network.public_address` | `""` | `HALO_NET_PUBLIC_ADDRESS` | Hosting: the internet address the joiners reach this machine at, `host[:port]` (the port forwarded to `network.tunnel_port`), for a server behind a NAT with one forwarded port. It is offered first, and its name is looked up again every 5 minutes. Empty: what STUN and UPnP find. |

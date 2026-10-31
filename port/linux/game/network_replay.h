@@ -203,8 +203,18 @@ char const *network_replay_page_address(void);
 
 /* plays the replay at path (its game is loaded at the next frame); FALSE,
 with why in why, for one that cannot be played (not a replay, an older
-format, another network version) */
+format, a network version it cannot read) */
 boolean network_replay_watch(char const *path, char *why, long why_size);
+
+/* whether a replay of the network version can be played: this one's, or an
+older one whose messages are this one's but for the kinds
+network_replay_skips_message leaves out (port/linux/network_format.txt) */
+boolean network_replay_network_version_playable(unsigned long network_version);
+
+/* whether a distributed message of the kind is not read from the replay
+being played: one whose layout changed since its network version
+(network_distributed.c) */
+boolean network_replay_skips_message(byte type);
 
 /* whether a replay is being played (or its game loaded) */
 boolean network_replay_playing(void);

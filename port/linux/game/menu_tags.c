@@ -407,7 +407,7 @@ static char const *const port_function_names[] =
 	"skulls death lose", "skulls death keep", "skulls death back", "skulls random roll",
 	/* (the main menu's Mods: menu_functions.c) */
 	"port mods init", "port mods close", "port mods toggle", "port mods move up", "port mods move down",
-	"port mods save",
+	"port mods save", "port mods accept",
 	/* (Settings > Gameplay > Tag Injector: menu_functions.c) */
 	"port tags init", "port tags close", "port tags choose", "port tags left", "port tags right", "port tags back",
 	"port tags new profile", "port tags profile button",
@@ -439,6 +439,10 @@ static char const *const port_function_names[] =
 	"port news open",
 	/* (the main menu's Theater: menu_functions.c) */
 	"port theater record", "port theater export", "port theater watch", "port theater delete",
+	/* (the server browser's buttons' shortcuts: menu_functions.c) */
+	"port browser refresh", "port browser filters", "port browser mode previous", "port browser mode next",
+	"port browser column previous", "port browser column next", "port browser sort decreasing",
+	"port browser sort increasing",
 	"port controller init", "port controller close", "port controller defaults", "port controller save", "port controller bind", "port controller left", "port controller right",
 	/* (a dedicated server's map vote: menu_functions.c) */
 	"port map vote open", "port map vote choose",
