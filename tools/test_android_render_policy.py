@@ -148,6 +148,7 @@ def test_texture_dispatch_boundaries(tmp_path, enabled, ce, cached, valid, loads
 #define MAX(a,b) ((a) > (b) ? (a) : (b))
 struct bitmap_data { int flags, pixels_size; };
 static int ce, valid, android_texture_fixes, loads, legacy;
+static int android_ce_texture_enabled(void) { return 1; }
 static int custom_edition_cache_tags_loaded(void) { return ce; }
 static int texture_cache_bitmap_added(struct bitmap_data *b) { return 0; }
 static int texture_cache_bitmap_valid(struct bitmap_data *b) { return valid; }

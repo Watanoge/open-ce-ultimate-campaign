@@ -1088,8 +1088,10 @@ void *_texture_cache_bitmap_get_hardware_format(
 	 * Keep dynamic textures and Xbox maps on their own paths. So are the
 	 * bitmaps the Tag Injector adds to a map, and those copied into it from
 	 * others, which its arena was not made to hold: both are read at once
-	 * (tag_injector_read, tag_import_donor_read) */
-	if (android_texture_fixes && TEST_FLAG(bitmap->flags, _bitmap_cached_bit) &&
+	 * (tag_injector_read, tag_import_donor_read). Only the OpenGL ES
+	 * renderer reads that arena; the Vulkan image's reads the texture
+	 * cache (android_ce_texture_enabled) */
+	if (android_ce_texture_enabled() && android_texture_fixes && TEST_FLAG(bitmap->flags, _bitmap_cached_bit) &&
 		(custom_edition_cache_tags_loaded() || texture_cache_bitmap_added(bitmap)))
 	{
 		if (texture_cache_bitmap_valid(bitmap))
